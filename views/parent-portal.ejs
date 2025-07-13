@@ -1,0 +1,77 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Parents Area</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="margin: 12px;">
+            <div class="duple-to-single">
+                <div style="margin: 4px">
+                    <h1>Hello, <%= user.firstname %> <%= user.lastname %></h1>
+                    <br>
+                    <p><b>Email:</b> <%= member.email %></p>
+                    <br>
+                    <p><b>Address:</b> <%= member.address %></p>
+                    <br>
+                    <p><b>Phone:</b> <%= member.phone %></p>
+                    <br>
+                    <p><b>Birthday:</b> <%= new Date( member.birthday ).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
+                    <br>
+                    <p><b>Email verified: </b>✅</p>
+                    <br>
+                </div>
+                <div style="margin: 4px">
+                    <h2>Your Children</h2>
+                    <p>Members you're the parent/guardian of</p>
+                    <br>
+                    <% if(children.length == 0) { %>
+                        <p><i>No members</i></p>
+                    <% } else { %>
+                        <% children.forEach(child => { %>
+                            <div style="border: solid 1px #666; padding: 4px; border-radius: 4px; margin-bottom: 8px; box-shadow: 1px 1px 4px rgba(0,0,0,0.2); background-color: var(--light-half);">
+                                <div>
+                                    <p><b><%= child.firstname %> <%= child.lastname %></b></p>
+                                    <hr>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr;">
+                                    <div>
+                                        <p><b>Due: </b> <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></p>
+                                    </div>
+                                    <div style="text-align: center;">
+                                        <% if(child.owed > 0) { %>
+                                        <a href="/pay-behalf/<%= child.id %>"><button>Make Payment</button></a>
+                                        <% } %>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p><b>Age: </b><%= Math.floor((Date.now() - child.birthday) / (1000 * 60 * 60 * 24 * 365.25)) %></p>
+                                </div>
+                                <div>
+                                    <p style="text-transform: capitalize;"><b>Section: </b><%= child.section %></p>
+                                </div>
+                                <div>
+                                    <p style="text-transform: capitalize;"><b>Instrument/Role: </b><%= child.instrument %></p>
+                                </div>
+                            </div>
+                        <% }) %>
+                    <% } %>
+                    <br>
+                    <br>
+                    <a href="/add-member"><button>+Add Child</button></a>
+                </div>
+            </div>
+            <br>
+        </div>
+
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

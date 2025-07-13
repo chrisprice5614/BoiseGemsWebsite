@@ -1,0 +1,70 @@
+<% headerLinks = 
+`
+<a href="/">Home</a>
+<a href="/about">About</a>
+<a href="/news">News</a>
+<a href="/shows">Shows</a>
+<a href="/contact">Contact</a>
+<a href="/donate">Donate</a>
+`
+
+if(user)
+{
+    headerLinks += `
+    <a href="/logout"><button>Log Out</button></a>`
+}
+else
+{
+    headerLinks += `<a href="/login"><button>Log In</button></a>`
+}
+%>
+
+<div style="display: grid; grid-template-columns: 1fr 2fr; align-items: center; width: 100%;">
+    <div style="display: flex; align-items: center;">
+        <div style="text-align: left; height: 96px; padding: 16px;">
+            <a href="/">
+                <img src="/img/ui/gem.png" alt="Gems logo" style="height: 90%;">
+            </a>
+        </div>
+        <% if(user.admin) { %>
+            <a href="/admin-portal"><button>Admin Portal</button></a>
+        <% } else if(user.parent) { %>
+            <a href="/parent-portal"><button>Parent Portal</button></a>
+        <% } else if(user) { %>
+            <a href="/member-portal"><button>Member Portal</button></a>
+        <% } %>
+    </div>
+    <div style="text-align: right; padding-right: 32px;">
+        <div class="hidden-desktop" style="text-align: right; font-size: x-large;" onclick="toggleHamburger()">
+            <span id="hamburger">☰</span>
+            <div id="mobile-menu">
+                <%- headerLinks %>
+            </div>
+        </div>
+        <div class="hidden-mobile">
+            <%- headerLinks %>
+        </div>
+    </div>
+</div>
+<script>
+    let hamburger = false;
+
+    const hamburgerText = document.getElementById("hamburger")
+    const mobileMenu = document.getElementById("mobile-menu")
+    function toggleHamburger() {
+        hamburger = !hamburger;
+
+        if(hamburger){
+            hamburgerText.innerHTML='X'
+
+            mobileMenu.classList.add('active')
+        }
+
+        if(!hamburger){
+            hamburgerText.innerHTML='☰'
+            mobileMenu.classList.remove('active')
+        }
+    };
+</script>
+
+<div id="stickyMessage" style="display: none;">Hello</div>

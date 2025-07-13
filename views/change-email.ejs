@@ -1,0 +1,40 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <h1 style="text-align: center;">Change Email</h1>
+        <br>
+        <div style="padding: 12px;">
+            <br>
+            <% if(errors.length) { %>
+                <% errors.forEach(error => { %>
+                    <div class="error">
+                        <%= error %>
+                    </div>
+                <% }) %>
+            <% } %>
+            <form action="/change-email/<%= thisUser.id %>" method="POST">
+                <label for="email">Enter new email for <%= thisUser.firstname %></label>
+                <input type="email" name="email" value="" required/>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Change</button>
+                </div>
+            </form>
+        </div>
+        
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

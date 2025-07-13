@@ -1,0 +1,40 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Add Member</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <% if(errors.length) { %>
+                <% errors.forEach(error => { %>
+                    <div class="error">
+                        <%= error %>
+                    </div>
+                <% }) %>
+            <% } %>
+            <h1>Add Member</h1>
+            <p>Add a member who you're a parent/guardian of.</p>
+            <br>
+            <form action="/add-member" method="POST">
+                <label for="email">Member Email</label>
+                <input type="email" name="email" autocomplete="off" placeholder="John@email.com" required/>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>+Add Member</button>
+                </div>            
+            </form>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Change Account Type</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <h1 style="text-align: center;">Change Account Type</h1>
+        <br>
+        <div style="padding: 12px;">
+            <br>
+            <% if(errors.length) { %>
+                <% errors.forEach(error => { %>
+                    <div class="error">
+                        <%= error %>
+                    </div>
+                <% }) %>
+            <% } %>
+            <form action="/change-account-type/<%= thisUser.id %>" method="POST">
+                <label for="type">Enter new type for <%= thisUser.firstname %></label>
+                <select name="type" value="" required>
+                    <option value="member" <% if((!thisUser.admin)&&(!thisUser.parent)) { %> selected="selected" <% } %>>Member</option>
+                    <option value="parent" <% if(thisUser.parent) { %> selected="selected" <% } %>>Parent</option>
+                    <option value="admin" <% if(thisUser.admin) { %> selected="selected" <% } %>>Admin</option>
+                    <option value="staff" <% if(thisUser.staff) { %> selected="selected" <% } %>>Staff</option>
+                </select>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Change</button>
+                </div>
+            </form>
+        </div>
+        
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

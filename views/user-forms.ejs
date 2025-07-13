@@ -1,0 +1,39 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <br>
+        <div style="padding: 12px;">
+            <h1 style="text-align: center;"><%= thisUser.firstname %> <%= thisUser.lastname %>'s forms</h1>
+            <br>
+            <% forms.forEach(form => { %>
+                <div class="card">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr;">
+                        <h2><%= form.title %></h2>
+                        <div>
+                                <span>Submitted: </span>
+                                <% let found = userForms.find(item => item.document_id === form.id)%>
+                                <% if(found) { %>
+                                    ✅ Upload Date: <%= userForms.signed_date %>
+                                <% } else { %>
+                                    ❌
+                                <% } %>
+                        </div>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

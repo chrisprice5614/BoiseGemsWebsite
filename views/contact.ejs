@@ -1,0 +1,40 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px;">
+            <br>
+            <h1 style="text-align: center;">Contact Us</h1>
+            <br>
+            <form action="/contact" method="POST">
+            <label for="name">Your Name</label>
+            <input type="text" name="name" value="" placeholder="John Doe" required/>
+            <br>
+            <br>
+            <label for="email">Your Email</label>
+            <input type="email" name="email" value="" placeholder="johndoe@gmail.com" required/>
+            <br>
+            <br>
+            <label for="content">Your Message</label>
+            <textarea name="content" placeholder="Enter your message here" required></textarea>
+            <br>
+            <br>
+            <div style="text-align: center;">
+                <button>Send Message</button>
+            </div>
+        </form>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

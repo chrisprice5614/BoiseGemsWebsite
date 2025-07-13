@@ -1,0 +1,33 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Send Email</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <br>
+        <h1 style="text-align: center;">Send Email to <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
+        <form action="/send-message/<%= thisUser.id %>" method="POST">
+            <label for="subject">Subject</label>
+            <input type="text" name="subject" value="" placeholder="Email Subject" required/>
+            <br>
+            <br>
+            <label for="message">Message</label>
+            <textarea name="message" required placeholder="Enter message here"></textarea>
+            <br>
+            <br>
+            <div style="text-align: center;">
+                <button>Send</button>
+            </div>
+        </form>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

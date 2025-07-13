@@ -1,0 +1,48 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <br>
+        <div style="padding: 12px">
+            <form action="/extend-contract/<%= thisUser.id %>" method="post">
+                <h1 style="text-align: center;">Extend Contract</h1>
+                <br>
+                <h2>Extend Contract to <b><%= thisUser.firstname %> <%= thisUser.lastname %></b></h2>
+                <br>
+                <p>By clicking the button below, you are extending a contract to <%= thisUser.firstname %> <%= thisUser.lastname %> for the <b><%= CURRENTSEASON %></b> season, with the section <%= thisUser.section %> and a role/instrument of <%= thisUser.instrument %>. <%= thisUser.firstname %> will have 30 days to sign the contract, requiring a down payment of $50 to ensure their commitment. If you believe this member is deserving of such an extension, please click below.</p>
+                <br>
+                <br>
+                <label for="group">Group</label>
+                <select name="group">
+                    <option value="corps">Corps</option>
+                    <option value="independent">Independent</option>
+                </select>
+                <br>
+                <br>
+                <div style="align-items: center; text-align: left;">
+                    
+                    <label for="bypass">Bypass down payment?</label>
+                    <input type="checkbox" name="bypass" style="vertical-align: middle;"/>
+                    <br>
+                    <br>
+                    <div style="text-align: center;">
+                        <button>Extend Contract</button>
+                    </div>
+                
+                </div>
+            </form>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

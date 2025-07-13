@@ -1,0 +1,148 @@
+<br>
+<p style="text-align: center; color: var(--light-quarter)"><a href="/">© Boise Gems Drum & Bugle Corps 2025</a></p>
+<br>
+<div class="lower-links">
+    <br>
+    <div style="display: grid; grid-template-columns: 1fr 1fr;">
+        <div>
+            <a href="/">Home</a><br>
+            <a href="/news">News</a><br>
+            <a href="/contact">Contact</a><br>
+            <a href="/whistleblower">Whistleblower</a><br>
+        </div>
+        <div>
+            <a href="/about">About</a><br>
+            <a href="/shows">Shows</a><br>
+            <a href="/donate">Donate</a><br>
+        </div>
+    </div>
+    <br>
+    <a href="https://info.chrispricemusic.net" style="font-size: medium;">Powered by Chris Price Music</a>
+</div>
+<br>
+<br>
+
+
+
+<script>
+    function copyText(element) {
+        const text = element.innerText || element.textContent;
+
+        console.log(text)
+
+        navigator.clipboard.writeText(text).then(() => {
+            showMessage(text + " copied to clipboard!")
+        }).catch(err => {
+            showMessage("Failed to copy")
+        })
+    }
+
+    function showMessage(text) {
+        const message = document.getElementById("stickyMessage")
+
+         message.style.display = 'block'
+
+        message.innerHTML = text;
+        message.classList.remove("sticky-animation")
+        void message.offsetWidth;
+        message.classList.add("sticky-animation")
+
+        message.addEventListener("animationend", () => {
+            message.style.display = 'none'
+        }, {once : true})
+    }
+
+    function messageReceived(message) {
+        showMessage(message);
+    }
+
+    window.addEventListener("DOMContentLoaded", async () => {
+        try {
+            const contentType = document.contentType || (document.querySelector('meta[http-equiv="Content-Type"]')?.content ?? "")
+
+            if(contentType.includes("application/json")) {
+                const json = await fetch(window.location.href).then(res => res.json())
+                messageReceived(json)
+            } 
+        }   catch (err) {
+                console.log("error")
+        }
+
+          const fadeElements = document.querySelectorAll('.fade-in');
+        let lastScrollY = window.scrollY;
+        function checkVisibility() {
+        const centerY = window.innerHeight * 0.75;
+        fadeElements.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const elCenter = rect.top + rect.height / 2;
+        const scrolledDown = window.scrollY > lastScrollY;
+        if (elCenter <= centerY) {
+        el.classList.add('visible');
+        } else {
+            el.classList.remove('visible')
+        }
+        });
+        lastScrollY = window.scrollY;
+        }
+        window.addEventListener('scroll', checkVisibility);
+        window.addEventListener('resize', checkVisibility);
+        checkVisibility(); // run on load too
+
+        document.querySelectorAll('.carousel').forEach((carousel) => {
+            const slides = carousel.querySelectorAll('.esto-pic')
+            let index = 0;
+            let delay = parseInt(carousel.dataset.delay) || 3000;
+
+            if(slides.length === 0) return;
+
+            slides[0].classList.add('active')
+
+            setInterval(() => {
+                slides[index].classList.remove('active')
+                index = (index + 1) % slides.length;
+                slides[index].classList.add('active')
+            }, delay)
+        })
+    })
+
+    
+    const wigglers = document.querySelectorAll('.wiggle')
+
+
+    function updateShift(xFactor, yFactor){
+        
+        
+        
+        wigglers.forEach(el => {
+            const MAX_SHIFT = el.getAttribute('max-shift');
+            const xShift = (xFactor - 0.5) * 2 * MAX_SHIFT;
+            const yShift = (yFactor - 0.5) * 2 * MAX_SHIFT;
+            console.log("UPDAE")
+            el.style.transform = `translate(${xShift}px, ${yShift}px)`
+        })
+
+    }
+
+    window.addEventListener('mousemove', e => {
+        const xFactor = e.clientX / window.innerWidth;
+        const yFactor = e.clientY / window.innerHeight;
+
+        console.log("X:" + xFactor)
+        updateShift(xFactor, yFactor)
+    })
+    
+    window.addEventListener('deviceorientation', e => {
+        if(e.beta == null || e.gamma == null) return;
+
+        const xFactor = (e.gamma + 90) / 180;
+        const yFactor = (e.beta + 180) / 360
+        updateShift(xFactor, yFactor)
+    })
+
+</script>
+
+<% if(typeof flashMessage !== "undefined") { %>
+    <script>
+        showMessage("<%= flashMessage %>")
+    </script>
+<% } %>

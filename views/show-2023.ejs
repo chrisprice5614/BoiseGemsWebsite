@@ -1,0 +1,176 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Esto Perpetua</title>
+    <%- include("includes/head") %>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        #map { height: 50vh; width: 100%; }
+        body, html { margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="background-color: var(--dark-full);">
+            <br>
+            <div style="text-align: center;">
+                <img src="/img/ui/esto.png" alt="Esto perpetua logo" class="wiggle" max-shift="20" style="width: 80%;">
+            </div>
+            <div>
+                <div style="text-align: center; transform: translateY(-128px);">
+                    <h1 class="esto-title wiggle" style="font-size: clamp(2rem, 5vw, 6rem);"  max-shift="10">2023</h1>
+                    <br>
+                    <h1 class="esto-title wiggle" style="font-size: clamp(1.2rem, 5vw, 4rem);" max-shift="10">Esto Perpetua</h1>
+                </div>
+            </div>
+        </div>
+        <br>
+        <div class="fade-in">
+            <br>
+            <h1 style="text-align: center; font-size: xx-large;"><b>"It shall be perpetual"</b></h1>
+            <div style="padding-right: 30%;">
+                <p style="text-align: right;">-Idaho State Motto</p>
+            </div>
+        </div>
+        <div style="padding: 32px; font-size: large;">
+            <div style="margin: 0px 16px; padding: 8px; ">
+                <iframe src="https://www.youtube.com/embed/" style="aspect-ratio: 16/9; width: 100%; border-radius: 16px; box-shadow: 0px 4px 12px rgba(0,0,0,0.4);"></iframe>
+            </div>
+            <br>
+            <p>Idaho's state motto, adopted soon after the addition to the Union, is a way of wishing good luck to the state. <b>It shall be perpetual</b> marks the bold claim that Idaho may live on. A very fitting statement for the <b>Boise Gems Drum & Bugle Corps</b>'s first ever show. This show is a message to the world saying that the <b>Boise Gems</b> will be perpetual and live on with several future seasons. The music was written to inspire ideas of <b>greatness</b>, evoking a sense of power and establishment in the world.</p>
+            <br>
+            <br>
+            <div class="fade-in">
+                <h1 style="text-align: center;">Music</h1>
+                <br>
+                <h2 style="text-align: center;"><b>Esto Perpetua</b></h2>
+                <p style="text-align: center;"><i>Chris Price</i></p>
+            </div>
+            <br>
+            <br>
+            <h1 style="font-size: clamp(2rem, 5vw, 4rem); text-align: center; font-weight: 700; text-transform: uppercase;">Performances</h1>
+            <br>
+            <div id="map"></div>
+
+            <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+            <script>
+                const events = <%- JSON.stringify(events) %>;
+
+                const map = L.map('map').setView([<%- center[0] %>, <%- center[1] %>], 5); // Centered on USA
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                const latlngs = [];
+
+                events.forEach(event => {
+                const marker = L.marker(event.coords).addTo(map);
+                marker.bindPopup(`<b>${event.location}</b><br>${event.date}`);
+                latlngs.push(event.coords);
+                });
+
+                // Draw polyline connecting all events
+                L.polyline(latlngs, {
+                color: 'purple',
+                weight: 4,
+                opacity: 0.7
+                }).addTo(map);
+            </script>
+            <br>
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/esto.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 8th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Caldwell, ID</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>Community Performance</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/community-1.jpg" alt="First picture of the community performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/community-2.jpg" alt="Second picture of the community performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/community-3.jpg" alt="Third picture of the community performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/esto.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 10th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Kennewick, WA</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>Unscored</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/kennewick-1.jpg" alt="First picture of the kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/kennewick-2.jpg" alt="Second picture of the kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/kennewick-3.jpg" alt="Third picture of the kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/esto.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 11th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Boise, ID</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>Unscored</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/boise-1.jpg" alt="First picture of the boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/boise-2.jpg" alt="Second picture of the boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/boise-3.jpg" alt="Third picture of the boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/esto.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 12th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Salt Lkae City, UT</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>78.33</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/utah-1.jpg" alt="First picture of the utah performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/utah-2.jpg" alt="Second picture of the utah performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2023/utah-3.jpg" alt="Third picture of the utah performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+            <br>
+            <p>The first season of the <b>Boise Gems Drum and Bugle Corps</b> was a success. Esto Perpetua was engraved into DCI history, and the corps had their first show season. This was the start of something big.</p>
+            <br>
+        </div>
+        
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+
+</html>

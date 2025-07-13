@@ -1,0 +1,35 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <h1 style="text-align: center;">Pay for <%= child.firstname %> <%= child.lastname %></h1>
+            <br>
+            <h2 style="text-align: center;">Total Amount Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></h2>
+            <br>
+            <form action="/pay-behalf/<%= child.id %>" method="POST">
+                <label for="payment">Enter Amount to Pay</label>
+                <input type="number" name="payment" step="0.01" min="0.01" max="<%= (child.owed / 100).toFixed(2) %>" autocomplete="off" placeholder="<%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %>" value="" required/>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Make Payment</button>
+                </div>
+            </form>
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

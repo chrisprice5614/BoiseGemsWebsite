@@ -1,0 +1,69 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 10%; text-align: center; background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; color: white; text-shadow: 0px 0px 4px #000;">
+            <p style="font-size: 2rem;" class="wiggle" max-shift="25">THE</p>
+            <br>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr; font-size: 4rem; height: 48px;">
+                <div class="wiggle" max-shift="20">
+                    <img src="/img/shows/2025/a1.png" alt="First a" width="100%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="10">
+                    <img src="/img/shows/2025/n1.png" alt="First N" width="80%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="15">
+                    <img src="/img/shows/2025/i1.png" alt="First I" width="80%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="20">
+                    <img src="/img/shows/2025/m1.png" alt="First M" width="100%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="25">
+                    <img src="/img/shows/2025/a2.png" alt="second a" width="80%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="5">
+                    <img src="/img/shows/2025/t1.png" alt="First T" width="80%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="10">
+                    <img src="/img/shows/2025/e1.png" alt="First E" width="100%" class="animate-images">
+                </div>
+                <div class="wiggle" max-shift="25">
+                    <img src="/img/shows/2025/d1.png" alt="First D" width="100%" class="animate-images">
+                </div>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+<script>
+    const animatedLetters = ['a','n','i','m','a','t','e','d'];
+
+    const animatedImages = document.querySelectorAll('.animate-images')
+
+    function getRandomTime() {
+        return Math.random() * (300) + 50;
+    }
+
+    function changeRandomImage() {
+        const randomIndex = Math.floor(Math.random() * animatedImages.length)
+        const randomSrc = Math.floor(Math.random() * 5)
+        animatedImages[randomIndex].src = `/img/shows/2025/${animatedLetters[randomIndex]}${randomSrc+1}.png`
+
+        setTimeout(changeRandomImage, getRandomTime())
+
+        console.log('Wee')
+    }
+
+    setTimeout(changeRandomImage, getRandomTime())
+</script>
+</html>

@@ -1,0 +1,267 @@
+<% if(typeof placeholders === "undefined") {
+    placeholders = {firstname: "", lastname: "", birthday: "", address: "", phone: "", email: "", section: "", instrument: ""}
+} %>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Member Registration</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <% if(errors.length) { %>
+                <% errors.forEach(error => { %>
+                    <div class="error">
+                        <%= error %>
+                    </div>
+                <% }) %>
+            <% } %>
+            <h1>Register as a Auditionee/Member/Staff</h1>
+            <br>
+                <form action="/register-member" method="POST">
+                    <label for="firstname">First Name</label>
+                    <input type="text" name="firstname" autocomplete="off" placeholder="John" value="<%= placeholders.firstname %>" required/>
+                    <br>
+                    <br>
+                    <label for="lastname">Last Name</label>
+                    <input type="text" name="lastname" autocomplete="off" placeholder="Doe" value="<%= placeholders.lastname %>" required/>
+                    <br>
+                    <br>
+                    <label for="phone">Phone Number</label>
+                    <input type="phone" name="phone" autocomplete="off" placeholder="(208) 555 - 5555" id="phoneNumber" value="<%= placeholders.phone %>" required/>
+                    <br>
+                    <br>
+                    <label for="email">Email</label>
+                    <input type="email" name="email" autocomplete="off" placeholder="John@email.com" value="<%= placeholders.email %>" required/>
+                    <br>
+                    <br>
+                    <label for="address">Address</label>
+                    <input type="text" name="address" autocomplete="off" placeholder="1234 E Fakestreet, Meridian, Idaho" value="<%= placeholders.address %>" required/>
+                    <br>
+                    <br>
+                    <label for="birthday">Your birthday</label>
+                    <input type="date" name="birthday" autocomplete="off" value="<%= placeholders.birthday ? new Date(placeholders.birthday).toISOString().slice(0,10) : '' %>" required/>
+                    <br>
+                    <br>
+                    <label for="section" >Section</label>
+                    <select name="section" id="sectionSelect" onchange="sectionChange()">
+                        <% sectionOptions = ["Brass", "Drumline", "Front Ensemble", "Guard", "Drum Major", "Staff"] %>
+
+                        <% sectionOptions.forEach( option => { %>
+                            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+                            <% optionLower = option.toLowerCase(); %>
+                            <option value="<%= optionLower %>" <% if(placeholders.section == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                                
+                        <% }) %>
+                    </select>
+                    <br>
+                    <br>
+
+                    <div id="instrumentChange">
+                        
+                    </div>
+                    <br>
+                    
+                    <label for="password">Password</label>
+                    <input type="password" name="password" autocomplete="off" required/>
+                    <br>
+                    <br>
+                    <label for="passwordRetype">Retype Password</label>
+                    <input type="password" name="passwordRetype" autocomplete="off" required/>
+                    <br>
+                    <br>
+                    <div style="text-align: center;">
+                        <button>Register</button>
+                    </div>
+                </form>
+            <br>
+            <p style="padding: 8px">Already have an account? <a href="/login">Login here</a>!</p>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+
+<script>
+
+    htmlDrumline = `
+    <label for="instrument">Instrument</label>
+    <select name="instrument" id="instrumentSelect">
+        <% sectionOptions = ["Snare", "Quads", "Bass", "Cymbals"] %>
+
+        <% sectionOptions.forEach( option => { %>
+            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+            <% optionLower = option.toLowerCase(); %>
+            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                             
+        <% }) %>
+    </select>
+    <br>
+    `
+
+    htmlBrass = `
+    <label for="instrument">Instrument</label>
+    <select name="instrument" id="instrumentSelect">
+        <% sectionOptions = ["Trumpet", "Mellophone", "Baritone", "Tuba"] %>
+
+        <% sectionOptions.forEach( option => { %>
+            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+            <% optionLower = option.toLowerCase(); %>
+            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                              
+        <% }) %>
+    </select>
+    <br>
+    `
+
+    htmlFront = `
+    <label for="instrument">Instrument</label>
+    <select name="instrument" id="instrumentSelect">
+        <% sectionOptions = ["Vibraphone", "Marimba", "Xylo/Glock", "Rack", "Bass", "Synth"] %>
+
+        <% sectionOptions.forEach( option => { %>
+            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+            <% optionLower = option.toLowerCase(); %>
+            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                               
+        <% }) %>
+    </select>
+    <br>
+    `
+
+    htmlGuard = `
+    <label for="instrument">Position</label>
+    <select name="instrument" id="instrumentSelect">
+        <% sectionOptions = ["Guard"] %>
+
+        <% sectionOptions.forEach( option => { %>
+            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+            <% optionLower = option.toLowerCase(); %>
+            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                                 
+        <% }) %>
+    </select>
+    <br>
+    `
+
+    htmlDrumMajor = `
+    <label for="instrument">Position</label>
+    <select name="instrument" id="instrumentSelect">
+        <% sectionOptions = ["Drum Major"] %>
+
+        <% sectionOptions.forEach( option => { %>
+            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+            <% optionLower = option.toLowerCase(); %>
+            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                              
+        <% }) %>
+    </select>
+    <br>
+    `
+
+    htmlStaff = `
+    <label for="instrument">Position</label>
+    <select name="instrument" id="instrumentSelect">
+        <% sectionOptions = ["Visual","Brass","Drumline","Media","Front Ensemble","Guard","Design","Admin","Director"] %>
+
+        <% sectionOptions.forEach( option => { %>
+            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
+            <% optionLower = option.toLowerCase(); %>
+            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
+                                
+        <% }) %>
+    </select>
+    <br>
+    `
+
+    function sectionChange() {
+        const sectionElement = document.getElementById('sectionSelect');
+        const instrumentElement = document.getElementById('instrumentChange');
+
+        if(sectionElement.value == "brass")
+            instrumentElement.innerHTML = htmlBrass;
+
+        if(sectionElement.value == "drumline")
+            instrumentElement.innerHTML = htmlDrumline;
+
+        if(sectionElement.value == "front ensemble")
+            instrumentElement.innerHTML = htmlFront;
+
+        if(sectionElement.value == "guard")
+            instrumentElement.innerHTML = htmlGuard;
+
+        if(sectionElement.value == "drum major")
+            instrumentElement.innerHTML = htmlDrumMajor;
+
+        if(sectionElement.value == "staff")
+            instrumentElement.innerHTML = htmlStaff;
+        
+        
+        // Perform other actions based on the new value
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+
+        const instrumentElement = document.getElementById('instrumentChange');
+        const defaultSection = '<%= placeholders.section %>'
+
+        instrumentElement.innerHTML = htmlBrass;
+
+        if(defaultSection == "brass")
+            instrumentElement.innerHTML = htmlBrass;
+
+        if(defaultSection == "guard")
+            instrumentElement.innerHTML = htmlGuard;
+
+        if(defaultSection == "drumline")
+            instrumentElement.innerHTML = htmlDrumline;
+
+        if(defaultSection == "staff")
+            instrumentElement.innerHTML = htmlStaff;
+
+        if(defaultSection == "front ensemble")
+            instrumentElement.innerHTML = htmlFront;
+
+        if(defaultSection == "drum major")
+            instrumentElement.innerHTML = htmlDrumMajor;
+
+        const phoneInput = document.getElementById("phoneNumber");
+
+        phoneInput.addEventListener("input", (e) => {
+            let value = e.target.value;
+
+            value = value.replace(/\D/g, '');
+
+            if (value.length > 10) {
+                value = value.slice(0,10)
+            }
+
+            if(value.length > 6) {
+                value = `(${value.slice(0,3)}) ${value.slice(3,6)}-${value.slice(6)}`
+            } else if (value.length > 3) {
+                value = `(${value.slice(0,3)}) ${value.slice(3)}`
+            }else if (value.length > 0) {
+                value = `(${value}`;
+            }
+
+            e.target.value = value;
+        })
+
+        phoneInput.addEventListener('keypress', (e) => {
+            if((!/\d/.test(e.key))) {
+                e.preventDefault();
+            }
+        })
+    });
+
+    
+</script>
+</body>
+</html>

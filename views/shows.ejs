@@ -1,0 +1,77 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+
+    <a href="/shows/2025-the-animated" class="no-decor">
+        <div class="video-wrapper" >
+            <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+
+                <source src="/vid/2025.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+
+            <div class="video-header">
+                <h1 style="color: var(--light-half); font-size: clamp(3rem, 5vw, 1rem); text-decoration: none;">2025</h1>
+                <img src="/img/shows/2025/animatedtitle.png" alt="Ghost Stallion logo" style="max-width: 80%;">
+            </div>
+        </div>
+    </a>
+
+    <a href="/shows/2024-ghost-stallion" class="no-decor">
+        <div class="video-wrapper" >
+            <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+
+                <source src="/vid/2024.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+
+            <div class="video-header">
+                <h1 style="color: var(--light-half); font-size: clamp(1rem, 5vw, 3rem); text-decoration: none;">2024</h1>
+                <img src="/img/shows/2024/ghosttitle.png" alt="Ghost Stallion logo" style="max-width: 80%;">
+            </div>
+        </div>
+    </a>
+    
+    <a href="/shows/2023-esto-perpetua" class="no-decor">
+        <div class="video-wrapper" >
+            <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+
+                <source src="/vid/2023.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+
+            <div class="video-header">
+                <h1 style="color: var(--light-half); font-size: clamp(1rem, 5vw, 3rem); text-decoration: none;">2023</h1>
+                <h1 style="color: var(--light-half); font-size: clamp(2rem, 5vw, 5rem); text-decoration: none; font-weight: 700; text-shadow: 0px 0px 8px #fff;">Esto Perpetua</h1>
+            </div>
+        </div>
+    </a>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+<script>
+    const videos = document.querySelectorAll('.video-wrapper video')
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    
+    
+    if(isMobile){
+        videos.forEach(v => {v.play(),v.style.filter="brightness(1)"})
+    } else {
+        videos.forEach(v => {
+            v.pause()
+            const parent = v.parentElement
+            parent.addEventListener('mouseenter', () => {v.play(),v.style.filter="brightness(1)"})
+            parent.addEventListener('mouseleave', () => {v.pause(),v.style.filter="brightness(0.7)"})
+        })
+    }
+</script>
+</html>

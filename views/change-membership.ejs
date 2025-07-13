@@ -1,0 +1,50 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Change Account Type</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <h1 style="text-align: center;">Change Account Type</h1>
+        <br>
+        <div style="padding: 12px;">
+            <br>
+            <% if(errors.length) { %>
+                <% errors.forEach(error => { %>
+                    <div class="error">
+                        <%= error %>
+                    </div>
+                <% }) %>
+            <% } %>
+            <form action="/change-membership/<%= thisUser.id %>" method="POST">
+                <label for="typeCorps">Enter new CORPS membership for <%= thisUser.firstname %></label>
+                <select name="typeCorps" value="" required>
+                    <option value="auditionee">Auditionee</option>
+                    <option value="contracted" <% if(thisUser.contractedCorps) { %> selected="selected" <% } %>>Contracted</option>
+                </select>
+                <br>
+                <br>
+                <label for="typeIndependent">Enter new INDEPENDENT membership for <%= thisUser.firstname %></label>
+                <select name="typeIndependent" value="" required>
+                    <option value="auditionee">Auditionee</option>
+                    <option value="contracted" <% if(thisUser.contractedIndependent) { %> selected="selected" <% } %>>Contracted</option>
+                </select>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Change</button>
+                </div>
+            </form>
+        </div>
+        
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

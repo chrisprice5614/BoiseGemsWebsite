@@ -166,6 +166,19 @@ const createTables = db.transaction(() => {
 
     db.prepare(
         `
+        CREATE TABLE IF NOT EXISTS emergencyContacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name STRING,
+        phone STRING,
+        email STRING,
+        user_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        `
+    ).run()
+
+    db.prepare(
+        `
         CREATE TABLE IF NOT EXISTS forgotPassword (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code STRING,
@@ -1050,6 +1063,11 @@ app.get("/accept-contract/:id", mustBeLoggedIn, (req,res) => {
   const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
   const contractExtension = getContractStatement.get(req.params.id);
 
+  if(contractExtension.user_id != req.user.userid)
+  {
+    return res.redirect("/")
+  }
+
   if(!contractExtension){
     return res.redirect("/")
   }
@@ -1057,11 +1075,64 @@ app.get("/accept-contract/:id", mustBeLoggedIn, (req,res) => {
   let group = "Independent"
 
   if (contractExtension.season.includes("corps")) {
-    group = "Corps";
+    group = "Drum & Bugle Corps";
   }
 
-  return res.render("accept-contract",{group, season: CURRENTSEASON})
+  return res.render("accept-contract",{group, season: CURRENTSEASON, contractExtension})
 })
+
+app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
+  const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
+  const contractExtension = getContractStatement.get(req.params.id);
+
+  if(contractExtension.user_id != req.user.userid)
+  {
+    return res.redirect("/")
+  }
+
+  if(!contractExtension){
+    return res.redirect("/")
+  }
+
+  let group = "Independent"
+
+  if (contractExtension.season.includes("corps")) {
+    group = "Drum & Bugle Corps";
+  }
+
+  return res.render("sign-contract",{group, season: CURRENTSEASON, contractExtension})
+})
+
+app.post("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
+  const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
+  const contractExtension = getContractStatement.get(req.params.id);
+
+  if(contractExtension.user_id != req.user.userid)
+  {
+    return res.redirect("/")
+  }
+
+  if(!contractExtension){
+    return res.redirect("/")
+  }
+
+  
+
+  if (contractExtension.season.includes("corps")) {
+    const updateStatement = db.prepare("UPDATE users SET contractedCorps = 1 WHERE id = ?")
+    updateStatement.run(req.user.userid)
+  } else {
+    const updateStatement = db.prepare("UPDATE users SET contractedIndependent = 1 WHERE id = ?")
+    updateStatement.run(req.user.userid)
+  }
+
+  const deleteStatement = db.prepare("DELETE FROM contractExtension WHERE id = ?")
+  deleteStatement.run(req.params.id);
+
+  res.session.flashMessage = "Welcome to the corps!";
+  return res.redirect("/member-portal")
+})
+
 
 app.post("/extend-contract/:id", mustBeStaff, (req,res) => {
   const userId = req.params.id;
@@ -1379,6 +1450,45 @@ app.get("/shows/2023-esto-perpetua", (req,res) => {
 
   return res.render("show-2023", {events ,center})
 })
+
+app.get("/update-emergency/:id", mustBeLoggedIn, (req,res) => {
+  const getEmergencyStatement = db.prepare("SELECT * FROM emergencyContacts WHERE user_id = ?")
+  const emergencyContacts = getEmergencyStatement.all(req.params.id)
+
+  return res.render("update-emergency", {emergencyContacts})
+})
+
+app.post('/update-emergency/:userId', mustBeLoggedIn, (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const contacts = req.body.contacts; // This is an object keyed by ID
+
+    const insertStmt = db.prepare(`
+        INSERT INTO emergencyContacts (name, phone, email, user_id)
+        VALUES (?, ?, ?, ?)
+    `);
+
+    const updateStmt = db.prepare(`
+        UPDATE emergencyContacts
+        SET name = ?, phone = ?, email = ?
+        WHERE id = ? AND user_id = ?
+    `);
+
+    const userContacts = Object.values(contacts); // each one has id, name, phone, email
+
+    for (const contact of userContacts) {
+        const { id, name, phone, email } = contact;
+
+        if (parseInt(id) === -1) {
+            // New contact
+            insertStmt.run(name, phone, email, userId);
+        } else {
+            // Existing contact
+            updateStmt.run(name, phone, email, id, userId);
+        }
+    }
+
+    res.redirect('/member-portal'); // or another success page
+});
 
 app.post("/add-member", mustBeParent, (req,res) => {
   errors = [];

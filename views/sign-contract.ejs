@@ -1,0 +1,40 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <br>
+        <div style="padding: 12;">
+            <form action="/sign-contract/<%= contractExtension.id %>" method="POST">
+
+                <div style="align-items: center; display: flex;">
+                    <label for="read">I Have Read The Contract</label>
+                    <input type="checkbox" name="read" required/>
+                </div>
+                <br>
+                <label for="signature">Electronic Signature</label>
+                <input type="text" name="signature" value="" required/>
+                <br>
+                <br>
+                <label for="date">Today's Date</label>
+                <input type="date" name="date" required/>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Sign</button>
+                </div>
+            </form>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

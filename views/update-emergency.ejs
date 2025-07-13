@@ -1,0 +1,77 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <form action="/update-emergency/<%= user.userid %>" method="POST" id="emergencyContactForm">
+        <% emergencyContacts.forEach((contact) => { %>
+            <div class="contact-block">
+                <input type="hidden" name="contacts[<%= contact.id %>][id]" value="<%= contact.id %>" />
+
+                <label>Name</label>
+                <input type="text" name="contacts[<%= contact.id %>][name]" autocomplete="off" placeholder="Jane Doe" value="<%= contact.name %>" required/>
+                <br><br>
+
+                <label>Email</label>
+                <input type="email" name="contacts[<%= contact.id %>][email]" autocomplete="off" placeholder="jane@example.com" value="<%= contact.email %>" required/>
+                <br><br>
+
+                <label>Phone</label>
+                <input type="text" name="contacts[<%= contact.id %>][phone]" autocomplete="off" placeholder="(208) 555 - 5555" value="<%= contact.phone %>" required/>
+                <br><br>
+            </div>
+        <% }) %>
+
+        <!-- Container for new contact blocks -->
+        <div id="newContactsContainer"></div>
+
+        <br>
+        <div style="text-align: center;">
+            <button type="button" onclick="addNewContact()">+ Add Emergency Contact</button>
+            <br><br>
+            <button type="submit">Update Emergency Contacts</button>
+        </div>
+    </form>
+
+    <script>
+        let newContactCount = 0;
+
+        function addNewContact() {
+            const container = document.getElementById('newContactsContainer');
+
+            const newContactHTML = `
+                <div class="contact-block">
+                    <input type="hidden" name="contacts[-${newContactCount}][id]" value="-1" />
+
+                    <label>Name</label>
+                    <input type="text" name="contacts[-${newContactCount}][name]" autocomplete="off" placeholder="New Name" required/>
+                    <br><br>
+
+                    <label>Email</label>
+                    <input type="email" name="contacts[-${newContactCount}][email]" autocomplete="off" placeholder="new@email.com" required/>
+                    <br><br>
+
+                    <label>Phone</label>
+                    <input type="text" name="contacts[-${newContactCount}][phone]" autocomplete="off" placeholder="(555) 555 - 5555" required/>
+                    <br><br>
+                </div>
+            `;
+
+            container.insertAdjacentHTML('beforeend', newContactHTML);
+            newContactCount++;
+        }
+    </script>
+
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

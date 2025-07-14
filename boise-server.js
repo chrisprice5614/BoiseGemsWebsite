@@ -628,6 +628,7 @@ app.get("/verify/:id", (req,res) => {
       maxAge: 1000 * 60 * 60 * 24
   }) //name, string to remember,
 
+  req.session.flashMessage = "Account verified!"
   return res.redirect("/")
 })
 
@@ -681,6 +682,9 @@ app.post("/register-member", (req,res) => {
   const newMember = addMember.run(firstname, lastname, password, address, birthday, email, phone, 0, emailsecret, section, instrument)
 
   const newMemberId = newMember.lastInsertRowid;
+
+  const addEmailVerify = db.prepare("INSERT INTO userVerify (code, user_id) VALUES (? , ?)")
+  addEmailVerify.run(emailsecret, newMemberId);
 
   const addPermissions = db.prepare("INSERT INTO permissions (user_id) VALUES (?)")
   addPermissions.run(newMemberId)
@@ -742,11 +746,11 @@ app.get("/register-parent", (req,res) => {
 })
 
 app.get("/register-member", (req,res) => {
-  return res.render("register-member")
+  return res.render("register-member", {placeholders: undefined})
 })
 
 app.get("/add-member", mustBeParent, (req,res) => {
-  return res.render("add-member")
+  return res.render("add-member", {placeholders: undefined})
 })
 
 app.get("/logout", mustBeLoggedIn, (req,res) => {

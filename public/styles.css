@@ -144,7 +144,7 @@ button:hover{
 }
 
 .double-to-single{
-    display: grid; grid-template-columns: 1fr 2fr;
+    display: grid; grid-template-columns: 2fr 1fr;
 }
 
 .hidden-desktop{
@@ -176,6 +176,11 @@ main{
     margin-left: 20%;
 }
 
+.intro-blurb{
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+}
+
 @media screen and (max-width: 900px) {
     .lower-links{
         width: 100%;
@@ -193,6 +198,9 @@ main{
     main{
         width: 100%;
         margin-left: 0%;;
+    }
+    .intro-blurb{
+        grid-template-columns: 1fr;
     }
 }
 
@@ -480,4 +488,96 @@ a .video-header{
   font-weight: 500;
   text-shadow: 2px 2px 4px black;
   font-family: 'Gesta', sans-serif;
+}
+
+.purple-storm {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1e0033, #0a001a);
+}
+
+.purple-storm::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: 
+    radial-gradient(circle at 30% 30%, rgba(169, 85, 247, 0.763), transparent 60%),
+    radial-gradient(circle at 60% 70%, rgba(147, 51, 234, 0.3), transparent 60%),
+    radial-gradient(circle at 80% 40%, rgba(112, 238, 238, 0.718), transparent 60%);
+  background-blend-mode: screen;
+  animation: ripple-ocean 10s ease-in-out infinite;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+.purple-storm > * {
+  position: relative;
+  z-index: 1;
+  color: white;
+}
+
+@keyframes ripple-ocean {
+  0% {
+    transform: translate(0%, 0%) scale(1);
+  }
+  25% {
+    transform: translate(10%, -5%) scale(1.02);
+  }
+  50% {
+    transform: translate(-10%, 10%) scale(1.05);
+  }
+  75% {
+    transform: translate(5%, -10%) scale(1.02);
+  }
+  100% {
+    transform: translate(0%, 0%) scale(1);
+  }
+}
+
+a.round-button{
+    color: var(--dark-quarter);
+    background-color: var(--light-half);
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 16px 20%;
+    width: 80%;
+    border-radius: 32px;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.6);
+    text-decoration: none;
+    transition: background-color 100ms ease-in;
+}
+
+a.round-button:hover{
+    background-color: var(--primary-color);
+    cursor: pointer;
+}
+
+.socials {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 64px 0;
+}
+
+.socials a {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  font-size: clamp(1rem, 5vw, 2rem);
+  padding: 16px;
+  border-radius: 50%;
+  width: clamp(1rem, 5vw, 2rem);
+  aspect-ratio: 1;
+
+  color: white;
+  text-decoration: none;
+}
+
+.lower-images img{
+    filter: saturate(0%) brightness(100000%) brightness(50%);
 }

@@ -169,6 +169,31 @@
 
 </script>
 
+<script>
+  const overlay = document.getElementById('confirm-overlay');
+  const yesBtn = document.getElementById('confirm-yes');
+  const noBtn = document.getElementById('confirm-no');
+
+  let nextHref = '#';
+
+  document.querySelectorAll('.confirm-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      nextHref = btn.getAttribute('next') || '#';
+      overlay.style.display = 'flex';
+    });
+  });
+
+  yesBtn.addEventListener('click', () => {
+    window.location.href = nextHref;
+  });
+
+  noBtn.addEventListener('click', () => {
+    overlay.style.display = 'none';
+    nextHref = '#';
+  });
+</script>
+
 <% if(typeof flashMessage !== "undefined") { %>
     <script>
         showMessage("<%= flashMessage %>")

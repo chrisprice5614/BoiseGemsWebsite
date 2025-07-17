@@ -16,8 +16,91 @@ const marked = require('marked');
 const session = require('express-session');
 const { verify } = require("crypto")
 
+
 const MasterEmail = "chrisprice5614@gmail.com"
 const online = true;
+
+function generateCustomFilename() {
+  const now = new Date();
+  const pad = (n) => n.toString().padStart(2, "0");
+
+  const yymmdd = `${pad(now.getFullYear() % 100)}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const hhmmss = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const random = Math.random().toString(36).substring(2, 6 + 2); // 4 random alphanum
+
+  return `${yymmdd}-${hhmmss}-${random}`;
+}
+
+const imageUpload = multer({
+  storage: multer.memoryStorage(), // hold in memory for Sharp processing
+  fileFilter(req, file, cb) {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only images are allowed'));
+    }
+    cb(null, true);
+  }
+});
+
+const pdfUpload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      const dest = path.join(__dirname, "./public/pdf/publicpdf");
+      fs.mkdirSync(dest, { recursive: true }); // ensure folder exists
+      cb(null, dest);
+    },
+    filename: function (req, file, cb) {
+      const customName = generateCustomFilename();
+      cb(null, `${customName}.pdf`);
+    }
+  }),
+  fileFilter(req, file, cb) {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF files are allowed"));
+    }
+    cb(null, true);
+  }
+});
+
+const pdfUploadSecure = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      const dest = path.join(__dirname, "./private/pdf");
+      fs.mkdirSync(dest, { recursive: true }); // ensure folder exists
+      cb(null, dest);
+    },
+    filename: function (req, file, cb) {
+      const customName = generateCustomFilename(); // assume you defined this earlier
+      cb(null, `${customName}.pdf`);
+    }
+  }),
+  fileFilter(req, file, cb) {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF files are allowed"));
+    }
+    cb(null, true);
+  }
+});
+
+// Middleware to process image and save it manually
+const processImage = async (req, res, next) => {
+  if (!req.file) return next();
+
+  const customName = generateCustomFilename() + '.jpg';
+  const outputPath = path.join(__dirname, '../img/publicupload', customName);
+
+  try {
+    await sharp(req.file.buffer)
+      .resize({ width: 720, height: 720, fit: 'inside' })
+      .jpeg({ quality: 70 })
+      .toFile(outputPath);
+
+    req.savedFilename = customName;
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 //mailing function
 async function sendEmail(to, subject, html) {
@@ -138,20 +221,12 @@ const createTables = db.transaction(() => {
         image STRING,
         link STRING,
         cost INTEGER,
-        slug STRING
+        slug STRING,
+        type STRING
         )
         `
     ).run()
 
-    db.prepare(
-        `
-        CREATE TABLE IF NOT EXISTS campdates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id INTEGER,
-        FOREIGN KEY (event_id) REFERENCES events(id)
-        )
-        `
-    ).run()
 
     db.prepare(
         `
@@ -345,6 +420,7 @@ const createTables = db.transaction(() => {
         name STRING,
         description STRING,
         content STRING,
+        path STRING,
         required BOOL,
         expires STRING
         )
@@ -432,6 +508,12 @@ function mustBeParent(req, res, next){
 }
 
 function mustBeMember(req,res, next){
+
+  if(!req.user)
+  {
+    return res.redirect("/")
+  }
+
   if((!req.parent)&&(!req.staff)){
     if(!req.admin)
       return next();
@@ -475,8 +557,6 @@ app.use(function (req, res, next) {
   if(req.session.flashMessage)
   {
     res.locals.flashMessage = req.session.flashMessage
-    console.log(req.session.flashMessage)
-    console.log(res.locals.flashMessage)
     delete req.session.flashMessage;
   }
 
@@ -774,8 +854,238 @@ app.get("/member-portal", mustBeMember, (req,res) => {
   const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?")
   const contracts = getContractStatement.all(req.user.userid)
 
-  return res.render("member-portal", {member, contracts})
+  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
+  const requiredForms = getRequiredForms.all(Date.now())
+
+  let leftoverForms = requiredForms.length;
+
+  const getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
+  const uploadedForms = getUploadedForms.all(req.user.userid);
+
+  requiredForms.forEach(requiredForm => {
+    const alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
+    if (alreadyUploaded) {
+      leftoverForms--;
+    }
+  });
+
+  return res.render("member-portal", {member, contracts, leftoverForms})
 })
+
+app.get("/member-forms/:id", mustBeMember, (req,res) => {
+  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
+  const requiredForms = getRequiredForms.all(Date.now())
+
+  let leftoverForms = requiredForms.length;
+
+  const getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
+  const uploadedForms = getUploadedForms.all(req.user.userid);
+
+  requiredForms.forEach(requiredForm => {
+    const alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
+    if (alreadyUploaded) {
+      leftoverForms--;
+      requiredForm.uploaded = true;
+    }
+  });
+
+  const birthday = db.prepare("SELECT birthday FROM users WHERE id = ?").get(req.user.userid)
+
+  return res.render("member-forms", {requiredForms, leftoverForms, birthday: birthday.birthday})
+})
+
+
+app.get("/member-forms-parent/:id", mustBeParent, (req,res) => {
+
+  const getParentIdStatement = db.prepare("SELECT parentId FROM users WHERE id = ?").get(req.params.id)
+  const isParent = getParentIdStatement.parentId == req.user.userid;
+
+  if(!isParent)
+    return res.redirect("/")
+
+  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
+  const requiredForms = getRequiredForms.all(Date.now())
+
+  let leftoverForms = requiredForms.length;
+
+  const getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
+  const uploadedForms = getUploadedForms.all(req.params.id);
+
+  requiredForms.forEach(requiredForm => {
+    const alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
+    if (alreadyUploaded) {
+      leftoverForms--;
+      requiredForm.uploaded = true;
+    }
+  });
+
+  const birthday = db.prepare("SELECT birthday FROM users WHERE id = ?").get(req.user.userid)
+
+  req.session.child = req.params.id;
+
+  return res.render("member-forms", {requiredForms, leftoverForms, birthday: birthday.birthday, parent: req.params.id})
+})
+
+app.get("/upload-form-parent/:id/:child", mustBeParent, (req,res) => {
+
+
+  const getParentIdStatement = db.prepare("SELECT parentId FROM users WHERE id = ?").get(req.params.child)
+  const isParent = getParentIdStatement.parentId == req.user.userid;
+
+  if(!isParent)
+    return res.redirect("/")
+
+  //Making sure we didn't already upload this form
+  const didUpload = db.prepare("SELECT * FROM formUploads WHERE id = ? AND user_id = ?").get(req.params.id, req.user.userid)
+
+  if(didUpload){
+    req.session.flashMessage = "You've already uploaded this form."
+    return res.redirect(`/member-forms/${req.user.userid}`)
+  }
+
+  const getRequiredForm = db.prepare("SELECT * FROM forms WHERE id = ?")
+  const thisForm = getRequiredForm.get(req.params.id)
+
+
+  return res.render("upload-form", {thisForm, parent: req.params.child})
+})
+
+app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single("document_path"), (req, res) => {
+
+  const getParentIdStatement = db.prepare("SELECT parentId FROM users WHERE id = ?").get(req.params.child)
+  const isParent = getParentIdStatement.parentId == req.user.userid;
+
+  console.log(isParent)
+
+  if(!isParent)
+    return res.redirect("/")
+
+  const documentId = parseInt(req.params.id);
+  const userId = req.params.child;
+
+  // Check if user has already uploaded this form
+  const didUpload = db.prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(documentId, userId);
+
+  if (didUpload) {
+    req.session.flashMessage = "You've already uploaded this form.";
+    return res.redirect(`/member-forms-parent/${userId}`);
+  }
+
+  // Pull form data
+  const name = req.body.name;
+  const email = req.body.email;
+  const signature = req.body.signature;
+  const dateSigned = new Date(req.body.date).getTime();
+  const consent = req.body.read ? 1 : 0;
+
+  const ip = req.ip;
+  const userAgent = req.headers['user-agent'];
+  const documentPath = req.file ? `/secure-pdf/${req.file.filename}` : null;
+
+  // Insert into database
+  const insertFormUpload = db.prepare(`
+    INSERT INTO formUploads (
+      signer_name, signer_email, upload_path, document_id,
+      signed_date, ip_address, user_agent, signature,
+      consent, user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertFormUpload.run(
+    name,
+    email,
+    documentPath,
+    documentId,
+    dateSigned,
+    ip,
+    userAgent,
+    signature,
+    consent,
+    userId
+  );
+
+  req.session.flashMessage = "Form uploaded.";
+  return res.redirect(`/member-forms-parent/${userId}`);
+});
+
+app.get("/upload-form/:id", mustBeMember, (req,res) => {
+  //Making sure we didn't already upload this form
+  const didUpload = db.prepare("SELECT * FROM formUploads WHERE id = ? AND user_id = ?").get(req.params.id, req.user.userid)
+
+  if(didUpload){
+    req.session.flashMessage = "You've already uploaded this form."
+    return res.redirect(`/member-forms/${req.user.userid}`)
+  }
+
+  const getRequiredForm = db.prepare("SELECT * FROM forms WHERE id = ?")
+  const thisForm = getRequiredForm.get(req.params.id)
+
+
+  return res.render("upload-form", {thisForm})
+})
+
+app.get("/secure-pdf/:filename", mustBeAdmin, (req, res) => {
+  const filePath = path.join(__dirname, "private/pdf", req.params.filename);
+
+  if (!fs.existsSync(filePath)) {
+    console.log("WOO")
+    return res.status(404).send("File not found");
+  }
+
+  res.sendFile(filePath);
+});
+
+app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path"), (req, res) => {
+  const documentId = parseInt(req.params.id);
+  const userId = req.user.userid;
+
+  // Check if user has already uploaded this form
+  const didUpload = db.prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(documentId, userId);
+
+  if (didUpload) {
+    req.session.flashMessage = "You've already uploaded this form.";
+    return res.redirect(`/member-forms/${userId}`);
+  }
+
+  // Pull form data
+  const name = req.body.name;
+  const email = req.body.email;
+  const signature = req.body.signature;
+  const dateSigned = new Date(req.body.date).getTime();
+  const consent = req.body.read ? 1 : 0;
+
+  const ip = req.ip;
+  const userAgent = req.headers['user-agent'];
+  const documentPath = req.file ? `/secure-pdf/${req.file.filename}` : null;
+
+  // Insert into database
+  const insertFormUpload = db.prepare(`
+    INSERT INTO formUploads (
+      signer_name, signer_email, upload_path, document_id,
+      signed_date, ip_address, user_agent, signature,
+      consent, user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertFormUpload.run(
+    name,
+    email,
+    documentPath,
+    documentId,
+    dateSigned,
+    ip,
+    userAgent,
+    signature,
+    consent,
+    userId
+  );
+
+  req.session.flashMessage = "Form uploaded.";
+  return res.redirect(`/member-forms/${userId}`);
+});
+
 
 app.post("/forgot-password", (req,res) => {
   let errors = [];
@@ -1218,8 +1528,7 @@ app.get("/view-forms/:id", mustBeAdmin, (req,res) => {
 
 
   const userFormsStatement = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-  const userForms = userFormsStatement.all(req.params.id)
-
+  const userForms = userFormsStatement.all(Number(req.params.id))
 
   return res.render("user-forms",{forms, userForms, thisUser})
 })
@@ -1318,7 +1627,8 @@ app.get("/edit-users", mustBeAdmin, (req,res) => {
 
   users.forEach(thisUser => {
     let getUserForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-    let userForms = getUserForms.all(String(thisUser.id))
+    let userForms = getUserForms.all(thisUser.id)
+
 
     thisUser.allForms = 1;
 
@@ -1400,12 +1710,14 @@ app.get("/add-parent/:id", (req,res) => {
 
   const getParentIdStatement = db.prepare("SELECT * FROM childVerify WHERE code = ?")
   const verifyItem = getParentIdStatement.get(req.params.id);
-  const verifyId = verifyItem.target_id;
+  
 
   if(!verifyItem)
   {
     return res.redirect("/")
   }
+
+  const verifyId = verifyItem.target_id;
 
   const parentId = verifyItem.user_id;
 
@@ -1450,7 +1762,6 @@ app.get("/shows/2023-esto-perpetua", (req,res) => {
 
   const center = getGraphicCenter(events)
 
-  console.log(center)
 
   return res.render("show-2023", {events ,center})
 })
@@ -1557,6 +1868,31 @@ app.get("/parent-portal", mustBeParent, (req,res) => {
   const getChildren = db.prepare("SELECT * FROM users WHERE parentId = ?")
   const children = getChildren.all(req.user.userid)
 
+
+  children.forEach(child => {
+    let getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
+    let requiredForms = getRequiredForms.all(Date.now())
+
+    let leftoverForms = requiredForms.length;
+
+    let getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
+    let uploadedForms = getUploadedForms.all(String(child.id));
+
+    console.log(uploadedForms.length)
+
+    requiredForms.forEach(requiredForm => {
+      let alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
+      if (alreadyUploaded) {
+        leftoverForms--;
+      }
+    });
+
+    child.leftoverForms = leftoverForms;
+
+    console.log(child.firstname + " " + child.leftoverForms)
+
+  })
+
   return res.render("parent-portal", {member, children})
 })
 
@@ -1581,20 +1917,37 @@ app.get("/edit-forms",mustBeAdmin, (req,res) => {
   return res.render("edit-forms",{forms})
 })
 
-app.post("/add-form", mustBeAdmin, (req,res) => {
-   
-  const title = req.body.title
-  const description = req.body.description
-  const upload = req.body.upload
-  const expire_date = req.body.expire_date
-  const due_date = req.body.due
-  const content = req.body.content
+app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res) => {
+  const title = req.body.title;
+  const description = req.body.description;
+  const expire_date = new Date(req.body.expire_date).getTime();
+  const due_date = new Date(req.body.due_date).getTime();
+  const content = req.body.content;
 
-  const addFormStatement = db.prepare("INSERT INTO forms (title, description, upload, expire_date, due_date, content) VALUES (? , ? , ? , ? , ? , ?)")
-  addFormStatement.run(title, description, upload, new Date(expire_date).getTime(), new Date(due_date).getTime(), content)
+  // If a file was uploaded, build its path
+  const filePath = req.file ? `/pdf/publicpdf/${req.file.filename}` : null;
 
+  const addFormStatement = db.prepare(`
+    INSERT INTO forms (title, description, document_path, expire_date, due_date, content)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
 
-  req.session.flashMessage = "Form added"
+  addFormStatement.run(title, description, filePath, expire_date, due_date, content);
+
+  req.session.flashMessage = "Form added";
+  return res.redirect("/edit-forms");
+});
+
+app.get("/delete-form/:id", mustBeAdmin, (req,res) => {
+  const formId = req.params.id;
+
+  const uploadDeleteStatement = db.prepare("DELETE FROM formUploads WHERE document_id = ?")
+  uploadDeleteStatement.run(formId);
+
+  const deleteStatement = db.prepare("DELETE FROM forms WHERE id = ?")
+  deleteStatement.run(formId);
+
+  req.session.flashMessage="Form deleted";
   return res.redirect("/edit-forms")
 })
 

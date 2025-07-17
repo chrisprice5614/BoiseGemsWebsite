@@ -112,6 +112,8 @@
                             <div class="triple-to-single triple-to-single-mod">
                                 <div>
                                     <p><b>Email: </b><span onclick="copyText(this)"><%= thisUser.email %></span></p>
+                                    <p><b>Birthday: </b><%= new Date(thisUser.birthday + 86400000).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %></p>
+                                    <p><b>Age: </b><%= Math.floor((Date.now() - thisUser.birthday) / 31557600000) %></p>
                                 </div>
                                 <div>
                                     <p><b>Verified: </b><% if(thisUser.verified) { %> ✅ <% } else { %> ❌ <% } %></p>

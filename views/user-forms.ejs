@@ -22,7 +22,13 @@
                                 <span>Submitted: </span>
                                 <% let found = userForms.find(item => item.document_id === form.id)%>
                                 <% if(found) { %>
-                                    ✅ Upload Date: <%= userForms.signed_date %>
+                                    ✅ Upload Date: <%= new Date(found.signed_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %>
+                                    <br>
+                                    <% if(found.upload_path) { %>
+                                        <div style="text-align: right; padding: 4px;">
+                                            <a href="<%= found.upload_path %>" target="_blank"><button>View Form</button></a>
+                                        </div>
+                                    <% } %>
                                 <% } else { %>
                                     ❌
                                 <% } %>

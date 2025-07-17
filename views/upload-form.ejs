@@ -1,0 +1,75 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 12px;">
+            <h1 style="text-align: center;"><%= thisForm.title %></h1>
+            <br>
+            <p><%= thisForm.description %></p>
+            <br>
+            <div>
+                <iframe src="<%= thisForm.document_path %>" width="100%" height="600px" style="border: none;"></iframe>
+            </div>
+            <br>
+            <p><%= thisForm.content %></p>
+            <br>
+            <br>
+            <% if(thisForm.upload) { %>
+                <div style="text-align: center;">
+                    <h2>Please Download, Sign and Upload The Form</h2>
+                    <br>
+                    <a href="<%= thisForm.document_path %>" download><button>Download Form</button></a>
+                </div>
+            <% } %>
+            <br>
+            <br>
+            <form  <% if(typeof parent === "undefined") { %>action="/upload-form/<%= thisForm.id %>"<% } else { %> action="/upload-form-parent/<%= thisForm.id %>/<%= parent %>" <% } %> enctype="multipart/form-data" method="POST">
+                <h2 style="text-align: center;">Sign <% if(thisForm.upload) {%> and Upload <% } %> Form</h2>
+                <br>
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 5%;">
+                    <input type="checkbox" name="read" id="read" required style="margin: 0;" />
+                    <label for="read" style="margin: 0;">I Have Read And Agree To The Form</label>
+                </div>
+
+                <br>
+                <label for="name">Your Name</label>
+                <input type="text" name="name" value="" required/>
+                <br>
+                <br>
+                <% if(thisForm.upload) { %>
+                    <label for="document_path">Upload Signed PDF</label>
+                        <input type="file" name="document_path" value="" accept="application/pdf" required/>
+                        <br>
+                    <br>
+                <% } %>
+                <label for="email">Your email</label>
+                <input type="email" name="email" value="" required/>
+                <br>
+                <br>
+                <label for="signature">Electronic Signature</label>
+                <input type="text" name="signature" value="" required/>
+                <br>
+                <br>
+                <label for="date">Today's Date</label>
+                <input type="date" name="date" required/>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Sign</button>
+                </div>
+            </form>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

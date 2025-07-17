@@ -60,6 +60,14 @@
                             <%})%>
                         </div>
                     <% } %>
+                    <br>
+                    <% if(leftoverForms > 0) { %>
+                        <div style="text-align: center;">
+                            <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
+                            <br>
+                            <a href="/member-forms/<%= user.userid %>"><button>View Forms</button></a>
+                        </div>
+                    <% } %>
                 </div>
             </div>
         </div>

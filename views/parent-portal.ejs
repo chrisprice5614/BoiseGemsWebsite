@@ -36,27 +36,41 @@
                         <% children.forEach(child => { %>
                             <div style="border: solid 1px #666; padding: 4px; border-radius: 4px; margin-bottom: 8px; box-shadow: 1px 1px 4px rgba(0,0,0,0.2); background-color: var(--light-half);">
                                 <div>
-                                    <p><b><%= child.firstname %> <%= child.lastname %></b></p>
-                                    <hr>
-                                </div>
+                                            <p><b><%= child.firstname %> <%= child.lastname %></b></p>
+                                            <hr>
+                                        </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr;">
                                     <div>
-                                        <p><b>Due: </b> <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></p>
+                                        
+                                        <div>
+                                            <p><b>Due: </b> <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></p>
+                                        </div>
+                                        <div>
+                                            <p><b>Age: </b><%= Math.floor((Date.now() - child.birthday) / (1000 * 60 * 60 * 24 * 365.25)) %></p>
+                                        </div>
+                                        <div>
+                                            <p style="text-transform: capitalize;"><b>Section: </b><%= child.section %></p>
+                                        </div>
+                                        <div>
+                                            <p style="text-transform: capitalize;"><b>Instrument/Role: </b><%= child.instrument %></p>
+                                        </div>
                                     </div>
-                                    <div style="text-align: center;">
-                                        <% if(child.owed > 0) { %>
-                                        <a href="/pay-behalf/<%= child.id %>"><button>Make Payment</button></a>
-                                        <% } %>
+                                    <div>
+                                        <div style="text-align: center;">
+                                                <% if(child.owed > 0) { %>
+                                                <a href="/pay-behalf/<%= child.id %>"><button>Make Payment</button></a>
+                                                <% } %>
+                                                <br>
+                                                <% if(child.leftoverForms > 0) { %>
+                                                    <div style="text-align: center;">
+                                                        <br>
+                                                        <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
+                                                        <br>
+                                                        <a href="/member-forms-parent/<%= child.id %>"><button>View Forms</button></a>
+                                                    </div>
+                                                <% } %>
+                                        </div>
                                     </div>
-                                </div>
-                                <div>
-                                    <p><b>Age: </b><%= Math.floor((Date.now() - child.birthday) / (1000 * 60 * 60 * 24 * 365.25)) %></p>
-                                </div>
-                                <div>
-                                    <p style="text-transform: capitalize;"><b>Section: </b><%= child.section %></p>
-                                </div>
-                                <div>
-                                    <p style="text-transform: capitalize;"><b>Instrument/Role: </b><%= child.instrument %></p>
                                 </div>
                             </div>
                         <% }) %>

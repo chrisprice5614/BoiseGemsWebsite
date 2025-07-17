@@ -20,9 +20,28 @@
             <% if(forms.length > 0) { %>
                 <% forms.forEach(form => { %>
                     <div class="card">
-                        <h3><%= form.title %></h3>
+                        <div style="display: grid; grid-template-columns: 2fr 1fr;">
+                            <h3><%= form.title %></h3>
+                            <div>
+                                <div style="text-align: right;">
+                                    <% if(form.document_path) { %>
+                                    
+                                        <a href="<%= form.document_path %>" target="_blank" style="margin-right: 24px; font-size: 1.5rem;"><ion-icon name="document-text-outline"></ion-icon></a>
+                                        <button class="confirm-btn" next="/delete-form/<%= form.id %>">Delete Form</button>
+                                    <% } %>
+                                </div>
+                            </div>
+                            <div>
+                                Due: <%= new Date(form.due_date + 86400000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) %>
+                            </div>
+                            <div></div>
+                            <div>
+                                Expires: <%= new Date(form.expire_date + 86400000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) %>
+                            </div>
+                        </div>
                         <hr>
                         <p><%= form.description %></p>
+                        
                     </div>
                 <% }) %>
             <% } %>

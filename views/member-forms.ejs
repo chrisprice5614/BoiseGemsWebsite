@@ -1,0 +1,57 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <br>
+        <div style="padding: 12px">
+            <% if(leftoverForms > 0) { %>
+                <h1 style="text-align: center; padding: 8px; border: solid 2px red; border-radius: 12px;">You have <%= leftoverForms %> form(s) to upload</h1>
+            <% } else { %>
+                <h1 style="text-align: center;">All Forms Uploaded!</h1>
+            <% } %>
+            <br>
+            <% requiredForms.forEach(form => { %>
+                <div class="card">
+                    <div style="display: grid; grid-template-columns: 3fr 1fr; padding: 12px;">
+                        <div>
+                            <h2><%= form.title %></h2>
+                        </div>
+                        <div style="text-align: right;">
+                            <% if(form.uploaded) { %>
+                                <h2>Form uploaded! ✅</h2>
+                            <% } else { %>
+                                <% let isMinor = (Date.now() - birthday) < (18 * 365.25 * 24 * 60 * 60 * 1000); %>
+                                <% if(isMinor) { %>
+                                    <button disabled>Upload Form</button>
+                                    <br>
+                                    <br>
+                                    <p style="text-align: left; padding: 4px;">You are under 18. You must have a parent fill out the form.</p>
+                                <% } else { %>
+                                    <% if(typeof parent === "undefined") { %>
+                                        <a href="/upload-form/<%= form.id %>"><button>Upload Form</button></a>
+                                    <% } else { %>
+                                        <a href="/upload-form-parent/<%= form.id %>/<%= parent %>"><button>Upload Form</button></a>
+                                    <% } %>
+                                <% } %>
+                            <% } %>
+                        </div>
+                    </div>
+                    <hr>
+                    <p><%= form.description %></p>
+                </div>
+            <% }) %>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <h1 style="text-align: center;">Pay for <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
+            <br>
+            <h2 style="text-align: center;">Total Amount Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.owed / 100) %></h2>
+            <br>
+            <form action="/add-transaction/<%= thisUser.id %>" method="POST">
+                <label for="title">Enter Payment Title</label>
+                <input type="text" name="title" placeholder="Tuition payment" required/>
+                <br>
+                <br>
+                <label for="payment">Enter Amount to Pay</label>
+                <input type="number" name="payment" step="0.01" min="0.01" autocomplete="off" placeholder="<%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.owed / 100) %>" value="" required/>
+                <br>
+                <br>
+                <label for="description">Enter Payment Description</label>
+                <textarea name="description" id="description" required></textarea>
+                <br>
+                <br>
+                <label for="method">Payment Method</label>
+                <select name="method" id="method">
+                    <option value="cash">Cash</option>
+                    <option value="venmo">Venmo</option>
+                    <option value="check">Check</option>
+                    <option value="wire transfer">Wire Transfer</option>
+                </select>
+                <br>
+                <br>
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 5%;">
+                    <input type="checkbox" name="tuition" id="tuition" style="margin: 0;" />
+                    <label for="tuition" style="margin: 0;">Pay Towards Tuition</label>
+                </div>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Make Payment</button>
+                </div>
+            </form>
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

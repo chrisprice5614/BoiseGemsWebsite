@@ -81,6 +81,29 @@
                 </div>
             </div>
         </div>
+        <div class="purple-storm-2" style="padding: 8px;">
+            <div class="triple-to-duple">
+                <% events.forEach(event => { %>
+                    <div>
+                        <div class="event-card">
+                            <div style="text-align: center;">
+                                <img src="img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
+                            </div>
+                            <div>
+                                <h2 style="text-align: left;"><%= event.title %></h2>
+                                <small style="text-align: left;"><%= event.type %> <% if(event.cost) { %> <span style="color: var(--dark-half)">|</span> <span style="color: rgb(15, 190, 41)"><%= (event.cost).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) %>
+                                </span><% } %></small>
+                                <br>
+                                <br>
+                                <p><%= new Date(event.datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %></p>
+                                <p><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></p>
+                                <small><%= event.location %></small>
+                            </div>
+                        </div>
+                    </div>
+                <% })%>
+            </div>
+        </div>
     </div>
     <footer>
         <%- include("includes/footer") %>

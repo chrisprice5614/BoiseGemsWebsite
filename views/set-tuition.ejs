@@ -1,0 +1,34 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 12px;">
+            <form action="/set-tuition" method="POST">
+                <br>
+                <label for="corps">Set Corps Fees in Dollars</label>
+                <input type="number" name="corps" step="0.01" min="0.01" autocomplete="off" value="<%= corpsFees.amount/100 %>" required/>
+                <br>
+                <br>
+                <label for="independent">Set Independent Fees in Dollars</label>
+                <input type="number" name="independent" step="0.01" min="0.01" autocomplete="off" value="<%= independentFees.amount/100 %>" required/>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Set Fees</button>
+                </div>
+            </form>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

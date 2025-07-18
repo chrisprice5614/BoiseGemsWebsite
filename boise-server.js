@@ -31,15 +31,7 @@ function generateCustomFilename() {
   return `${yymmdd}-${hhmmss}-${random}`;
 }
 
-const imageUpload = multer({
-  storage: multer.memoryStorage(), // hold in memory for Sharp processing
-  fileFilter(req, file, cb) {
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('Only images are allowed'));
-    }
-    cb(null, true);
-  }
-});
+
 
 const pdfUpload = multer({
   storage: multer.diskStorage({
@@ -81,16 +73,29 @@ const pdfUploadSecure = multer({
   }
 });
 
-// Middleware to process image and save it manually
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // optional: 5MB limit
+  fileFilter(req, file, cb) {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(new Error('Only images are allowed'), false);
+    } else {
+      cb(null, true);
+    }
+  }
+});
+
+
+
 const processImage = async (req, res, next) => {
-  if (!req.file) return next();
+  if (!req.file) return res.status(400).send('Image is required');
 
   const customName = generateCustomFilename() + '.jpg';
-  const outputPath = path.join(__dirname, '../img/publicupload', customName);
+  const outputPath = path.join(__dirname, './public/img/publicupload', customName);
 
   try {
     await sharp(req.file.buffer)
-      .resize({ width: 720, height: 720, fit: 'inside' })
+      .resize({ width: 1280, height: 1280, fit: 'inside' })
       .jpeg({ quality: 70 })
       .toFile(outputPath);
 
@@ -207,6 +212,16 @@ async function sendEmail(to, subject, html) {
 
 }
 
+function slugify(text) {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumerics with -
+    .replace(/^-+|-+$/g, '');    // Trim hyphens from start/end
+}
+
+
 
 db.pragma("journal_mode = WAL") //Makes it faster
 const createTables = db.transaction(() => {
@@ -227,6 +242,15 @@ const createTables = db.transaction(() => {
         `
     ).run()
 
+    db.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS tuitionFees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ensemble STRING,
+        amount INTEGER
+        )
+        `
+    ).run()
 
     db.prepare(
         `
@@ -305,7 +329,7 @@ const createTables = db.transaction(() => {
         user_agent STRING,
         signature STRING,
         consent BOOL,
-        user_id,
+        user_id INTEGER,
         FOREIGN KEY (document_id) REFERENCES forms(id),
         FOREIGN KEY (user_id) REFERENCES users(id)
         )
@@ -584,7 +608,8 @@ app.use(function (req, res, next) {
 })
 
 app.get("/", (req,res) => {
-    return res.render("index", {admin: true})
+  const events = db.prepare("SELECT * FROM events ORDER BY datetime DESC").all()
+    return res.render("index", {admin: true, events})
 })
 
 app.get("/admin-portal", mustBeAdmin, (req,res) => {
@@ -1002,7 +1027,7 @@ app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single(
     userAgent,
     signature,
     consent,
-    userId
+    Number(userId)
   );
 
   req.session.flashMessage = "Form uploaded.";
@@ -1533,6 +1558,73 @@ app.get("/view-forms/:id", mustBeAdmin, (req,res) => {
   return res.render("user-forms",{forms, userForms, thisUser})
 })
 
+app.get("/set-tuition", mustBeAdmin, (req,res) => {
+  const corpsFees = db.prepare("SELECT * FROM tuitionFees WHERE ensemble = ?").get("corps")
+  const independentFees = db.prepare("SELECT * FROM tuitionFees WHERE ensemble = ?").get("independent")
+
+  return res.render("set-tuition", {corpsFees, independentFees})
+})
+
+app.post("/set-tuition", mustBeAdmin, (req,res) => {
+  db.prepare("UPDATE tuitionFees set amount = ? WHERE ensemble = ?").run(req.body.corps*100,"corps")
+  db.prepare("UPDATE tuitionFees set amount = ? WHERE ensemble = ?").run(req.body.independent*100,"independent")
+
+  req.session.flashMessage = "Tuition fees updated!"
+  return res.redirect("/admin-portal")
+})
+
+app.get("/events-admin", mustBeAdmin, (req,res) => {
+  const events = db.prepare("SELECT * FROM events ORDER BY datetime DESC").all();
+
+  return res.render("edit-events", {events})
+})
+
+app.post('/add-event', imageUpload.single('image'), processImage, (req, res) => {
+  const {
+    title,
+    description,
+    datetime,
+    location,
+    link = '',
+    cost,
+    type
+  } = req.body;
+
+  if (!req.savedFilename) {
+    return res.status(500).send('Image processing failed');
+  }
+
+  const imageFilename = req.savedFilename;
+
+  const insert = db.prepare(`
+    INSERT INTO events (title, description, datetime, location, image, link, cost, type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const result = insert.run(
+    title,
+    description,
+    datetime,
+    location,
+    imageFilename,
+    link,
+    parseInt(cost),
+    type
+  );
+
+  const eventId = result.lastInsertRowid;
+
+  const slug = `${eventId}-${slugify(title)}`;
+  db.prepare(`UPDATE events SET slug = ? WHERE id = ?`).run(slug, eventId);
+
+  res.redirect('/events-admin');
+});
+
+
+app.get("/add-event", mustBeAdmin, (req,res) => {
+  return res.render("add-event")
+})
+
 app.get("/change-email/:id", mustBeAdmin, (req,res) => {
   const userId = req.params.id;
   const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
@@ -1572,6 +1664,13 @@ app.post("/change-email/:id", mustBeAdmin, (req,res) => {
 
   req.session.flashMessage = `Email updated for ${thisUser.firstname} to ${req.body.email}`
   return res.redirect("/edit-users")
+})
+
+app.get("/pay-history", mustBeAdmin, (req,res) => {
+  const paymentHistoryStatement = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC")
+  const payments = paymentHistoryStatement.all();
+
+  return res.render("payment-history", {payments})
 })
 
 app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
@@ -1870,15 +1969,29 @@ app.get("/parent-portal", mustBeParent, (req,res) => {
 
 
   children.forEach(child => {
+    if (child.birthday) {
+      const birthday = new Date(child.birthday);
+      const today = new Date();
+
+      const age = today.getFullYear() - birthday.getFullYear();
+      const hasHadBirthdayThisYear =
+          today.getMonth() > birthday.getMonth() ||
+          (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+
+      const realAge = hasHadBirthdayThisYear ? age : age - 1;
+
+      child.minor = realAge < 18;
+    }
+
     let getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
     let requiredForms = getRequiredForms.all(Date.now())
 
     let leftoverForms = requiredForms.length;
 
     let getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-    let uploadedForms = getUploadedForms.all(String(child.id));
+    let uploadedForms = getUploadedForms.all(child.id);
 
-    console.log(uploadedForms.length)
+    
 
     requiredForms.forEach(requiredForm => {
       let alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
@@ -1889,11 +2002,58 @@ app.get("/parent-portal", mustBeParent, (req,res) => {
 
     child.leftoverForms = leftoverForms;
 
-    console.log(child.firstname + " " + child.leftoverForms)
 
   })
 
   return res.render("parent-portal", {member, children})
+})
+
+app.get("/add-transaction/:id", mustBeAdmin, (req,res) => {
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
+  const thisUser = getUserStatement.get(req.params.id)
+
+  if(!thisUser){
+    req.session.flashMessage = "User doesn't exist."
+    return res.redirect("/admin-portal")
+  }
+
+  return res.render("add-transaction", {thisUser})
+})
+
+app.post("/add-transaction/:id", mustBeAdmin, (req,res) => {
+  const getChildStatement = db.prepare("SELECT * FROM users WHERE id = ?")
+  const child = getChildStatement.get(req.params.id);
+
+  if(!child)
+  {
+    return res.redirect("/admin-portal")
+  }
+
+  
+
+  const paid = req.body.payment * 100;
+  if(req.body.tuition)
+  {
+    const alreadyPaid = Number(child.paid) + paid;
+    const left = Number(child.owed)-paid;
+  
+
+    const updateStatement = db.prepare("UPDATE users SET paid = ?, owed = ? WHERE id = ?")
+    updateStatement.run(alreadyPaid, left, req.params.id)
+  } else {
+    const alreadyPaid = Number(child.paid)
+
+    const updateStatement = db.prepare("UPDATE users SET paid = ? WHERE id = ?")
+    updateStatement.run(alreadyPaid,req.params.id)
+  }
+
+  const paidString = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(paid / 100);
+
+  const addPaymentStatement = db.prepare("INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)")
+  addPaymentStatement.run(req.body.title,req.body.description, paid,req.body.method, Date.now(), child.id)
+
+
+  return res.redirect(`/transaction-edit/${child.id}`)
 })
 
 app.get("/pay-behalf/:id", mustBeParent, (req,res) => {

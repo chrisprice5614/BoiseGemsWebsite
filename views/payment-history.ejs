@@ -11,23 +11,9 @@
     </header>
     <main>
         <br>
-        <h1 style="text-align: center;">Payment history for <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
-        <br>
-        <div style="text-align: center;">
-            <a href="/add-transaction/<%= thisUser.id %>"><button>Add Transaction</button></a>
-        </div>
+        <h1 style="text-align: center;">Payment history for</h1>
         <br>
         <div style="padding: 8px;">
-            <div class="duple-to-single" style="text-align: center;">
-                <div>
-                    <h3>Amount Currently Owed</h3>
-                    <p><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.owed / 100) %></p>
-                </div>
-                <div>
-                    <h3>Total Amount Paid</h3>
-                    <p><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.paid / 100) %></p>
-                </div>
-            </div>
             <br>
             <% if(payments.length > 0) { %>
                 <% payments.forEach(payment => { %>

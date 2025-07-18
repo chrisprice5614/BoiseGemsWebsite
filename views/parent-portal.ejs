@@ -61,7 +61,7 @@
                                                 <a href="/pay-behalf/<%= child.id %>"><button>Make Payment</button></a>
                                                 <% } %>
                                                 <br>
-                                                <% if(child.leftoverForms > 0) { %>
+                                                <% if((child.leftoverForms) > 0 && (child.minor)) { %>
                                                     <div style="text-align: center;">
                                                         <br>
                                                         <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>

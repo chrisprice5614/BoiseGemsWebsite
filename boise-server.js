@@ -14,6 +14,7 @@ const fs = require("fs");
 const axios = require("axios");
 const marked = require('marked');
 const session = require('express-session');
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { verify } = require("crypto")
 
 
@@ -88,6 +89,29 @@ const imageUpload = multer({
 
 
 const processImage = async (req, res, next) => {
+  if (!req.file) return res.status(400).send("Image is required");
+
+  const customName = generateCustomFilename() + ".webp";
+  const outputPath = path.join(__dirname, "./public/img/publicupload", customName);
+
+  try {
+    await sharp(req.file.buffer)
+      .resize(640, 640, {
+        fit: "cover",   // always crop to exact 640x640
+        position: "center" // crop from center
+      })
+      .webp({ quality: 80 }) // save as webp, good balance of quality/speed
+      .toFile(outputPath);
+
+    req.savedFilename = customName;
+    next();
+  } catch (err) {
+    console.error("Image processing failed:", err);
+    next(err);
+  }
+};
+
+const processImageJpg = async (req, res, next) => {
   if (!req.file) return res.status(400).send('Image is required');
 
   const customName = generateCustomFilename() + '.jpg';
@@ -232,6 +256,7 @@ const createTables = db.transaction(() => {
         title STRING,
         description STRING,
         datetime STRING,
+        endtime STRING,
         location STRING,
         image STRING,
         link STRING,
@@ -241,6 +266,19 @@ const createTables = db.transaction(() => {
         )
         `
     ).run()
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS potential_payment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        child_id INTEGER,
+        parent_id INTEGER,
+        amount INTEGER NOT NULL,
+        user_id INTEGER,
+        contract_id INTEGER,
+        processing_fee INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      `).run()
 
     db.prepare(
         `
@@ -254,11 +292,32 @@ const createTables = db.transaction(() => {
 
     db.prepare(
         `
+        CREATE TABLE IF NOT EXISTS allergies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        no_allergies INTEGER,
+        allergies STRING
+        )
+        `
+    ).run()
+
+    db.prepare(
+        `
         CREATE TABLE IF NOT EXISTS userVerify (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code STRING,
         user_id INTEGER,
         FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        `
+    ).run()
+
+    db.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS materials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        section STRING,
+        pdf STRING
         )
         `
     ).run()
@@ -315,6 +374,35 @@ const createTables = db.transaction(() => {
         )
         `
     ).run()
+
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS potential_donation (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        name TEXT NOT NULL,
+        message TEXT,
+        amount INTEGER NOT NULL,          -- cents, the donation amount (tuition-equivalent)
+        processing_fee INTEGER NOT NULL,  -- cents
+        total_charge INTEGER NOT NULL,    -- cents (amount + processing_fee)
+        stripe_session_id TEXT,           -- optional: store Stripe session id
+        created_at INTEGER NOT NULL
+      );
+      `).run()
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS donations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      message TEXT,
+      amount INTEGER NOT NULL,          -- cents (amount donated to org)
+      processing_fee INTEGER NOT NULL,  -- cents
+      total_charged INTEGER NOT NULL,   -- cents
+      stripe_session_id TEXT,
+      created_at INTEGER NOT NULL
+    );
+    `).run()
 
     db.prepare(
         `
@@ -462,6 +550,7 @@ const createTables = db.transaction(() => {
         )
       `
     ).run()
+
 })
 
 createTables();
@@ -476,6 +565,7 @@ app.use(express.static('/public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(body_parser.json())
+app.use(express.urlencoded({ limit: "10mb", extended: true })); 
 app.use(session({
   secret: 'secret-key',
   resave: false,
@@ -538,7 +628,7 @@ function mustBeMember(req,res, next){
     return res.redirect("/")
   }
 
-  if((!req.parent)&&(!req.staff)){
+  if(!req.parent){
     if(!req.admin)
       return next();
   }
@@ -592,8 +682,10 @@ app.use(function (req, res, next) {
         
         req.admin = req.user.admin
         req.parent = req.user.parent
+        req.staff = req.user.staff
     } catch (err) {
         req.user = false
+        req.staff = false;
         req.admin = false;
         req.parent = false
         
@@ -729,7 +821,7 @@ app.get("/verify/:id", (req,res) => {
   res.cookie("bgcookie",ourTokenValue, {
       httpOnly: true,
       secure: true,
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24
   }) //name, string to remember,
 
@@ -894,10 +986,18 @@ app.get("/member-portal", mustBeMember, (req,res) => {
     }
   });
 
-  return res.render("member-portal", {member, contracts, leftoverForms})
+  const allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid)
+
+  return res.render("member-portal", {member, contracts, leftoverForms, allergy})
 })
 
-app.get("/member-forms/:id", mustBeMember, (req,res) => {
+app.get("/member-forms", mustBeMember, (req,res) => {
+
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid)
+
+  if(!member)
+    return res.redirect("/")
+
   const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
   const requiredForms = getRequiredForms.all(Date.now())
 
@@ -1065,6 +1165,8 @@ app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path
   const documentId = parseInt(req.params.id);
   const userId = req.user.userid;
 
+  console.log("WTF")
+
   // Check if user has already uploaded this form
   const didUpload = db.prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
     .get(documentId, userId);
@@ -1108,7 +1210,7 @@ app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path
   );
 
   req.session.flashMessage = "Form uploaded.";
-  return res.redirect(`/member-forms/${userId}`);
+  return res.redirect(`/member-forms`);
 });
 
 
@@ -1237,7 +1339,7 @@ app.post("/login", (req,res) => {
   res.cookie("bgcookie",ourTokenValue, {
       httpOnly: true,
       secure: true,
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24
   }) //name, string to remember,
 
@@ -1417,7 +1519,7 @@ app.get("/accept-contract/:id", mustBeLoggedIn, (req,res) => {
     group = "Drum & Bugle Corps";
   }
 
-  return res.render("accept-contract",{group, season: CURRENTSEASON, contractExtension})
+  return res.render("accept-contract",{group, season: CURRENTSEASON, contractExtension, bypass: contractExtension.bypass_fee})
 })
 
 app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
@@ -1442,35 +1544,172 @@ app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
   return res.render("sign-contract",{group, season: CURRENTSEASON, contractExtension})
 })
 
-app.post("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
-  const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
+app.post("/sign-contract/:id", mustBeLoggedIn, async (req, res) => {
+  const getContractStatement = db.prepare(
+    "SELECT * FROM contractExtension WHERE id = ?"
+  );
   const contractExtension = getContractStatement.get(req.params.id);
 
-  if(contractExtension.user_id != req.user.userid)
-  {
-    return res.redirect("/")
+  if (!contractExtension || contractExtension.user_id !== req.user.userid) {
+    return res.redirect("/");
   }
 
-  if(!contractExtension){
-    return res.redirect("/")
+  // Determine ensemble type
+  const ensemble = contractExtension.season.includes("corps") ? "corps" : "independent";
+
+  // Fetch tuition fees for this ensemble
+  const getTuitionStatement = db.prepare(
+    "SELECT amount FROM tuitionFees WHERE ensemble = ?"
+  );
+  const tuition = getTuitionStatement.get(ensemble);
+  if (!tuition) {
+    return res.redirect("/"); // no tuition record found
   }
 
+  // If bypass fee is true, skip Stripe
+  if (contractExtension.bypass_fee) {
+    // Set user contracted flags
+    if (ensemble === "corps") {
+      db.prepare("UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?")
+        .run(tuition.amount, req.user.userid);
+    } else {
+      db.prepare("UPDATE users SET contractedIndependent = 1, owed = COALESCE(owed,0) + ? WHERE id = ?")
+        .run(tuition.amount, req.user.userid);
+    }
+
+    // Delete contractExtension entry
+    db.prepare("DELETE FROM contractExtension WHERE id = ?").run(req.params.id);
+
+    req.session.flashMessage = "Welcome to the corps!";
+    return res.redirect("/member-portal");
+  }
+
+  // Stripe checkout flow for $50 down payment + 5% processing fee
+  const downPayment = 5000; // in pennies ($50)
+  const processingFee = Math.ceil(downPayment * 0.05);
+  const totalAmount = downPayment + processingFee;
+
+  // Save potential payment
+  const insertPotential = db.prepare(
+    "INSERT INTO potential_payment (user_id, contract_id, amount, created_at) VALUES (?, ?, ?, ?)"
+  );
+  const result = insertPotential.run(req.user.userid, contractExtension.id, totalAmount, Date.now());
+  const potentialPaymentId = result.lastInsertRowid;
+
+  // Stripe Checkout Session
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `Contract down payment for ${ensemble} ensemble`,
+            },
+            unit_amount: totalAmount,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/sign-contract/success/${potentialPaymentId}`,
+      cancel_url: `${process.env.BASEURL}/sign-contract/${contractExtension.id}`,
+    });
+
+    res.redirect(303, session.url);
+  } catch (err) {
+    console.error("Stripe session error:", err);
+    res.redirect(`/sign-contract/${contractExtension.id}`);
+  }
+});
+
+app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
+  // Fetch the potential payment
+  const getPotential = db.prepare(
+    "SELECT * FROM potential_payment WHERE id = ? AND user_id = ?"
+  );
+  const potential = getPotential.get(req.params.potentialId, req.user.userid);
+
+  if (!potential) {
+    return res.redirect("/"); // invalid potential payment
+  }
+
+  // Fetch the related contractExtension
+  const getContract = db.prepare(
+    "SELECT * FROM contractExtension WHERE id = ?"
+  );
+  const contractExtension = getContract.get(potential.contract_id);
+
+  if (!contractExtension) {
+    return res.redirect("/");
+  }
+
+  const ensemble = contractExtension.season.includes("corps") ? "corps" : "independent";
+
+  // Fetch tuition fees for the ensemble
+  const getTuition = db.prepare("SELECT amount FROM tuitionFees WHERE ensemble = ?");
+  const tuition = getTuition.get(ensemble);
+  if (!tuition) return res.redirect("/");
+
+  // Update user: set contracted flag and owed tuition
+  const getUser = db.prepare("SELECT * FROM users WHERE id = ?");
+  const user = getUser.get(req.user.userid);
+
+  if (!user) return res.redirect("/");
+
+  // Set contracted flags
+  let updateFields = "";
+  if (ensemble === "corps") updateFields = "contractedCorps = 1";
+  else updateFields = "contractedIndependent = 1";
+
+  // Add tuition amount to owed
+  const newOwed = (user.owed || 0) + tuition.amount;
+
+  const updateUser = db.prepare(
+    `UPDATE users SET ${updateFields}, owed = ? WHERE id = ?`
+  );
+  updateUser.run(newOwed, user.id);
+
+  // Deduct down payment (5000 pennies)
+  const remainingOwed = newOwed - 5000;
+  db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(remainingOwed, user.id);
+
+  // Insert into paymentHistory
+  const addPayment = db.prepare(
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+
+  const paymentTitle = `Contract down payment for ${ensemble} ensemble`;
+  const paymentDesc = `User ${user.firstname} ${user.lastname} paid $50 (plus 5% fee) down payment for ${ensemble} contract.`;
   
+  addPayment.run(paymentTitle, paymentDesc, potential.amount, "Stripe", Date.now(), user.id);
 
-  if (contractExtension.season.includes("corps")) {
-    const updateStatement = db.prepare("UPDATE users SET contractedCorps = 1 WHERE id = ?")
-    updateStatement.run(req.user.userid)
-  } else {
-    const updateStatement = db.prepare("UPDATE users SET contractedIndependent = 1 WHERE id = ?")
-    updateStatement.run(req.user.userid)
-  }
+  // Delete potential payment to prevent reuse
+  db.prepare("DELETE FROM potential_payment WHERE id = ?").run(potential.id);
 
-  const deleteStatement = db.prepare("DELETE FROM contractExtension WHERE id = ?")
-  deleteStatement.run(req.params.id);
+  // Delete contractExtension (they are now contracted)
+  db.prepare("DELETE FROM contractExtension WHERE id = ?").run(contractExtension.id);
 
-  res.session.flashMessage = "Welcome to the corps!";
-  return res.redirect("/member-portal")
-})
+  // Optionally, send email receipt
+  const paidString = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD"
+  }).format(potential.amount / 100);
+
+  const emailBody = `
+    <h1>Contract Down Payment Received</h1>
+    <p>Thank you ${user.firstname} ${user.lastname} for paying the $50 down payment (plus 5% processing fee) for your ${ensemble} ensemble contract.</p>
+    <p>Amount paid: ${paidString}</p>
+    <p>Date: ${new Date().toLocaleDateString("en-US", {year:"numeric", month:"long", day:"numeric"})}</p>
+  `;
+
+  sendEmail(user.email, "Contract Down Payment Received", emailBody);
+
+  req.session.flashMessage = "Contract down payment successful! Welcome to the corps!";
+  return res.redirect("/member-portal");
+});
+
 
 
 app.post("/extend-contract/:id", mustBeStaff, (req,res) => {
@@ -1579,11 +1818,12 @@ app.get("/events-admin", mustBeAdmin, (req,res) => {
   return res.render("edit-events", {events})
 })
 
-app.post('/add-event', imageUpload.single('image'), processImage, (req, res) => {
+app.post('/add-event', imageUpload.single('image'), processImageJpg, (req, res) => {
   const {
     title,
     description,
     datetime,
+    endtime,
     location,
     link = '',
     cost,
@@ -1597,8 +1837,8 @@ app.post('/add-event', imageUpload.single('image'), processImage, (req, res) => 
   const imageFilename = req.savedFilename;
 
   const insert = db.prepare(`
-    INSERT INTO events (title, description, datetime, location, image, link, cost, type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO events (title, description, datetime, location, image, link, cost, type, endtime)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = insert.run(
@@ -1865,15 +2105,15 @@ app.get("/shows/2023-esto-perpetua", (req,res) => {
   return res.render("show-2023", {events ,center})
 })
 
-app.get("/update-emergency/:id", mustBeLoggedIn, (req,res) => {
+app.get("/update-emergency", mustBeLoggedIn, (req,res) => {
   const getEmergencyStatement = db.prepare("SELECT * FROM emergencyContacts WHERE user_id = ?")
-  const emergencyContacts = getEmergencyStatement.all(req.params.id)
+  const emergencyContacts = getEmergencyStatement.all(req.user.userid)
 
   return res.render("update-emergency", {emergencyContacts})
 })
 
-app.post('/update-emergency/:userId', mustBeLoggedIn, (req, res) => {
-    const userId = parseInt(req.params.userId);
+app.post('/update-emergency', mustBeLoggedIn, (req, res) => {
+    const userId = parseInt(req.user.userid);
     const contacts = req.body.contacts; // This is an object keyed by ID
 
     const insertStmt = db.prepare(`
@@ -2115,54 +2355,583 @@ app.get("/add-form", mustBeAdmin, (req,res) => {
   return res.render("add-form")
 })
 
-app.post("/pay-behalf/:id", mustBeParent, (req,res) => {
-  const getChildStatement = db.prepare("SELECT * FROM users WHERE id = ? AND parentId = ?")
-  const child = getChildStatement.get(req.params.id,req.user.userid);
+app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
+  const getChildStatement = db.prepare(
+    "SELECT * FROM users WHERE id = ? AND parentId = ?"
+  );
+  const child = getChildStatement.get(req.params.id, req.user.userid);
 
-  if(!child)
-  {
-    return res.redirect("/parent-portal")
+  if (!child) {
+    return res.redirect("/parent-portal");
   }
 
-  
+  const tuitionAmount = Number(req.body.payment) * 100; // pennies (base tuition payment)
+  const processingFee = Math.round(tuitionAmount * 0.05); // 5% processing fee
+  const totalCharge = tuitionAmount + processingFee;      // Stripe total
 
-  const paid = req.body.payment * 100;
+  // Save the potential payment (store tuition and processing fee separately)
+  const insertPotential = db.prepare(
+    "INSERT INTO potential_payment (child_id, parent_id, amount, processing_fee, created_at) VALUES (?, ?, ?, ?, ?)"
+  );
+  const result = insertPotential.run(
+    child.id,
+    req.user.userid,
+    tuitionAmount,
+    processingFee,
+    Date.now()
+  );
+
+  const potentialPaymentId = result.lastInsertRowid;
+
+  // Create a Stripe Checkout Session
+  stripe.checkout.sessions
+    .create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Payment for a child's tuition/fees for The Boise Gems Drum & Bugle Corps.",
+            },
+            unit_amount: totalCharge,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/pay-behalf/success/${potentialPaymentId}`,
+      cancel_url: `${process.env.BASEURL}/pay-behalf/${child.id}`,
+    })
+    .then((session) => {
+      res.redirect(303, session.url);
+    })
+    .catch((err) => {
+      console.error("Stripe session error:", err);
+      res.redirect("/parent-portal");
+    });
+});
+
+// Success route — finalize payment
+app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
+  const getPotential = db.prepare(
+    "SELECT * FROM potential_payment WHERE id = ? AND parent_id = ?"
+  );
+  const potential = getPotential.get(req.params.potentialId, req.user.userid);
+
+  if (!potential) {
+    return res.redirect("/parent-portal");
+  }
+
+  const getChild = db.prepare("SELECT * FROM users WHERE id = ?");
+  const child = getChild.get(potential.child_id);
+
+  if (!child) {
+    return res.redirect("/parent-portal");
+  }
+
+  const paid = potential.amount; // pennies
   const alreadyPaid = Number(child.paid) + paid;
-  const left = Number(child.owed)-paid;
+  const left = Number(child.owed) - paid;
 
-  const updateStatement = db.prepare("UPDATE users SET paid = ?, owed = ? WHERE id = ?")
-  updateStatement.run(alreadyPaid, left, req.params.id)
+  const updateStatement = db.prepare(
+    "UPDATE users SET paid = ?, owed = ? WHERE id = ?"
+  );
+  updateStatement.run(alreadyPaid, left, child.id);
 
-  const paidString = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(paid / 100);
+  const paidString = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(paid / 100);
 
-  const addPaymentStatement = db.prepare("INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)")
-  addPaymentStatement.run(`Payment for ${child.firstname} ${child.lastname} by parent, ${req.user.firstname} ${req.user.lastname}`, `Parent ${req.user.firstname} ${req.user.lastname} paid for thier child, ${child.firstname} ${child.lastname} with an amount of ${paidString}.`, paid, "Stripe", Date.now(), child.id)
+  const addPaymentStatement = db.prepare(
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
+  );
+  addPaymentStatement.run(
+    `Payment for ${child.firstname} ${child.lastname} by parent, ${req.user.firstname} ${req.user.lastname}`,
+    `Parent ${req.user.firstname} ${req.user.lastname} paid for their child, ${child.firstname} ${child.lastname} with an amount of ${paidString}.`,
+    paid,
+    "Stripe",
+    Date.now(),
+    child.id
+  );
 
-const emailBody = `
-  <h1 style="text-align: center;">Payment Received!</h1>
-  <br/>
-  <p>
-    We have received a payment from ${req.user.firstname} ${req.user.lastname} for 
-    ${child.firstname} ${child.lastname}'s tuition. The amount paid was ${paidString}, 
-    being paid through Stripe on 
-    ${new Date(Date.now()).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })}
-  </p>
-`;
+  // Delete potential payment entry (to prevent reuse)
+  const deletePotential = db.prepare("DELETE FROM potential_payment WHERE id = ?");
+  deletePotential.run(req.params.potentialId);
 
+  // Send emails
+  const emailBody = `
+    <h1 style="text-align: center;">Payment Received!</h1>
+    <br/>
+    <p>
+      We have received a payment from ${req.user.firstname} ${req.user.lastname} for 
+      ${child.firstname} ${child.lastname}'s tuition. The amount paid was ${paidString}, 
+      being paid through Stripe on 
+      ${new Date(Date.now()).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}
+    </p>
+  `;
 
-  sendEmail(req.user.email,"Payment Received!", emailBody)
-  sendEmail(MasterEmail,"Payment Received!", emailBody)
+  sendEmail(req.user.email, "Payment Received!", emailBody);
+  sendEmail(MasterEmail, "Payment Received!", emailBody);
 
-  return res.redirect("/payment-received")
-})
+  return res.redirect("/payment-received");
+});
 
 app.get("/payment-received", (req,res) => {
   return res.render("payment-received")
 })
+
+app.get("/make-payment", mustBeMember, (req,res) => {
+  const getUserStatement = db.prepare(
+    "SELECT * FROM users WHERE id = ?"
+  );
+  const member = getUserStatement.get(req.user.userid);
+
+  if (!member) {
+    return res.redirect("/parent-portal");
+  }
+
+  return res.render("make-payment", {member})
+})
+
+// User making their own payment
+app.post("/make-payment", mustBeLoggedIn, (req, res) => {
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
+  const user = getUserStatement.get(req.user.userid);
+
+  if (!user || user.id !== req.user.userid) {
+    // prevent paying for someone else
+    return res.redirect("/dashboard");
+  }
+
+  const tuitionAmount = Number(req.body.payment) * 100; // pennies (base tuition payment)
+  const processingFee = Math.round(tuitionAmount * 0.05); // 5% processing fee
+  const totalCharge = tuitionAmount + processingFee;
+
+  // Save the potential payment
+  const insertPotential = db.prepare(
+    "INSERT INTO potential_payment (user_id, amount, processing_fee, created_at) VALUES (?, ?, ?, ?)"
+  );
+  const result = insertPotential.run(user.id, tuitionAmount, processingFee, Date.now());
+  const potentialPaymentId = result.lastInsertRowid;
+
+  // Create a Stripe Checkout Session
+  stripe.checkout.sessions
+    .create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Payment for tuition/fees for The Boise Gems Drum & Bugle Corps.",
+            },
+            unit_amount: totalCharge,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/make-payment/success/${potentialPaymentId}`,
+      cancel_url: `${process.env.BASEURL}/make-payment`,
+    })
+    .then((session) => {
+      res.redirect(303, session.url);
+    })
+    .catch((err) => {
+      console.error("Stripe session error:", err);
+      res.redirect("/dashboard");
+    });
+});
+
+
+// Success route — finalize payment for the user
+app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
+  const getPotential = db.prepare(
+    "SELECT * FROM potential_payment WHERE id = ? AND user_id = ?"
+  );
+  const potential = getPotential.get(req.params.potentialId, req.user.userid);
+
+  if (!potential) {
+    return res.redirect("/dashboard");
+  }
+
+  const getUser = db.prepare("SELECT * FROM users WHERE id = ?");
+  const user = getUser.get(potential.user_id);
+
+  if (!user) {
+    return res.redirect("/dashboard");
+  }
+
+  const paid = potential.amount; // pennies
+  const alreadyPaid = Number(user.paid) + paid;
+  const left = Number(user.owed) - paid;
+
+  const updateStatement = db.prepare(
+    "UPDATE users SET paid = ?, owed = ? WHERE id = ?"
+  );
+  updateStatement.run(alreadyPaid, left, user.id);
+
+  const paidString = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(paid / 100);
+
+  const addPaymentStatement = db.prepare(
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
+  );
+  addPaymentStatement.run(
+    `Payment by ${user.firstname} ${user.lastname}`,
+    `${user.firstname} ${user.lastname} made a payment of ${paidString} towards their tuition/fees.`,
+    paid,
+    "Stripe",
+    Date.now(),
+    user.id
+  );
+
+  // Delete potential payment entry (to prevent reuse)
+  const deletePotential = db.prepare("DELETE FROM potential_payment WHERE id = ?");
+  deletePotential.run(req.params.potentialId);
+
+  // Send emails
+  const emailBody = `
+    <h1 style="text-align: center;">Payment Received!</h1>
+    <br/>
+    <p>
+      We have received a payment from ${user.firstname} ${user.lastname}. 
+      The amount paid was ${paidString}, paid through Stripe on 
+      ${new Date(Date.now()).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}
+    </p>
+  `;
+
+  sendEmail(user.email, "Payment Received!", emailBody);
+  sendEmail(MasterEmail, "Payment Received!", emailBody);
+
+  return res.redirect("/payment-received");
+});
+
+app.get("/update-profile-photo", mustBeMember, (req,res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+
+  if(!member){
+    return res.redirect("/")
+  }
+
+  return res.render("update-pfp", {member})
+})
+
+app.post(
+  "/update-profile-photo",
+  mustBeLoggedIn,
+  imageUpload.single("photo"),
+  processImage,
+  (req, res) => {
+    try {
+      if (!req.savedFilename) return res.status(400).send("Image processing failed");
+
+      const imgPath = `/img/publicupload/${req.savedFilename}`;
+      const updateStmt = db.prepare("UPDATE users SET img = ? WHERE id = ?");
+      updateStmt.run(imgPath, req.user.userid);
+
+      res.redirect("/member-portal");
+    } catch (err) {
+      console.error("Failed to save image:", err);
+      res.status(500).send("Failed to save image");
+    }
+  }
+);
+
+app.get("/donate", (req,res) => {
+  return res.render("donate")
+})
+
+// POST /donate - create potential donation and redirect to Stripe Checkout
+app.post("/donate", async (req, res) => {
+  try {
+    // read donor info from form
+    const donorEmail = String(req.body.email || "").trim();
+    const donorName  = String(req.body.name || "").trim();
+    const donorMsg   = req.body.message ? String(req.body.message).trim() : "";
+
+    if (!donorEmail || !donorName || !req.body.payment) {
+      return res.status(400).send("Missing required donation fields.");
+    }
+
+    // payment input expected in dollars (e.g. 25.00)
+    const amountCents = Math.round(Number(req.body.payment) * 100);
+    if (!Number.isFinite(amountCents) || amountCents < 50) { // minimum $0.50 per your form
+      return res.status(400).send("Invalid donation amount.");
+    }
+
+    // processing fee: 5%
+    const processingFee = Math.round(amountCents * 0.05);
+    const totalCharge = amountCents + processingFee;
+
+    // insert a potential_donation row
+    const insertPotential = db.prepare(
+      `INSERT INTO potential_donation
+        (email, name, message, amount, processing_fee, total_charge, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    const result = insertPotential.run(
+      donorEmail,
+      donorName,
+      donorMsg,
+      amountCents,
+      processingFee,
+      totalCharge,
+      Date.now()
+    );
+    const potentialId = result.lastInsertRowid;
+
+    // create Stripe Checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Donation to The Boise Gems Drum & Bugle Corps",
+              description: donorMsg || `Donation by ${donorName}`
+            },
+            unit_amount: totalCharge
+          },
+          quantity: 1
+        }
+      ],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
+      cancel_url: `${process.env.BASEURL}/donate`
+    });
+
+    // store the stripe session id for reference
+    const updateSession = db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?");
+    updateSession.run(session.id, potentialId);
+
+    // redirect user to Stripe Checkout
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error("Donate route error:", err);
+    return res.status(500).send("Failed to create Stripe session");
+  }
+});
+
+// GET /donate/success/:potentialId - finalize donation after successful checkout
+app.get("/donate/success/:potentialId", async (req, res) => {
+  try {
+    const potentialId = Number(req.params.potentialId);
+    if (!potentialId) return res.redirect("/donate");
+
+    const getPotential = db.prepare("SELECT * FROM potential_donation WHERE id = ?");
+    const potential = getPotential.get(potentialId);
+
+    if (!potential) {
+      return res.redirect("/donate");
+    }
+
+    // (Optional) You could verify payment with Stripe API here using session id,
+    // but for simplicity we assume returning from Stripe Checkout means success.
+    // If you want bulletproof guarantee, use Stripe webhooks (recommended).
+
+    // Move the potential row into finalized donations
+    const insertDonation = db.prepare(
+      `INSERT INTO donations
+        (email, name, message, amount, processing_fee, total_charged, stripe_session_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insertDonation.run(
+      potential.email,
+      potential.name,
+      potential.message,
+      potential.amount,
+      potential.processing_fee,
+      potential.total_charge,
+      potential.stripe_session_id,
+      Date.now()
+    );
+
+    // Also add to paymentHistory table for consistent transaction records.
+    const paidString = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(potential.amount / 100);
+    const processingString = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(potential.processing_fee / 100);
+    const totalString = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(potential.total_charge / 100);
+
+    const title = `Donation by ${potential.name}`;
+    const description = `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "—"}`;
+
+    const insertHistory = db.prepare(
+      "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    // user_id NULL because donor may not be a member
+    insertHistory.run(title, description, potential.total_charge, "Stripe", Date.now(), null);
+
+    // delete potential_donation row (prevent reuse)
+    const deletePotential = db.prepare("DELETE FROM potential_donation WHERE id = ?");
+    deletePotential.run(potentialId);
+
+    // Send receipt email to donor
+    const emailBody = `
+      <h1 style="text-align:center;">Thank you for your donation!</h1>
+      <p>Dear ${potential.name},</p>
+      <p>Thank you for your generous donation to The Boise Gems Drum & Bugle Corps.</p>
+      <ul>
+        <li>Donation: ${paidString}</li>
+        <li>Processing fee: ${processingString}</li>
+        <li><strong>Total charged: ${totalString}</strong></li>
+      </ul>
+      <p>Your optional message: ${potential.message ? `<em>${potential.message}</em>` : "No message provided."}</p>
+      <p>Date: ${new Date(Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>
+      <p>Sincerely,<br/>The Boise Gems Drum & Bugle Corps</p>
+    `;
+
+    // sendEmail function expected to exist
+    sendEmail(potential.email, "Thank you for your donation — Boise Gems", emailBody);
+    sendEmail(MasterEmail, "Donation Received", `Donation received: ${title} — ${totalString}`);
+
+    // redirect donor to a thank-you page
+    return res.redirect("/donate/thank-you");
+  } catch (err) {
+    console.error("Donation success handler error:", err);
+    return res.status(500).send("Failed to finalize donation");
+  }
+});
+
+app.get("/donate/thank-you", (req,res) => {
+  return res.render("donation-thank-you")
+})
+
+app.get("/update-address", mustBeMember, (req,res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+
+  if(!member)
+    return res.redirect("/")
+
+
+  return res.render("change-address", {member})
+})
+
+app.post("/change-address", mustBeMember, (req,res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+
+  if(!member)
+    return res.redirect("/")
+
+
+  db.prepare("UPDATE users SET address = ? WHERE id = ?").run(req.body.address, req.user.userid)
+  return res.redirect("/member-portal")
+})
+
+app.get("/allergy-info", mustBeMember, (req,res) => {
+  const allergyInfo = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid)
+
+  if(!allergyInfo)
+    return res.render("set-allergies", {allergyInfo: {no_allergies: 0, allergies: ""}})
+
+  return res.render("set-allergies", {allergyInfo})
+})
+
+app.post("/set-allergies", mustBeLoggedIn, (req,res) => {
+  const no_allergies = req.body.no_allergies || 0;
+  const allergies = req.body.allergies;
+
+  const allergyExists = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid)
+
+  if(allergyExists)
+    db.prepare("UPDATE allergies SET no_allergies = ?, allergies = ? WHERE user_id = ?").run(no_allergies,allergies,req.user.userid)
+  else
+    db.prepare("INSERT INTO allergies (no_allergies, allergies, user_id) VALUES (?,?,?)").run(no_allergies,allergies,req.user.userid)
+
+  req.session.flashMessage = "Updated allergy information"
+  return res.redirect("/member-portal")
+})
+
+app.get("/set-materials", mustBeStaff, (req,res) => {
+  return res.render("set-materials")
+})
+
+
+app.post(
+  "/set-materials",
+  mustBeStaff,
+  pdfUpload.fields([
+    { name: "brass", maxCount: 1 },
+    { name: "drumline", maxCount: 1 },
+    { name: "guard", maxCount: 1 },
+    { name: "front", maxCount: 1 },
+  ]),
+  (req, res) => {
+    try {
+      const files = req.files || {};
+
+      // map form field names to table section names
+      const sectionMap = {
+        brass: "brass",
+        drumline: "drumline",
+        guard: "guard",
+        front: "front ensemble",
+      };
+
+      // Ensure upload dir exists (multer should already create it, but safe)
+      const uploadDir = path.join(__dirname, "pdf", "publicpdf");
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+      Object.keys(sectionMap).forEach((field) => {
+        // only handle fields that were uploaded
+        if (!files[field] || !files[field][0]) return;
+
+        const file = files[field][0];
+        const section = sectionMap[field];
+        const pdfPath = `/pdf/publicpdf/${file.filename}`; // what we store in DB
+
+        // Get existing row (if any) including the old pdf path
+        const checkStmt = db.prepare("SELECT id, pdf FROM materials WHERE section = ?");
+        const existing = checkStmt.get(section);
+
+        if (existing) {
+          // Delete previous PDF file (if present) to avoid orphaned files
+          if (existing.pdf) {
+            try {
+              // existing.pdf is stored like '/pdf/publicpdf/oldfile.pdf'
+              const relative = existing.pdf.replace(/^\/+/, ""); // remove leading slash
+              const oldFullPath = path.join(__dirname, "public", relative);
+              if (fs.existsSync(oldFullPath)) {
+                fs.unlinkSync(oldFullPath);
+              }
+            } catch (unlinkErr) {
+              // Log and continue — don't fail the whole request for unlink errors
+              console.error("Failed to delete old PDF:", unlinkErr);
+            }
+          }
+
+          // Update the DB row with the new path
+          const updateStmt = db.prepare("UPDATE materials SET pdf = ? WHERE section = ?");
+          updateStmt.run(pdfPath, section);
+        } else {
+          // Insert new row
+          const insertStmt = db.prepare("INSERT INTO materials (section, pdf) VALUES (?, ?)");
+          insertStmt.run(section, pdfPath);
+        }
+      });
+
+      req.session.flashMessage = "Audition materials updated successfully.";
+      return res.redirect("/member-portal");
+    } catch (err) {
+      console.error("Error in /set-materials:", err);
+      req.session.flashMessage = "There was an error uploading materials.";
+      return res.redirect("/set-materials");
+    }
+  }
+);
+
 
 app.use((req, res) => {
     res.status(404).render('404');

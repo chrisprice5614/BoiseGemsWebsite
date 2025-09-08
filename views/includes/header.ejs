@@ -6,6 +6,7 @@
 <a href="/shows">Shows</a>
 <a href="/contact">Contact</a>
 <a href="/donate">Donate</a>
+<a href="/calendar">Calendar</a>
 `
 
 if(user)
@@ -30,6 +31,8 @@ else
             <a href="/admin-portal"><button>Admin Portal</button></a>
         <% } else if(user.parent) { %>
             <a href="/parent-portal"><button>Parent Portal</button></a>
+        <% } else if(user.staff) { %>
+            <a href="/member-portal"><button>Staff Portal</button></a>
         <% } else if(user) { %>
             <a href="/member-portal"><button>Member Portal</button></a>
         <% } %>

@@ -83,7 +83,9 @@
             </p>
             <br>
             <div style="text-align: center;">
+                <% if(!bypass) {%>
                 <p>For commitment purposes, we require a $50 down payment before signing the contract.</p>
+                <% } %>
                 <br>
                 <a href="/sign-contract/<%= contractExtension.id %>"><button>Make Payment and Sign</button></a>
             </div>

@@ -1,0 +1,49 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <h1 style="text-align: center;">Make a donation</h1>
+            <br>
+            <p>Donations help keep the corps functioning. Every donation goes to feeding the corps, new instruments, transportation, and other expenses that help the corps.</p>
+            <br>
+            <form action="/donate" method="POST">
+                <label for="email">Your Email</label>
+                <input type="email" name="email" placeholder="email@website.com" required>
+                <br>
+                <br>
+                <label for="name">Your Name</label>
+                <input type="text" name="name" required placeholder="First and Last Name">
+                <br>
+                <br>
+                <label for="message">Optional Message</label>
+                <textarea name="message" id="message" placeholder="Your message here..."></textarea>
+                <br>
+                <br>
+                <label for="payment">Enter Amount to Donate</label>
+                <input type="number" name="payment" step="0.01" min="0.50" max="999999" value="" required/>
+                <br>
+                <br>
+                <small>A 5% processing fee is added to all transactions</small>
+                <br>
+                <div style="text-align: center;">
+                    <button>Make Donation</button>
+                </div>
+            </form>
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

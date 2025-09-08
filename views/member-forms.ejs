@@ -23,6 +23,7 @@
                     <div style="display: grid; grid-template-columns: 3fr 1fr; padding: 12px;">
                         <div>
                             <h2><%= form.title %></h2>
+                            
                         </div>
                         <div style="text-align: right;">
                             <% if(form.uploaded) { %>
@@ -32,10 +33,11 @@
                                 <% if(isMinor) { %>
                                     <button disabled>Upload Form</button>
                                     <br>
+                                    
                                     <br>
                                     <p style="text-align: left; padding: 4px;">You are under 18. You must have a parent fill out the form.</p>
                                 <% } else { %>
-                                    <% if(typeof parent === "undefined") { %>
+                                    <% if((parent === "undefined")||(parent == 0)) { %>
                                         <a href="/upload-form/<%= form.id %>"><button>Upload Form</button></a>
                                     <% } else { %>
                                         <a href="/upload-form-parent/<%= form.id %>/<%= parent %>"><button>Upload Form</button></a>

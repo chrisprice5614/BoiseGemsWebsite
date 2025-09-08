@@ -12,13 +12,13 @@
     <main>
         <div style="padding: 8px">
             <br>
-            <h1 style="text-align: center;">Pay for <%= child.firstname %> <%= child.lastname %></h1>
+            <h1 style="text-align: center;">Pay tuition/fees</h1>
             <br>
-            <h2 style="text-align: center;">Total Amount Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></h2>
+            <h2 style="text-align: center;">Total Amount Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(member.owed / 100) %></h2>
             <br>
-            <form action="/pay-behalf/<%= child.id %>" method="POST">
+            <form action="/make-payment" method="POST">
                 <label for="payment">Enter Amount to Pay</label>
-                <input type="number" name="payment" step="0.01" min="0.50" max="<%= (child.owed / 100).toFixed(2) %>" autocomplete="off" placeholder="<%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %>" value="" required/>
+                <input type="number" name="payment" step="0.01" min="0.50" max="<%= (member.owed / 100).toFixed(2) %>" autocomplete="off" placeholder="<%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(member.owed / 100) %>" value="" required/>
                 <br>
                 <br>
                 <small>A 5% processing fee is added to all transactions</small>

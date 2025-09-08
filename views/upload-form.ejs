@@ -31,7 +31,7 @@
             <% } %>
             <br>
             <br>
-            <form  <% if(typeof parent === "undefined") { %>action="/upload-form/<%= thisForm.id %>"<% } else { %> action="/upload-form-parent/<%= thisForm.id %>/<%= parent %>" <% } %> enctype="multipart/form-data" method="POST">
+            <form  <% if((typeof parent === "undefined")||(parent == 0)) { %>action="/upload-form/<%= thisForm.id %>"<% } else { %> action="/upload-form-parent/<%= thisForm.id %>/<%= parent %>" <% } %> enctype="multipart/form-data" method="POST">
                 <h2 style="text-align: center;">Sign <% if(thisForm.upload) {%> and Upload <% } %> Form</h2>
                 <br>
                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 5%;">

@@ -1,0 +1,39 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <h1 style="text-align: center;">Allergy Information</h1>
+            <br>
+            <form action="/set-allergies" method="POST">
+                <div style="align-items: center;">
+                    <label for="no_allergies">Check box for No Allergies</label>
+                    <input type="checkbox" name="no_allergies" <% if(allergyInfo.no_allergies) {%> checked <% } %>>
+                </div>
+                <br>
+                <br>
+                <label for="allergies">List allergies</label>
+                <textarea name="allergies" id="allergies" placeholder="Tree nuts, Bees, Mango..."><%= allergyInfo.allergies %></textarea>
+                <br>
+                <br>
+                <div style="text-align: center;">
+                    <button>Save Allergy Information</button>
+                </div>
+            </form>
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

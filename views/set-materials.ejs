@@ -1,0 +1,49 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 8px">
+            <br>
+            <h1 style="text-align: center;">Set Materials</h1>
+            <br>
+            <h2 style="text-align: center;">Set audition materials for each section</h2>
+            <br>
+            <form action="/set-materials" method="POST" enctype="multipart/form-data">
+                <label for="upload-brass">Brass Audition Materials Upload</label>
+                <input type="file" name="brass" value="" accept="application/pdf"/>
+                <br>
+                <br>
+                <label for="upload-drumline">Drumline Audition Materials Upload</label>
+                <input type="file" name="drumline" value="" accept="application/pdf"/>
+                <br>
+                <br>
+                <label for="upload-guard">Guard Audition Materials Upload</label>
+                <input type="file" name="guard" value="" accept="application/pdf"/>
+                <br>
+                <br>
+                <label for="upload-front">Front Ensemble Audition Materials Upload</label>
+                <input type="file" name="front" value="" accept="application/pdf"/>
+                <br>
+                <br>
+                <small>Only PDFs you upload will be set. Uploading a PDF will <i>overwrite</i> previous PDF for the same section.</small>
+                <br>
+                <div style="text-align: center;">
+                    <button>Set Materials</button>
+                </div>
+            </form>
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

@@ -3115,6 +3115,10 @@ app.post(
       });
 
       req.session.flashMessage = "Audition materials updated successfully.";
+
+      if(req.admin)
+        return res.redirect("/admin-portal")
+
       return res.redirect("/member-portal");
     } catch (err) {
       console.error("Error in /set-materials:", err);
@@ -3827,6 +3831,25 @@ app.post("/whistleblower", async (req, res) => {
   }
 });
 
+// PUBLIC: audition materials
+app.get("/view-materials", (req, res) => {
+  // Normalize sections we care about (keys must match what you store in DB)
+  const SECTIONS = ["brass", "drumline", "guard", "front ensemble"];
+
+  // Pull all materials (table is already created by your code)
+  const rows = db.prepare("SELECT section, pdf FROM materials").all();
+
+  // Build a simple { sectionKey: '/pdf/publicpdf/xxx.pdf' | null }
+  const materials = Object.fromEntries(SECTIONS.map(s => [s, null]));
+  for (const r of rows) {
+    const key = String(r.section || "").toLowerCase().trim();
+    if (materials.hasOwnProperty(key) && r.pdf) {
+      materials[key] = r.pdf; // e.g. "/pdf/publicpdf/2025-audition-brass.pdf"
+    }
+  }
+
+  res.render("view-materials", { materials });
+});
 
 
 

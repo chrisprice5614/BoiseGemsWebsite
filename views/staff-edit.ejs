@@ -57,6 +57,24 @@
       <textarea name="bio" rows="6"><%= staffer.bio %></textarea>
     </div>
 
+    <div class="duple-to-single">
+    <div>
+        <label>Category</label>
+        <select name="category">
+        <% categories.forEach(c => { %>
+            <option value="<%= c %>" <%= c===staffer.category ? 'selected' : '' %>><%= c %></option>
+        <% }) %>
+        </select>
+    </div>
+
+    <div>
+        <label>Display Order</label>
+        <input type="number" name="sort_order" value="<%= Number.isFinite(Number(staffer.sort_order)) ? staffer.sort_order : 0 %>" min="0" step="1">
+        <small class="muted">Lower numbers show first within the category.</small>
+    </div>
+    </div>
+
+
     <div style="margin-top:12px;">
       <button type="submit">Save</button>
       <a href="/staff-admin"><button type="button">Cancel</button></a>

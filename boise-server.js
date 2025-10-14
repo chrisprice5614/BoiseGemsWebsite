@@ -3651,8 +3651,8 @@ app.get("/staff/:id/edit", mustBeAdmin, (req, res) => {
 });
 
 app.post("/staff/:id/edit", mustBeAdmin, imageUpload.single("image"), processImageJpgOptional, (req, res) => {
-  const id       = Number(req.params.id);
-  const row      = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
+  const id  = Number(req.params.id);
+  const row = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
   if (!row) return res.redirect("/staff-admin");
 
   const first    = String(req.body.first || "").trim();
@@ -3660,30 +3660,43 @@ app.post("/staff/:id/edit", mustBeAdmin, imageUpload.single("image"), processIma
   const position = String(req.body.position || "").trim();
   const category = String(req.body.category || "").trim() || "Other";
   const bio      = String(req.body.bio || "").trim();
-  const now      = Date.now();
 
   if (!first || !last || !position) {
     req.session.flashMessage = "First, Last, and Position are required.";
     return res.redirect(`/staff/${id}/edit`);
   }
 
-  const sortOrderInt = Number.isFinite(Number(req.body.sort_order))
-    ? parseInt(req.body.sort_order, 10)
-    : (Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0);
+  // Decide sort_order:
+  // - If user typed one, use it.
+  // - If category changed and no order was provided, push to end of new category.
+  // - Else keep existing.
+  const sortRaw = req.body.sort_order;
+  let sortOrderInt;
 
-  // If no new image uploaded, keep existing
+  if (sortRaw !== undefined && String(sortRaw).trim() !== "" && Number.isFinite(Number(sortRaw))) {
+    sortOrderInt = parseInt(sortRaw, 10);
+  } else if (category !== row.category) {
+    const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), 0) AS maxo FROM staff WHERE category = ?`).get(category);
+    sortOrderInt = (maxRow?.maxo || 0) + 1;
+  } else {
+    sortOrderInt = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0;
+  }
+
+  // Image: keep existing unless a new one was uploaded
   const image = req.savedFilename ? req.savedFilename : row.image;
 
   const slug = slugify(`${first} ${last}`);
+  const now  = Date.now();
+
   db.prepare(`
     UPDATE staff
-    SET first=?, last=?, position=?, category=?, bio=?, image=?, sort_order=?, slug=?
-    WHERE id=?
-  `).run(first, last, position, category, bio, image, sortOrderInt, slug, id);
-
+       SET first=?, last=?, position=?, category=?, bio=?, image=?, sort_order=?, slug=?, updated_at=?
+     WHERE id=?
+  `).run(first, last, position, category, bio, image, sortOrderInt, slug, now, id);
 
   res.redirect("/staff-admin");
 });
+
 
 // Delete staff
 app.post("/staff/:id/delete", mustBeAdmin, (req, res) => {

@@ -36,7 +36,9 @@
             <a href="/">Home</a><br>
             <a href="/news">News</a><br>
             <a href="/contact">Contact</a><br>
-            <a href="/whistleblower">Whistleblower</a><br>
+            <% if(user) { %>
+                <a href="/whistleblower">Whistleblower</a><br>
+            <% } %>
         </div>
         <div>
             <a href="/about">About</a><br>

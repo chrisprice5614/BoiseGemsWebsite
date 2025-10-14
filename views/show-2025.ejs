@@ -4,10 +4,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Boise Gems</title>
     <%- include("includes/head") %>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+            #map { height: 50vh; width: 100%; }
+             body, html { margin: 0; padding: 0; }
+        </style>
 </head>
 <body>
     <header>
         <%- include("includes/header") %>
+        
     </header>
     <main>
         <div style="padding: 10%; text-align: center; background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; color: white; text-shadow: 0px 0px 4px #000;">
@@ -39,6 +45,179 @@
                     <img src="/img/shows/2025/d1.png" alt="First D" width="100%" class="animate-images">
                 </div>
             </div>
+        </div>
+        <br>
+        <div style="padding: 32px; font-size: large;">
+            <div style="margin: 0px 16px; padding: 8px; ">
+                <iframe src="https://www.youtube.com/embed/hs6ZFbIEZlM" style="aspect-ratio: 16/9; width: 100%; border-radius: 16px; box-shadow: 0px 4px 12px rgba(0,0,0,0.4);"></iframe>
+            </div>
+            <br>
+            <p>'The Animated’ — an original production that explores the creative process inside the human mind.
+            <br><br>
+            As the show unfolds, you'll journey from the blank slate of Void Mind, to the first spark of Inspiration. Through the chaos of Brainstorm, and the quiet of Introspection, the performers bring thoughts to life — finally arriving at Rendering, where scattered ideas converge into a fully realized vision.
+            <br><br>
+            Told through motion, color, sound, and energy — ‘The Animated’ captures the exhilarating and emotional process of turning fragments of thought into living, breathing art.</p>
+            <br>
+            <br>
+            <div class="fade-in">
+                <h1 style="text-align: center;">Music</h1>
+                <br>
+                <h2 style="text-align: center;"><b>Colored Shards</b></h2>
+                <p style="text-align: center;"><i>Cooper Phillips</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Diavolo</b></h2>
+                <p style="text-align: center;"><i>Yugo Kanno</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Vogel im Käfig</b></h2>
+                <p style="text-align: center;"><i>Hiroyuki Sawano</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Married Life</b></h2>
+                <p style="text-align: center;"><i>Michael Giacchino</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>AHA!</b></h2>
+                <p style="text-align: center;"><i>Imogen Heap</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Test Drive</b></h2>
+                <p style="text-align: center;"><i>John Powell</i></p>
+            </div>
+            <br>
+            <br>
+            <h1 style="font-size: clamp(2rem, 5vw, 4rem); text-align: center; font-weight: 700; text-transform: uppercase;">Performances</h1>
+            <br>
+            <div id="map"></div>
+
+            <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+            <script>
+                const events = <%- JSON.stringify(events) %>;
+
+                const map = L.map('map').setView([<%- center[0] %>, <%- center[1] %>], 5); // Centered on USA
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                const latlngs = [];
+
+                events.forEach(event => {
+                const marker = L.marker(event.coords).addTo(map);
+                marker.bindPopup(`<b>${event.location}</b><br>${event.date}`);
+                latlngs.push(event.coords);
+                });
+
+                // Draw polyline connecting all events
+                L.polyline(latlngs, {
+                color: 'purple',
+                weight: 4,
+                opacity: 0.7
+                }).addTo(map);
+            </script>
+            <br>
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #111;">June 30th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #111;">Kennewick, WA</h2>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/kennewick-1.jpg" alt="First picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/kennewick-2.jpg" alt="Second picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/kennewick-3.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/kennewick-4.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #111;">July 2nd</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #111;">Seattle, WA</h2>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/photos/boise-gems-09.jpg" alt="First picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/photos/boise-gems-12.jpg" alt="Second picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/photos/boise-gems-15.jpg" alt="Third picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/photos/boise-gems-14.jpg" alt="Fourth picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #111;">July 3rd</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #111;">Hillsboro, OR</h2>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/oregon-1.jpg" alt="First picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/oregon-2.jpg" alt="Second picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/oregon-3.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/oregon-4.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #111;">July 4th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #111;">Boise, ID</h2>
+                    <p style="text-shadow: 0px 0px 8px #111;"><i>Parade!</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/photos/boise-gems-01.jpg" alt="First picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/animated.png'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #111;">July 5th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #111;">Boise, ID</h2>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/boise-show-1.jpg" alt="First picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/boise-show-2.jpg" alt="Second picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/boise-show-3.jpg" alt="Third picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/boise-show-4.jpg" alt="Third picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2025/boise-show-5.jpg" alt="Third picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+            <br>
         </div>
     </main>
     <footer>

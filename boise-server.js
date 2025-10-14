@@ -18,7 +18,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { verify } = require("crypto")
 
 
-const MasterEmail = "chrisprice5614@gmail.com"
+const MasterEmail = "theboisegems@gmail.com"
 const online = true;
 
 function generateCustomFilename() {
@@ -175,7 +175,7 @@ async function sendEmail(to, subject, html) {
 
 
     let info = await transporter.sendMail({
-        from: '"Chris Price Music" <info@chrispricemusic.net>',
+        from: '"The Boise Gems" <theboisegems@gmail.com>',
         to: to,
         subject: subject,
         html: `
@@ -661,6 +661,7 @@ app.use(session({
   saveUninitialized: true
 }));
 
+
 function generateCode(length = 4){
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890'
   let code = '';
@@ -790,6 +791,8 @@ app.use(function (req, res, next) {
     res.locals.admin = req.admin;
     res.locals.parent = req.parent;
     res.locals.errors = errors;
+
+    res.locals.RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || "";
 
     next()
 })
@@ -1518,21 +1521,52 @@ app.get('/contact', (req,res) => {
 
 
 
-app.post("/contact", (req,res) => {
-  const name = req.body.name;
-  const email = req.body.email;
-  const message = req.body.content;
+app.post("/contact", async (req,res) => {
+  const name = String(req.body.name || "").trim();
+  const email = String(req.body.email || "").trim();
+  const message = String(req.body.content || "").trim();
+  const token = req.body["g-recaptcha-response"];
 
-  const html =`
-  <h1>Message from ${name}</h1>
-  <p>${message}</p>
-  <p>${name}'s email: ${email}</p>
-  `
+  // Basic guards
+  if (!name || !email || !message) {
+    return res.status(400).render("message", { message: "Please complete all fields." });
+  }
+  if (!token) {
+    return res.status(400).render("message", { message: "Captcha failed. Please try again." });
+  }
 
-  sendEmail(MasterEmail,"Contact Submission Received", html)
+  try {
+    // Verify with Google
+    const verifyURL = "https://www.google.com/recaptcha/api/siteverify";
+    const params = new URLSearchParams({
+      secret: process.env.RECAPTCHA_SECRET || "",
+      response: token,
+      remoteip: req.ip || ""
+    });
 
-  return res.render("message", {message: "Thank you! Your message has been sent and we'll get back to you soon!"})
-})
+    const { data } = await axios.post(verifyURL, params);
+    // data: { success: boolean, challenge_ts, hostname, ... }
+
+    if (!data || !data.success) {
+      return res.status(400).render("message", { message: "Captcha verification failed. Please try again." });
+    }
+
+    // If OK, send email
+    const html = `
+      <h1>Message from ${name}</h1>
+      <p>${message}</p>
+      <p>${name}'s email: ${email}</p>
+    `;
+
+    await sendEmail(MasterEmail,"Contact Submission Received", html);
+
+    return res.render("message", { message: "Thank you! Your message has been sent and we'll get back to you soon!" });
+  } catch (err) {
+    console.error("Contact captcha verify/send error:", err);
+    return res.status(500).render("message", { message: "Something went wrong. Please try again in a moment." });
+  }
+});
+
 
 app.post("/change-membership/:id", mustBeAdmin, (req,res) => {
   const userId = req.params.id;
@@ -2118,7 +2152,22 @@ app.get("/send-message/:id", mustBeAdmin, (req,res) => {
 })
 
 app.get("/shows/2025-the-animated", (req,res) => {
-  res.render("show-2025")
+  const events = [
+    { date: '2025-06-30', location: 'Kennewick, WA' },
+    { date: '2025-07-02', location: 'Seattle, WA' },
+    { date: '2025-07-03', location: 'Hillsboro, OR' },
+    { date: '2025-07-05', location: 'Boise, ID' },
+  ];
+
+  // Attach coordinates to events
+  events.forEach(event => {
+    event.coords = coordinates[event.location];
+  });
+
+  const center = getGraphicCenter(events)
+
+
+  return res.render("show-2025", {events ,center})
 })
 
 app.post("/send-message/:id", mustBeAdmin, (req,res) => {
@@ -3703,6 +3752,68 @@ app.get("/staff/:slug", (req, res) => {
     }
   });
 });
+
+// GET /whistleblower
+app.get("/whistleblower", mustBeLoggedIn, (req, res) => {
+  return res.render("whistleblower");
+});
+
+// POST /whistleblower
+app.post("/whistleblower", async (req, res) => {
+  try {
+    const message = String(req.body.content || "").trim();
+    const followEmail = String(req.body.email || "").trim();
+    const token = req.body["g-recaptcha-response"];
+
+    // Required: message + captcha token
+    if (!message) {
+      return res.status(400).render("message", { message: "Please provide details about your concern." });
+    }
+    if (!token) {
+      return res.status(400).render("message", { message: "Captcha verification failed. Please try again." });
+    }
+
+    // Verify captcha
+    const verifyURL = "https://www.google.com/recaptcha/api/siteverify";
+    const params = new URLSearchParams({
+      secret: process.env.RECAPTCHA_SECRET || "",
+      response: token,
+      remoteip: req.ip || ""
+    });
+
+    const { data } = await axios.post(verifyURL, params);
+    if (!data || !data.success) {
+      return res.status(400).render("message", { message: "Captcha verification failed. Please try again." });
+    }
+
+    // Build email body (anonymous unless optional email provided)
+    const ip = req.ip || "unknown";
+    const ua = req.headers["user-agent"] || "unknown";
+    const when = new Date().toLocaleString("en-US", { year:"numeric", month:"long", day:"numeric", hour:"numeric", minute:"2-digit" });
+
+    const html = `
+      <h1>Whistleblower Report</h1>
+      <p><strong>Submitted:</strong> ${when}</p>
+      <p><strong>Anonymous:</strong> ${followEmail ? "No (follow-up email provided)" : "Yes"}</p>
+      ${followEmail ? `<p><strong>Follow-up Email:</strong> ${followEmail}</p>` : ""}
+      <hr/>
+      <p style="white-space:pre-wrap;">${message.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</p>
+      <hr/>
+      <p><small>IP: ${ip}</small></p>
+      <p><small>User-Agent: ${ua}</small></p>
+    `;
+
+    await sendEmail(MasterEmail, "Whistleblower Report — Boise Gems", html);
+
+    return res.render("message", {
+      message: "Thank you. Your whistleblower report has been submitted and will be investigated."
+    });
+  } catch (err) {
+    console.error("Whistleblower error:", err);
+    return res.status(500).render("message", { message: "Something went wrong. Please try again shortly." });
+  }
+});
+
 
 
 

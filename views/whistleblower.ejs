@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Whistleblower — Boise Gems</title>
+  <%- include("includes/head") %>
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <meta name="description" content="Anonymous whistleblower form for serious, emergency concerns at Boise Gems.">
+  <link rel="canonical" href="https://boisegems.org/whistleblower">
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main>
+  <div style="padding: 8px; max-width: 720px; margin: 0 auto;">
+    <br>
+    <h1 style="text-align:center;">Whistleblower</h1>
+    <p class="muted" style="line-height:1.6;">
+      This whistleblower form is for <strong>serious, emergency concerns</strong> only. Reports may be investigated and could
+      involve law enforcement. It exists to help keep the corps safe and ensure members have a safe environment free from harassment
+      by members or staff. Submissions are anonymous unless you choose to include a follow-up email.
+    </p>
+    <p class="muted" style="line-height:1.6;">
+      <em>NOTE:</em> If someone is in immediate danger, call 911.
+    </p>
+    <br>
+
+    <form action="/whistleblower" method="POST" novalidate>
+      <label for="content">Describe the situation (required)</label>
+      <textarea name="content" id="content" placeholder="Share details, dates/times, locations, names/roles if known…" required></textarea>
+      <br><br>
+
+      <label for="email">Follow-up email (optional)</label>
+      <input type="email" name="email" id="email" placeholder="you@example.com (optional)"/>
+      <small class="muted">Leave blank to remain anonymous.</small>
+      <br><br>
+
+      <div class="g-recaptcha" data-sitekey="<%= RECAPTCHA_SITE_KEY %>"></div>
+      <br>
+
+      <div style="text-align:center;">
+        <button type="submit">Submit Whistleblower Report</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

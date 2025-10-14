@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Add Staff — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+<div style="margin:12px; max-width:780px;">
+  <h1>Add Staff Member</h1>
+  <form action="/staff/new" method="POST" enctype="multipart/form-data">
+    <div class="duple-to-single">
+      <div>
+        <label>First Name</label>
+        <input type="text" name="first" required>
+      </div>
+      <div>
+        <label>Last Name</label>
+        <input type="text" name="last" required>
+      </div>
+    </div>
+
+    <div>
+      <label>Position/Title</label>
+      <input type="text" name="position" required placeholder="e.g., Program Coordinator">
+    </div>
+
+    <div class="duple-to-single">
+      <div>
+        <label>Category</label>
+        <select name="category">
+          <% categories.forEach(c => { %>
+            <option value="<%= c %>"><%= c %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div>
+        <label>Image (optional)</label>
+        <input type="file" name="image" accept="image/*">
+        <small class="muted">Default used if empty: /img/ui/gem.png</small>
+      </div>
+    </div>
+
+    <div>
+      <label>Short Bio</label>
+      <textarea name="bio" rows="6" placeholder="A short bio..."></textarea>
+    </div>
+
+    <div style="margin-top:12px;">
+      <button type="submit">Create</button>
+      <a href="/staff-admin"><button type="button">Cancel</button></a>
+    </div>
+  </form>
+</div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

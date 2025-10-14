@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Staff Admin — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main>
+<div style="margin:12px">
+  <h1>Staff Admin</h1>
+  <p><a href="/staff/new"><button>Add Staff Member</button></a></p>
+
+  <% if (Object.keys(grouped).length === 0) { %>
+    <p>No staff yet.</p>
+  <% } else { %>
+    <form action="/staff/reorder" method="POST">
+      <% Object.keys(grouped).forEach(cat => { %>
+        <section style="margin:16px 0; border:1px solid #eee; border-radius:10px; padding:12px;">
+          <h3 style="margin:0 0 8px;"><%= cat %></h3>
+
+          <div class="duple-to-single">
+            <% grouped[cat].forEach(s => { %>
+              <div class="card" style="padding:12px;">
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <img src="<%= s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png' %>"
+                       alt=""
+                       style="width:56px; height:56px; object-fit:cover; border-radius:8px;">
+                  <div style="flex:1">
+                    <div><b><%= s.first %> <%= s.last %></b></div>
+                    <div class="muted"><%= s.position %></div>
+                    <small class="muted">Order:
+                      <input name="order[<%= s.id %>]" type="number" value="<%= s.sort_order %>" style="width:72px;"/>
+                    </small>
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                    <a href="/staff/<%= s.id %>/edit"><button type="button">Edit</button></a>
+                    <button
+                        type="submit"
+                        formmethod="post"
+                        formaction="/staff/<%= s.id %>/delete"
+                        onclick="return confirm('Delete this staff member?')">
+                        Delete
+                    </button>
+                    </div>
+
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% }) %>
+
+      <div><button type="submit">Save Order</button></div>
+    </form>
+  <% } %>
+</div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

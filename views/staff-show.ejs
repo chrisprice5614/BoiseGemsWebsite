@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title><%= meta.title %></title>
+  <%- include("includes/head") %>
+
+  <meta name="description" content="<%= meta.description %>">
+  <link rel="canonical" href="<%= meta.url %>">
+  <meta property="og:type" content="profile">
+  <meta property="og:title" content="<%= meta.title %>">
+  <meta property="og:description" content="<%= meta.description %>">
+  <% if (meta.image) { %><meta property="og:image" content="<%= meta.image %>"><% } %>
+  <meta property="og:url" content="<%= meta.url %>">
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body style="background: #eee;">
+<header><%- include("includes/header") %></header>
+
+<!-- Feature image -->
+<section style="position:relative; overflow:hidden;">
+  <div style="height:44vh; min-height:280px; background:#222 url('/img/publicupload/<%= s.image || "/img/ui/gem.png" %>') center/cover;">
+    <div style="height:100%; background:linear-gradient(180deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,.6) 100%); display:flex; align-items:flex-end;">
+      <div style="padding:16px; width:100%; max-width:1100px; margin:0 auto; color:#fff;">
+        <h1 style="margin:0 0 6px;"><%= s.first_name %> <%= s.last_name %></h1>
+        <p style="margin:0; opacity:.95;"><%= s.position %> — <span class="muted" style="color:rgba(255,255,255,.85)"><%= s.category %></span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Content -->
+<section style="margin:12px;">
+  <div class="duple-to-single" style="gap:16px;">
+    <div style="margin:4px;">
+      <div class="card" style="padding:16px;">
+        <h3 style="margin:0 0 8px;">About <%= s.first_name %></h3>
+        <p style="white-space:pre-wrap; line-height:1.6;"><%= s.bio || "Bio coming soon." %></p>
+      </div>
+    </div>
+
+    <div style="margin:4px;">
+      <div class="card" style="padding:16px;">
+        <h3 style="margin:0 0 8px;">Quick Info</h3>
+        <ul style="list-style:none; padding:0; margin:0;">
+          <li style="padding:6px 0; border-top:1px solid #eee;"><b>Position:</b> <span><%= s.position %></span></li>
+          <li style="padding:6px 0; border-top:1px solid #eee;"><b>Category:</b> <span><%= s.category %></span></li>
+        </ul>
+        <br>
+        <a href="/about"><button>Back to Staff</button></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

@@ -620,6 +620,26 @@ const createTables = db.transaction(() => {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_news_created ON news(created_at DESC)`).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_news_slug ON news(slug)`).run();
 
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS staff (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first TEXT NOT NULL,
+        last  TEXT NOT NULL,
+        position TEXT NOT NULL,
+        category TEXT NOT NULL,          -- e.g., Design, Brass, Color-Guard, Percussion, Admin, Director
+        bio TEXT,                        -- short bio
+        image TEXT,                      -- filename in /public/img/publicupload ; NULL = use default
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        slug TEXT
+      )
+    `).run();
+
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_staff_category_order ON staff(category, sort_order ASC, last COLLATE NOCASE ASC)`).run();
+
+
+
 })
 
 createTables();
@@ -3498,6 +3518,193 @@ app.get("/join-corps", (req,res) => {
 app.get("/join-independent", (req,res) => {
   return res.render("join-independent")
 })
+
+// ---------- STAFF ADMIN ----------
+
+// Categories offered in the UI (you can change this list anytime)
+const STAFF_CATEGORIES = [
+  "Director",
+  "Admin",
+  "Design",
+  "Brass",
+  "Percussion",
+  "Color-Guard",
+  "Front Ensemble",
+  "Visual",
+  "Other"
+];
+
+// Admin hub: list by category with order numbers
+app.get("/staff-admin", mustBeAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT * FROM staff
+    ORDER BY category COLLATE NOCASE, sort_order ASC, last COLLATE NOCASE, first COLLATE NOCASE
+  `).all();
+
+  // group by category
+  const grouped = {};
+  for (const r of rows) {
+    const cat = r.category || "Other";
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(r);
+  }
+  res.render("staff-admin", { grouped, categories: STAFF_CATEGORIES });
+});
+
+// New staff form
+app.get("/staff/new", mustBeAdmin, (req, res) => {
+  res.render("staff-new", { categories: STAFF_CATEGORIES });
+});
+
+// Create staff
+app.post("/staff/new", mustBeAdmin, imageUpload.single("image"), processImageJpgOptional, (req, res) => {
+  const first    = String(req.body.first || "").trim();
+  const last     = String(req.body.last || "").trim();
+  const position = String(req.body.position || "").trim();
+  const category = (String(req.body.category || "").trim()) || "Other";
+  const bio      = String(req.body.bio || "").trim();
+
+  if (!first || !last || !position) {
+    req.session.flashMessage = "First, Last, and Position are required.";
+    return res.redirect("/staff/new");
+  }
+
+  // Use uploaded image if present; otherwise NULL (frontend can fall back to /img/ui/gem.png)
+  const imageOrNull = req.savedFilename ? req.savedFilename : null;
+
+  // If an explicit sort_order was provided, respect it; otherwise place next within category
+  const maxRow = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), 0) AS maxo FROM staff WHERE category = ?`
+  ).get(category);
+
+  const sortOrderInt = Number.isFinite(Number(req.body.sort_order))
+    ? parseInt(req.body.sort_order, 10)
+    : (maxRow?.maxo || 0) + 1;
+
+  const now = Date.now();
+  const slug = slugify(`${first} ${last}`);
+
+  db.prepare(`
+    INSERT INTO staff (first, last, position, category, bio, image, sort_order, created_at, updated_at, slug)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(first, last, position, category, bio, imageOrNull, sortOrderInt, now, now, slug);
+
+  res.redirect("/staff-admin");
+});
+
+
+// Edit staff
+app.get("/staff/:id/edit", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
+  if (!row) return res.redirect("/staff-admin");
+  res.render("staff-edit", { staffer: row, categories: STAFF_CATEGORIES });
+});
+
+app.post("/staff/:id/edit", mustBeAdmin, imageUpload.single("image"), processImageJpgOptional, (req, res) => {
+  const id       = Number(req.params.id);
+  const row      = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
+  if (!row) return res.redirect("/staff-admin");
+
+  const first    = String(req.body.first || "").trim();
+  const last     = String(req.body.last || "").trim();
+  const position = String(req.body.position || "").trim();
+  const category = String(req.body.category || "").trim() || "Other";
+  const bio      = String(req.body.bio || "").trim();
+  const now      = Date.now();
+
+  if (!first || !last || !position) {
+    req.session.flashMessage = "First, Last, and Position are required.";
+    return res.redirect(`/staff/${id}/edit`);
+  }
+
+  const sortOrderInt = Number.isFinite(Number(req.body.sort_order))
+    ? parseInt(req.body.sort_order, 10)
+    : (Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0);
+
+  // If no new image uploaded, keep existing
+  const image = req.savedFilename ? req.savedFilename : row.image;
+
+  const slug = slugify(`${first} ${last}`);
+  db.prepare(`
+    UPDATE staff
+    SET first=?, last=?, position=?, category=?, bio=?, image=?, sort_order=?, slug=?
+    WHERE id=?
+  `).run(first, last, position, category, bio, image, sortOrderInt, slug, id);
+
+
+  res.redirect("/staff-admin");
+});
+
+// Delete staff
+app.post("/staff/:id/delete", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
+  if (row) {
+    // optional: remove old image file if you want
+    // if (row.image) { try { fs.unlinkSync(path.join(__dirname, "public", "img", "publicupload", row.image)); } catch(_){} }
+    db.prepare(`DELETE FROM staff WHERE id = ?`).run(id);
+  }
+  res.redirect("/staff-admin");
+});
+
+// Reorder staff within categories (expects fields like order[<id>]=<number>)
+app.post("/staff/reorder", mustBeAdmin, (req, res) => {
+  const orders = req.body.order || {}; // object keyed by staff id
+  const stmt = db.prepare(`UPDATE staff SET sort_order = ?, updated_at = ? WHERE id = ?`);
+  const now = Date.now();
+
+  for (const idStr of Object.keys(orders)) {
+    const id = Number(idStr);
+    const val = Number(orders[idStr]);
+    if (Number.isFinite(id) && Number.isFinite(val)) {
+      stmt.run(val, now, id);
+    }
+  }
+  res.redirect("/staff-admin");
+});
+
+app.get("/about", (req, res) => {
+  const staff = db.prepare(`
+    SELECT id, first, last, position, category, bio, image, slug, sort_order
+    FROM staff
+    ORDER BY category COLLATE NOCASE, sort_order ASC, last COLLATE NOCASE
+  `).all();
+
+  // group by category
+  const grouped = staff.reduce((acc, s) => {
+    (acc[s.category || "Staff"] ||= []).push(s);
+    return acc;
+  }, {});
+
+  res.render("about", { grouped });
+});
+
+
+app.get("/staff/:slug", (req, res) => {
+  const s = db.prepare(`
+    SELECT id, first, last, position, category, bio, image, slug
+    FROM staff WHERE slug = ?
+  `).get(req.params.slug);
+
+  if (!s) return res.status(404).render("404");
+
+  const base = "https://boisegems.org";
+  const img  = s.image ? `${base}${s.image}` : `${base}/img/ui/gem.png`;
+  const title = `${s.first} ${s.last} — ${s.position} | Boise Gems`;
+
+  res.render("staff-show", {
+    s,
+    meta: {
+      title,
+      description: s.bio?.slice(0, 160) || `${s.first} ${s.last} — ${s.position}`,
+      image: img,
+      url: `${base}/staff/${s.slug}`
+    }
+  });
+});
+
+
 
 app.use((req, res) => {
     res.status(404).render('404');

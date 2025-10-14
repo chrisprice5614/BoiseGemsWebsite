@@ -18,7 +18,7 @@
             <div style="display: grid; grid-template-columns: 1fr 1fr;">
                 <% events.forEach(event => { %>
                     <div>
-                        <div class="event-card">
+                        <div class="event-card" onclick="window.location='/edit-event/<%= event.id %>'">
                             <div style="text-align: center;">
                                 <img src="img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
                             </div>

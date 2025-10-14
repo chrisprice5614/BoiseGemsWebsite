@@ -85,7 +85,7 @@
             <div class="triple-to-duple">
                 <% events.forEach(event => { %>
                     <div>
-                        <div class="event-card">
+                        <div class="event-card" style="cursor: pointer;" onclick="window.location='/event/<%= event.slug %>'">
                             <div style="text-align: center;">
                                 <img src="img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
                             </div>

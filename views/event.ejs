@@ -1,0 +1,183 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="width: 100%; aspect-ratio: 16/4.5; background-image: url('/img/publicupload/<%= event.image %>'); background-position: center; background-size: cover;">
+        </div>
+        <div style="padding: 8px;">
+            <span class="pill"><%= event.type %></span>
+            <br>
+            <h1 style="text-align: left;"><%= event.title %>
+            
+                <% if(event.cost > 0) {%>
+                    <span style="color: rgb(14, 145, 14)"><%= (event.cost).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) %></span>
+                <% } %>
+            </h1>
+            <br>
+            <small><%= new Date(event.datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %> • </small>
+            <small><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></small><br>
+            <small><a href="<%= locale %>" target="_blank"><%= event.location %></a></small>
+            <br>
+            <br>
+            <p><%= event.description %></p>
+            <br>
+            <% if(user) { %>
+            <% if(reservedSelf) { %>
+                <p><strong>You have RSVP'd for this event!</strong></p>
+            <% } else { %>
+                <form action="/event/<%= event.slug %>/rsvp" method="POST" style="display:inline;">
+                <button type="submit">RSVP</button>
+                </form>
+            <% } %>
+            <% } else { %>
+            <p>Login to RSVP</p>
+            <br>
+            <button onclick="window.location='/login'">Login</button>
+            <% } %>
+
+            <br>
+            <br>
+            <iframe width="100%" height="300px" src="https://maps.google.com/maps?width=100%&amp;height=600&amp;hl=en&amp;q=<%= mapAddy%>&amp;ie=UTF8&amp;t=&amp;z=12&amp;iwloc=B&amp;output=embed" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" style="border-radius: 16px; box-shadow: 4px 4px 8px rgba(0,0,0,0.3);"></iframe><br />
+            <br>
+            
+            <% if(user && user.admin) { %>
+            <h2>People Who've RSVP'd</h2>
+            <div style="margin: 8px 0 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                <input id="rsvp-search" type="text" placeholder="Search name…" style="padding:8px 10px; border:1px solid #ddd; border-radius:8px; min-width:220px;">
+                <select id="rsvp-section" style="padding:8px 10px; border:1px solid #ddd; border-radius:8px;">
+                <option value="all">All sections</option>
+                <!-- options populated by JS -->
+                </select>
+                <small id="rsvp-count" class="muted"></small>
+            </div>
+
+            <div id="rsvp-results" style="display:grid; gap:12px;"></div>
+
+            <script>
+                (function(){
+                    const slug = "<%= event.slug %>";
+                    const $search = document.getElementById('rsvp-search');
+                    const $section = document.getElementById('rsvp-section');
+                    const $results = document.getElementById('rsvp-results');
+                    const $count = document.getElementById('rsvp-count');
+
+                    let state = {
+                    q: '',
+                    section: 'all',
+                    sectionsLoaded: false
+                    };
+
+                    function debounce(fn, ms) {
+                    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
+                    }
+
+                    function pill(text) {
+                    const el = document.createElement('span');
+                    el.className = 'pill';
+                    el.textContent = text;
+                    return el;
+                    }
+
+                    function render(rows){
+                    $results.innerHTML = '';
+                    $count.textContent = rows.length ? `${rows.length} RSVP${rows.length===1?'':'s'}` : '';
+
+                    if(rows.length === 0){
+                        $results.innerHTML = '<p class="muted">No matches.</p>';
+                        return;
+                    }
+
+                    // container for flat list
+                    const list = document.createElement('div');
+                    list.style.display = 'grid';
+                    list.style.gap = '10px';
+
+                    rows.forEach(r => {
+                        const row = document.createElement('div');
+                        row.style.display = 'flex';
+                        row.style.alignItems = 'center';
+                        row.style.gap = '10px';
+                        row.style.padding = '8px 10px';
+                        row.style.border = '1px solid #eee';
+                        row.style.borderRadius = '10px';
+                        row.style.background = '#fff';
+
+                        const name = document.createElement('span');
+                        name.innerHTML = `<strong>${r.firstname} ${r.lastname}</strong>`;
+                        row.appendChild(name);
+
+                        // section + instrument pills (no headers)
+                        if (r.section) row.appendChild(pill(r.section));
+                        if (r.instrument) row.appendChild(pill(r.instrument));
+
+                        if (r.paid) {
+                        const paid = pill('Paid');
+                        paid.style.background = '#e8fff0';
+                        paid.style.color = '#177245';
+                        row.appendChild(paid);
+                        }
+
+                        list.appendChild(row);
+                    });
+
+                    $results.appendChild(list);
+                    }
+
+                    async function fetchData(){
+                    const params = new URLSearchParams();
+                    if(state.q) params.set('q', state.q);
+                    if(state.section && state.section !== 'all') params.set('section', state.section);
+
+                    const res = await fetch(`/event/${slug}/rsvps-data?` + params.toString(), { credentials: 'same-origin' });
+                    if(!res.ok) { $results.innerHTML = '<p class="muted">Failed to load results.</p>'; return; }
+                    const data = await res.json();
+
+                    // Populate section dropdown once
+                    if(!state.sectionsLoaded){
+                        (data.sections || []).forEach(sec => {
+                        const opt = document.createElement('option');
+                        opt.value = sec;
+                        opt.textContent = sec;
+                        $section.appendChild(opt);
+                        });
+                        state.sectionsLoaded = true;
+                    }
+
+                    // Backend already sorts by section → instrument → name; just render flat
+                    render(data.rsvps || []);
+                    }
+
+                    const doSearch = debounce(() => {
+                    state.q = $search.value.trim();
+                    fetchData();
+                    }, 200);
+
+                    $search.addEventListener('input', doSearch);
+                    $section.addEventListener('change', () => {
+                    state.section = $section.value;
+                    fetchData();
+                    });
+
+                    // initial load
+                    fetchData();
+                })();
+                </script>
+
+            <% } %>
+
+
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

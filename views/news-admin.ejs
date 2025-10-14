@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>News Admin — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <section style="margin:12px">
+    <h1>News Admin</h1>
+    <a href="/news/new"><button>New Post</button></a>
+    <br><br>
+    <% if (posts.length === 0) { %>
+      <p>No posts yet.</p>
+    <% } else { %>
+      <table class="table" style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;">Title</th>
+            <th style="text-align:left;padding:8px;">Slug</th>
+            <th style="text-align:left;padding:8px;">Created</th>
+            <th style="text-align:left;padding:8px;">Updated</th>
+            <th style="text-align:left;padding:8px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% posts.forEach(p => { %>
+            <tr>
+              <td style="padding:8px;"><a href="/news/<%= p.slug %>" target="_blank"><%= p.title %></a></td>
+              <td style="padding:8px;"><code><%= p.slug %></code></td>
+              <td style="padding:8px;"><%= new Date(p.created_at).toLocaleString() %></td>
+              <td style="padding:8px;"><%= new Date(p.updated_at).toLocaleString() %></td>
+              <td style="padding:8px;">
+                <a href="/news/<%= p.id %>/edit"><button>Edit</button></a>
+                <form action="/news/<%= p.id %>/delete" method="POST" style="display:inline" onsubmit="return confirm('Delete this post?');">
+                  <button type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </section>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

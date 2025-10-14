@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>New News Post — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <section style="margin:12px">
+    <h1>New Post</h1>
+    <form action="/news/new" method="POST" enctype="multipart/form-data">
+      <label>Title</label><br/>
+      <input type="text" name="title" required/><br><br>
+
+      <label>Hero Image</label><br/>
+      <input type="file" name="hero" accept="image/*" required/><br><br>
+
+      <label>Content (HTML)</label><br/>
+      <textarea name="html" rows="16" required></textarea><br><br>
+
+      <button type="submit">Publish</button>
+    </form>
+  </section>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

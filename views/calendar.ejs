@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calendar</title>
+  <%- include("includes/head") %>
+  <style>
+    /* Scoped only to this page */
+    .cal { font-size: 14px; }
+    .cal .key { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:8px 0 12px 0; }
+    .cal .key .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#1b1b1d; color: white;}
+    .cal .key .swatch { width:10px; height:10px; border-radius:2px; display:inline-block;}
+
+    .cal .month { margin:14px 0 20px 0; }
+    .cal .month h2 { font-size:18px; margin:8px 0; }
+    .cal .weekdays {
+      display:grid; grid-template-columns:repeat(7, minmax(0,1fr));
+      gap:4px; margin:6px 0;
+      color:#a9abb2; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+    }
+    .cal .weekdays div { text-align:center; padding:4px 0; }
+
+    .cal .grid {
+      display:grid; grid-template-columns:repeat(7, minmax(0,1fr));
+      gap:4px;
+    }
+    .cal .day {
+      background:#101114; border:1px solid #23242a; border-radius:8px;
+      min-height:90px; padding:6px; position:relative; overflow:hidden;
+    }
+    .cal .day .date {
+      position:absolute; top:4px; left:6px; font-size:12px; color:#c9cbd1;
+    }
+    .cal .events { margin-top:18px; display:flex; flex-direction:column; gap:4px; }
+    .cal .event {
+      display:block; text-decoration:none; padding:6px 8px; border-radius:6px;
+      border-left:4px solid transparent; background:#16171b; color:#e7e8ea;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    /* Type colors (border + subtle bg tint) */
+    .cal .event.type-camp            { border-left-color:#43a047; background:linear-gradient(90deg, rgba(67,160,71,.18), transparent); }
+    .cal .event.type-experience-camp { border-left-color:#26a69a; background:linear-gradient(90deg, rgba(38,166,154,.18), transparent); }
+    .cal .event.type-performance     { border-left-color:#5c6bc0; background:linear-gradient(90deg, rgba(92,107,192,.18), transparent); }
+    .cal .event.type-fundraiser      { border-left-color:#ef6c00; background:linear-gradient(90deg, rgba(239,108,0,.18), transparent); }
+    .cal .event.type-spring-training { border-left-color:#9e9d24; background:linear-gradient(90deg, rgba(158,157,36,.18), transparent); }
+
+    /* --- Event hover preview (scoped) --- */
+/* --- Event hover preview (scoped) --- */
+.cal .event { position: relative; }
+
+/* Hidden by default; shown on hover/focus */
+.cal .evt-pop {
+  position: absolute;
+  right: 6px;            /* stays inside the day square so no clipping issues */
+  top: 6px;
+  z-index: 3;
+  width: 260px;          /* adjust if you want larger */
+  max-width: calc(100vw - 32px);
+  background: #0f1013;
+  border: 1px solid #2a2c33;
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0,0,0,.45);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+
+  opacity: 0;
+  transform: translateY(-6px) scale(.98);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+/* Show on hover or keyboard focus */
+.cal .event:hover .evt-pop,
+.cal .event:focus .evt-pop,
+.cal .event:focus-visible .evt-pop {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Image block */
+.cal .evt-pop-img {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #17181c;
+  aspect-ratio: 1 / 1;
+}
+.cal .evt-pop-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Title next to image */
+.cal .evt-pop-title {
+  align-self: center;
+  font-size: 13px;
+  line-height: 1.25;
+  color: #e9eaee;
+  white-space: normal;
+}
+
+/* Optional: when a day has many events, ensure the preview appears above siblings */
+.cal .events { position: relative; z-index: 1; }
+
+/* Let popovers render outside the link and the day cell */
+.cal .event { position: relative; overflow: visible; }   /* override previous overflow:hidden */
+.cal .day   { overflow: visible; }                       /* was hidden before */
+
+/* Keep text truncation only on the label, not the whole link */
+.cal .evt-label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Popover (unchanged behavior, but now it can show) */
+.cal .evt-pop {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  z-index: 3;
+  width: 260px;
+  max-width: calc(100vw - 32px);
+  background: #0f1013;
+  border: 1px solid #2a2c33;
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0,0,0,.45);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(-6px) scale(.98);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.cal .event:hover .evt-pop,
+.cal .event:focus .evt-pop,
+.cal .event:focus-visible .evt-pop {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.cal .evt-pop-img { border-radius: 8px; overflow: hidden; background: #17181c; aspect-ratio: 1/1; }
+.cal .evt-pop-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cal .evt-pop-title { align-self: center; font-size: 13px; line-height: 1.25; color: #e9eaee; white-space: normal; }
+
+
+/* Allow popover outside the link and day cell */
+.cal .event { position: relative; overflow: visible; }
+.cal .day   { overflow: visible; }
+
+/* Only truncate the in-cell label */
+.cal .evt-label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Bigger hover preview */
+.cal .evt-pop {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  z-index: 10;
+  width: 360px;                    /* bigger */
+  max-width: calc(100vw - 32px);
+  background: #0f1013;
+  border: 1px solid #2a2c33;
+  border-radius: 12px;             /* a touch larger radius */
+  box-shadow: 0 12px 28px rgba(0,0,0,.55);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 120px 1fr;/* bigger image area */
+  gap: 10px;
+
+  opacity: 0;
+  transform: translateY(-6px) scale(.98);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+/* Show on hover/focus */
+.cal .event:hover .evt-pop,
+.cal .event:focus .evt-pop,
+.cal .event:focus-visible .evt-pop {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Image */
+.cal .evt-pop-img {
+  border-radius: 10px;
+  overflow: hidden;
+  background: #17181c;
+  aspect-ratio: 4 / 3;             /* bigger, more horizontal */
+}
+.cal .evt-pop-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Text block */
+.cal .evt-pop-body { display: flex; flex-direction: column; gap: 6px; }
+.cal .evt-pop-title {
+  font-size: 16px;                 /* bigger title */
+  line-height: 1.25;
+  color: #f0f1f4;
+  font-weight: 600;
+  white-space: normal;
+}
+.cal .evt-pop-meta {
+  font-size: 13.5px;               /* bigger meta */
+  line-height: 1.2;
+  color: #b7bac2;
+}
+
+
+
+
+    /* Tiny screens still fine because <main> is already thin sitewide */
+  </style>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main>
+  <div class="cal" style="padding: 4px;">
+    <!-- Legend / Key -->
+    <div class="key">
+      <span class="chip"><span class="swatch" style="background:#43a047"></span>Camp</span>
+      <span class="chip"><span class="swatch" style="background:#26a69a"></span>Experience Camp</span>
+      <span class="chip"><span class="swatch" style="background:#5c6bc0"></span>Performance</span>
+      <span class="chip"><span class="swatch" style="background:#ef6c00"></span>Fundraiser</span>
+      <span class="chip"><span class="swatch" style="background:#9e9d24"></span>Spring Training</span>
+    </div>
+
+    <% 
+      // Helpers inside EJS (scoped)
+      const today = new Date();                       // server time
+      const start = new Date(today.getFullYear(), today.getMonth(), 1); // first of current month
+      const monthsToShow = 12;                         // current month + next 11
+      const weekdayShort = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+      // Normalize type -> class slug
+      const typeClass = (t='') => String(t).toLowerCase().replace(/\s+/g,'-');
+
+      // Safe date from event.datetime (expects "YYYY-MM-DDTHH:MM")
+      const parseEventDate = (s) => {
+        if (!s) return null;
+        const d = new Date(s);
+        return isNaN(d) ? null : d;
+      };
+
+      // Group events by day key "YYYY-MM-DD"
+      const keyOf = (d) => {
+        const yy = d.getFullYear();
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        return `${yy}-${mm}-${dd}`;
+      };
+
+      const eventsByDay = {};
+      (events || []).forEach(ev => {
+        const d = parseEventDate(ev.datetime);
+        if (!d) return;
+        // Only keep events within the 12-month window
+        const endWindow = new Date(start.getFullYear(), start.getMonth() + monthsToShow, 1);
+        if (d < start || d >= endWindow) return;
+        const k = keyOf(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+        (eventsByDay[k] ||= []).push(ev);
+      });
+    %>
+
+    <% for (let m = 0; m < monthsToShow; m++) { 
+         const first = new Date(start.getFullYear(), start.getMonth() + m, 1);
+         const y = first.getFullYear();
+         const mon = first.getMonth(); // 0-11
+         const lastDay = new Date(y, mon + 1, 0).getDate();
+         const firstWeekday = first.getDay(); // 0=Sun
+    %>
+      <section class="month">
+        <h2><%= first.toLocaleString('default', { month: 'long' }) %> <%= y %></h2>
+
+        <div class="weekdays">
+          <% weekdayShort.forEach(w => { %>
+            <div><%= w %></div>
+          <% }) %>
+        </div>
+
+        <div class="grid">
+          <% for (let day = 1; day <= lastDay; day++) { 
+               const cellDate = new Date(y, mon, day);
+               const dayKey = keyOf(cellDate);
+               const isFirst = day === 1;
+               const gridStart = isFirst ? (firstWeekday + 1) : 'auto'; // CSS grid is 1-indexed
+          %>
+            <div class="day" style="grid-column-start:<%= gridStart %>">
+              <div class="date"><%= day %></div>
+              <div class="events">
+                <% (eventsByDay[dayKey] || []).forEach(e => { %>
+                  <a class="event type-<%= typeClass(e.type) %>" href="/event/<%= e.slug %>" title="<%- e.title %>">
+                    <span class="evt-label"><%- e.title %></span>
+                    <% if (e.image) {
+                        const dt = parseEventDate(e.datetime);
+                        const dateLabel = dt ? dt.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
+                        const timeLabel = dt ? dt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+                    %>
+                        <span class="evt-pop" aria-hidden="true">
+                        <span class="evt-pop-img">
+                            <img src="/img/publicupload/<%- e.image %>" alt="<%- e.title %> preview">
+                        </span>
+                        <span class="evt-pop-body">
+                            <span class="evt-pop-title"><%- e.title %></span>
+                            <% if (dt) { %>
+                            <span class="evt-pop-meta"><%= dateLabel %> · <%= timeLabel %></span>
+                            <% } %>
+                        </span>
+                        </span>
+                    <% } %>
+                    </a>
+
+
+                <% }) %>
+              </div>
+            </div>
+          <% } %>
+        </div>
+      </section>
+    <% } %>
+  </div>
+</main>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

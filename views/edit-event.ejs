@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Edit Event — <%= event.title %></title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main>
+  <div style="padding:12px;">
+    <h1>Edit Event</h1>
+    <form action="/events/<%= event.id %>/edit" method="POST" enctype="multipart/form-data">
+      <label for="title">Title</label><br>
+      <input type="text" id="title" name="title" required value="<%- event.title || '' %>"/>
+      <br><br>
+
+      <label for="description">Description</label><br>
+      <input type="text" id="description" name="description" required value="<%- event.description || '' %>"/>
+      <br><br>
+
+      <label for="datetime">Date & Time</label><br>
+      <input type="datetime-local" id="datetime" name="datetime" required value="<%- event.datetime_local || '' %>"/>
+      <br><br>
+
+      <label for="endtime">End Date & Time (optional)</label><br>
+      <input type="datetime-local" id="endtime" name="endtime" value="<%- event.endtime_local || '' %>"/>
+      <br><br>
+
+      <label for="location">Location</label><br>
+      <input type="text" id="location" name="location" required value="<%- event.location || '' %>"/>
+      <br><br>
+
+      <div style="margin-bottom:10px;">
+        <label>Current Image</label><br>
+        <% if (event.image) { %>
+          <img src="/img/publicupload/<%- event.image %>" alt="Event image" style="max-width:320px; display:block; margin-bottom:8px;">
+        <% } else { %>
+          <small>No image uploaded</small><br>
+        <% } %>
+        <input type="hidden" name="existing_image" value="<%- event.image || '' %>">
+      </div>
+
+      <label for="image">Replace Image (optional)</label><br>
+      <input type="file" id="image" name="image" accept="image/*"/>
+      <br><br>
+
+      <label for="link">External Link (optional)</label><br>
+      <input type="text" id="link" name="link" value="<%- event.link || '' %>"/>
+      <br><br>
+
+      <label for="cost">Cost (in dollars)</label><br>
+      <input type="number" id="cost" name="cost" min="0" step="1" required value="<%- Number.isFinite(+event.cost) ? event.cost : 0 %>"/>
+      <br><br>
+
+      <label for="type">Type of Event</label><br>
+      <select name="type" id="type">
+        <% const types = ["camp","spring training","experience camp","performance","fundraiser"]; %>
+        <% types.forEach(t => { %>
+          <option value="<%- t %>" <%= (String(event.type||'').toLowerCase() === t) ? 'selected' : '' %>><%- t.charAt(0).toUpperCase()+t.slice(1) %></option>
+        <% }) %>
+      </select>
+      <br><br>
+
+      <div style="text-align:center;">
+        <button type="submit">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

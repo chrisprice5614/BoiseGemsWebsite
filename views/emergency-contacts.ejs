@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Boise Gems | Emergency Contacts</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <div style="padding:8px;">
+    <h1 style="text-align:center;"><%= thisUser.firstname %> <%= thisUser.lastname %>'s Emergency Contacts</h1>
+    <br>
+
+    <% 
+  const list = Array.isArray(contacts) ? contacts : [];
+  const safeStr = v => (v == null ? '' : String(v));
+
+  const formatUS = (raw) => {
+    const d = safeStr(raw).replace(/\D/g, '');
+    if (d.length === 11 && d[0] === '1') {
+      const t = d.slice(1);
+      return `(${t.slice(0,3)}) - ${t.slice(3,6)} - ${t.slice(6,10)}`;
+    }
+    if (d.length === 10) {
+      return `(${d.slice(0,3)}) - ${d.slice(3,6)} - ${d.slice(6,10)}`;
+    }
+    // Fallback (show unformatted if not 10/11 digits)
+    return safeStr(raw);
+  };
+
+  const telHref = (raw) => {
+    const d = safeStr(raw).replace(/\D/g, '');
+    if (d.length === 10) return `+1${d}`;
+    if (d.length === 11 && d[0] === '1') return `+${d}`;
+    return d || '';
+  };
+%>
+
+<% if (list.length === 0) { %>
+  <p class="muted" style="text-align:center;">No emergency contacts on file.</p>
+<% } else { %>
+  <ul style="list-style:none; padding:0; margin:0;">
+    <% list.forEach(c => { 
+         const name = safeStr(c.name);
+         const email = safeStr(c.email);
+         const phoneDisp = formatUS(c.phone);
+         const phoneLink = telHref(c.phone);
+    %>
+      <li style="padding:12px 0; border-top:1px solid #eee;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div>
+            <strong><%= name %></strong>
+            <div style="margin-top:4px;">
+              <% if (email) { %>
+                <a href="mailto:<%= email %>"><%= email %></a>
+              <% } %>
+              <% if (email && phoneLink) { %>
+                <span class="muted"> &nbsp;•&nbsp; </span>
+              <% } %>
+              <% if (phoneLink) { %>
+                <a href="tel:<%= phoneLink %>"><%= phoneDisp %></a>
+              <% } %>
+            </div>
+          </div>
+        </div>
+      </li>
+    <% }) %>
+  </ul>
+<% } %>
+
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

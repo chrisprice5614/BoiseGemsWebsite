@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title><%= meta?.title || (post.title + " — Boise Gems") %></title>
+  <%- include("includes/head") %>
+
+  <% if (meta) { %>
+    <meta name="description" content="<%= meta.description %>">
+    <link rel="canonical" href="<%= meta.url %>">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="<%= meta.title %>">
+    <meta property="og:description" content="<%= meta.description %>">
+    <meta property="og:url" content="<%= meta.url %>">
+    <% if (meta.image) { %>
+      <meta property="og:image" content="<%= meta.image %>">
+      <meta name="twitter:image" content="<%= meta.image %>">
+    <% } %>
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<%= meta.title %>">
+    <meta name="twitter:description" content="<%= meta.description %>">
+  <% } %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <section style="margin:12px">
+    <div style="width:100%; aspect-ratio:16/6; background:#eee; background-image:url('/img/publicupload/<%= post.hero %>'); background-size:cover; background-position:center;"></div>
+    <h1 style="margin-top:12px;"><%= post.title %></h1>
+    <small><%= new Date(post.created_at).toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'}) %></small>
+    <br><br>
+    <div><%- post.html %></div>
+
+    <br>
+    <!-- Share buttons -->
+    <div>
+      <button id="share-copy">Copy Link</button>
+      <a target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=<%= encodeURIComponent(meta?.url || ('https://boisegems.org/news/' + post.slug)) %>"><button>Share on Facebook</button></a>
+      <a target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?url=<%= encodeURIComponent(meta?.url || ('https://boisegems.org/news/' + post.slug)) %>&text=<%= encodeURIComponent(post.title) %>"><button>Share on X</button></a>
+      <a target="_blank" rel="noopener" href="https://www.reddit.com/submit?url=<%= encodeURIComponent(meta?.url || ('https://boisegems.org/news/' + post.slug)) %>&title=<%= encodeURIComponent(post.title) %>"><button>Share on Reddit</button></a>
+      <a target="_blank" rel="noopener" href="mailto:?subject=<%= encodeURIComponent(post.title) %>&body=<%= encodeURIComponent((meta?.url || ('https://boisegems.org/news/' + post.slug))) %>"><button>Email</button></a>
+    </div>
+  </section>
+</main>
+<footer><%- include("includes/footer") %></footer>
+
+<script>
+  (function(){
+    const btn = document.getElementById('share-copy');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const url = "<%= meta?.url || ('https://boisegems.org/news/' + post.slug) %>";
+      try {
+        await navigator.clipboard.writeText(url);
+        btn.textContent = "Copied!";
+        setTimeout(() => (btn.textContent = "Copy Link"), 1500);
+      } catch {
+        window.prompt("Copy this link:", url);
+      }
+    });
+  })();
+</script>
+</body>
+</html>

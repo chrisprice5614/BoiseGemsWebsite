@@ -1,0 +1,291 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Esto Perpetua</title>
+    <%- include("includes/head") %>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        #map { height: 50vh; width: 100%; }
+        body, html { margin: 0; padding: 0; }
+        /* --- Animated smokey background --- */
+/* Monochrome ambient drift background (no noise, no color) */
+/* Tunables for small areas */
+/* ========== Volumetric Smoke (No Perlin, No Images) ========== */
+.smoke-billow{
+  /* Quick knobs */
+  --smoke-speed-base: 34s;   /* slower = heavier */
+  --smoke-speed-wisp: 22s;   /* faster = livelier */
+  --smoke-contrast: 1.08;    /* 1.0–1.2 */
+  --smoke-bright: 0.09;      /* light lobes strength */
+  --smoke-dark:   0.28;      /* dark lobes strength */
+  --smoke-blur:   14px;      /* softness */
+
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  /* deep charcoal bed; stays strictly grayscale */
+  background: radial-gradient(160% 140% at 50% 60%, #1e1f22 0%, #131416 55%, #0c0d10 100%);
+  padding: 14px;
+  min-height: 280px;   /* “a little bigger” default; adjust freely */
+}
+
+/* --- Layer 1: dense rolling fog (billows) --- */
+.smoke-billow::before{
+  content:"";
+  position:absolute; inset:-12%;
+  z-index:-2;
+  filter: blur(var(--smoke-blur)) contrast(var(--smoke-contrast)) brightness(0.95);
+  opacity: 0.75;
+  background:
+    /* light lobes */
+    radial-gradient(45% 60% at 18% 28%, rgba(255,255,255,var(--smoke-bright)) 0%, rgba(255,255,255,0) 60%),
+    radial-gradient(55% 65% at 78% 32%, rgba(255,255,255,calc(var(--smoke-bright)*0.9)) 0%, rgba(255,255,255,0) 62%),
+    radial-gradient(60% 70% at 46% 78%, rgba(255,255,255,calc(var(--smoke-bright)*0.8)) 0%, rgba(255,255,255,0) 65%),
+    /* shadow troughs */
+    radial-gradient(55% 65% at 12% 70%, rgba(0,0,0,var(--smoke-dark)) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(50% 60% at 86% 68%, rgba(0,0,0,calc(var(--smoke-dark)*0.85)) 0%, rgba(0,0,0,0) 62%),
+    radial-gradient(40% 52% at 40% 40%, rgba(0,0,0,calc(var(--smoke-dark)*0.7)) 0%, rgba(0,0,0,0) 58%);
+  background-size: 140% 140%, 130% 130%, 150% 150%, 150% 150%, 140% 140%, 120% 120%;
+  background-position: 0% 0%, 100% 0%, 50% 100%, 0% 100%, 100% 100%, 50% 0%;
+  animation: smoke-billows var(--smoke-speed-base) ease-in-out infinite;
+}
+
+/* --- Layer 2: wide wisps that curl across the field --- */
+.smoke-billow::after{
+  content:"";
+  position:absolute; inset:-16%;
+  z-index:-1;
+  opacity: 0.55;
+  mix-blend-mode: screen; /* keeps it monochrome and airy */
+  filter: blur(18px) contrast(105%);
+  /* two broad bands that feel like rolling sheets of smoke */
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.04) 40%, rgba(255,255,255,0) 80%) 0/200% 200%,
+    linear-gradient(245deg, rgba(255,255,255,0) 10%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0) 90%) 0/220% 220%;
+  animation: smoke-wisps var(--smoke-speed-wisp) linear infinite;
+  /* soft vignette so edges don't distract at larger sizes */
+  -webkit-mask-image: radial-gradient(140% 120% at 50% 55%, #000 60%, rgba(0,0,0,0) 95%);
+          mask-image: radial-gradient(140% 120% at 50% 55%, #000 60%, rgba(0,0,0,0) 95%);
+}
+
+/* ------------ Motion ------------- */
+@keyframes smoke-billows{
+  0%{
+    transform: translate3d(0,0,0) scale(1.06);
+    background-position:   0% 0%, 100% 0%, 50% 100%, 0% 100%, 100% 100%, 50% 0%;
+  }
+  45%{
+    transform: translate3d(-2.5%, -1.5%, 0) scale(1.09);
+    background-position:  28% 14%, 74% 10%, 46% 88%, 12% 80%, 86% 84%, 40% 12%;
+  }
+  100%{
+    transform: translate3d(0,0,0) scale(1.06);
+    background-position:   0% 0%, 100% 0%, 50% 100%, 0% 100%, 100% 100%, 50% 0%;
+  }
+}
+
+@keyframes smoke-wisps{
+  0%   { transform: rotate(0.0001deg) translate3d(0,0,0) scale(1.04); background-position: 0% 0%, 100% 0%; }
+  50%  { transform: rotate(180deg)    translate3d(0,0,0) scale(1.05); background-position: 50% 40%, 50% 60%; }
+  100% { transform: rotate(360deg)    translate3d(0,0,0) scale(1.04); background-position: 100% 100%, 0% 100%; }
+}
+
+/* Accessibility: respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .smoke-billow::before,
+  .smoke-billow::after{ animation: none !important; }
+}
+
+
+
+
+    </style>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div class="smoke-billow">
+            <br>
+            <div>
+                <div style="text-align: center;">
+                <img src="/img/shows/2024/ghosttitle.png" alt="Ghost stallion title" class="wiggle" max-shift="20" style="width: 75%;">
+                </div>
+            </div>
+            <br>
+        </div>
+
+        <br>
+        <div class="fade-in">
+            <br>
+            <h1 style="text-align: center; font-size: xx-large;"><b>Experience The Tale of the Ghost Stallion</b></h1>
+        </div>
+        <div style="padding: 32px; font-size: large;">
+            <div style="margin: 0px 16px; padding: 8px; ">
+                <iframe src="https://www.youtube.com/embed/5XFjDOo9Nhs" style="aspect-ratio: 16/9; width: 100%; border-radius: 16px; box-shadow: 0px 4px 12px rgba(0,0,0,0.4);"></iframe>
+            </div>
+            <br>
+            <p>Deep in the Owayee Mountains lies the legend of the Ghost Stallion. When travelers are wandering accross the vast landscape with no hope of survival, the Ghost Stallion comes by, leading them to saftey. This show tells the tale of the Ghost Stallion, with music inspired by spaghetti western films as well as snippets of the Rite of Spring by Igor Stravinsky. Once the Ghost Stallion arrives, the darkness is left behind and Gustav Mahler's 5th symphony is played alongside Hector Berlioz' Symphony Fantastique.</p>
+            <br>
+            <br>
+            <div class="fade-in">
+                <h1 style="text-align: center;">Music</h1>
+                <br>
+                <h2 style="text-align: center;"><b>A Cowboy's Legend</b></h2>
+                <h2 style="text-align: center;"><b>The Tune With No Name</b></h2>
+                <h2 style="text-align: center;"><b>Story of a Fighter</b></h2>
+                <p style="text-align: center;"><i>Chris Price</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>The Rite of Spring</b></h2>
+                <p style="text-align: center;"><i>Igor Stravinsky</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Symphony No. 5</b></h2>
+                <p style="text-align: center;"><i>Gustav Mahler</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>March to the Scaffold</b></h2>
+                <p style="text-align: center;"><i>Hector Berlioz</i></p>
+            </div>
+            <br>
+            <br>
+            <h1 style="font-size: clamp(2rem, 5vw, 4rem); text-align: center; font-weight: 700; text-transform: uppercase;">Performances</h1>
+            <br>
+            <div id="map"></div>
+
+            <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+            <script>
+                const events = <%- JSON.stringify(events) %>;
+
+                const map = L.map('map').setView([<%- center[0] %>, <%- center[1] %>], 5); // Centered on USA
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                const latlngs = [];
+
+                events.forEach(event => {
+                const marker = L.marker(event.coords).addTo(map);
+                marker.bindPopup(`<b>${event.location}</b><br>${event.date}`);
+                latlngs.push(event.coords);
+                });
+
+                // Draw polyline connecting all events
+                L.polyline(latlngs, {
+                color: 'purple',
+                weight: 4,
+                opacity: 0.7
+                }).addTo(map);
+            </script>
+            <br>
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/clouds.jpg'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 5th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Hillsboro, OR</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>76.0</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-1.jpg" alt="First picture of the hilssboro performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-2.jpg" alt="Second picture of the hilssboro performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-3.jpg" alt="Third picture of the hilssboro performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/clouds.jpg'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 6th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Seattle, WA</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>80.0</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-4.jpg" alt="First picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-5.jpg" alt="Second picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-6.jpg" alt="Third picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-7.jpg" alt="Fourth picture of the Seattle performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/clouds.jpg'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 8th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Kennewick, WA</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>77.0</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-08.jpg" alt="First picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-09.jpg" alt="Second picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-10.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-11.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-12.jpg" alt="Third picture of the Kennewick performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--light-full); background-image: url('/img/ui/clouds.jpg'); background-position: center; background-size: cover; background-color: var(--dark-full); border-radius: 16px; box-shadow: 0px 3px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; height: 256px; margin: 32px 0px">
+                <div>
+                    <p style="text-shadow: 0px 0px 8px #fff;">July 9th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600; color: var(--light-full); text-shadow: 0px 0px 8px #fff;">Boise, ID</h2>
+                    <p style="text-shadow: 0px 0px 8px #fff;"><i>80.3</i></p>
+                </div>
+            </div>
+
+            <div class="carousel" data-delay="5000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-13.jpg" alt="First picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-14.jpg" alt="Second picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-15.jpg" alt="Third picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-16.jpg" alt="Third picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2024/show-17.jpg" alt="Third picture of the Boise performance of the Boise Gems Drum and Bugle Corps">
+                </div>
+            </div>
+            <br>
+            <p>This season was also the year that the corps song was found. "With All Thanks" was originally arranged as a thank you note to donors who gave the corps a brand new trailer. After consideration, the piece became the corps song, a mixture of "Be Thou My Vision" and "Amazing Grace," 2 favorite hymns of the trailer donors.</p>
+            <br>
+            <div style="margin: 0px 16px; padding: 8px; ">
+                <iframe src="https://www.youtube.com/embed/FtLGNIzat0Q" style="aspect-ratio: 16/9; width: 100%; border-radius: 16px; box-shadow: 0px 4px 12px rgba(0,0,0,0.4);"></iframe>
+            </div>
+        </div>
+        
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+
+</html>

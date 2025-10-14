@@ -130,6 +130,30 @@ const processImageJpg = async (req, res, next) => {
   }
 };
 
+const processImageJpgOptional = async (req, res, next) => {
+  if (!req.file) {          // no new image uploaded
+    req.savedFilename = null;
+    return next();
+  }
+  // same processing as above
+  try {
+    const customName = generateCustomFilename() + '.jpg';
+    const outDir = path.join(__dirname, 'public', 'img', 'publicupload');
+    fs.mkdirSync(outDir, { recursive: true });
+    const outputPath = path.join(outDir, customName);
+
+    await sharp(req.file.buffer)
+      .resize({ width: 1280, height: 1280, fit: 'inside' })
+      .jpeg({ quality: 70 })
+      .toFile(outputPath);
+
+    req.savedFilename = customName;
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 //mailing function
 async function sendEmail(to, subject, html) {
@@ -551,6 +575,51 @@ const createTables = db.transaction(() => {
       `
     ).run()
 
+
+    db.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS rsvp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_id INTEGER,
+        paid BOOL,
+
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (event_id) REFERENCES events(id)
+        )
+      `
+    ).run()
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS potential_event_rsvp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        event_id INTEGER NOT NULL,
+        amount INTEGER NOT NULL,          -- cents (event.cost in cents)
+        processing_fee INTEGER NOT NULL,  -- cents (5% fee)
+        total_charge INTEGER NOT NULL,    -- cents (amount + fee)
+        stripe_session_id TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (event_id) REFERENCES events(id)
+      );
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS news (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        slug  TEXT NOT NULL UNIQUE,
+        html  TEXT NOT NULL,
+        hero  TEXT,                 -- stored filename from /public/img/publicupload
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `).run();
+
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_news_created ON news(created_at DESC)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_news_slug ON news(slug)`).run();
+
 })
 
 createTables();
@@ -565,7 +634,7 @@ app.use(express.static('/public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(body_parser.json())
-app.use(express.urlencoded({ limit: "10mb", extended: true })); 
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(session({
   secret: 'secret-key',
   resave: false,
@@ -589,6 +658,12 @@ function mustBeLoggedIn(req, res, next){
     {
         return res.redirect("/")
     }
+}
+
+function toCents(n) {
+  // events.cost stored as integer dollars in your code; convert to cents safely
+  const num = Number(n);
+  return Number.isFinite(num) ? Math.round(num * 100) : 0;
 }
 
 function mustBeAdmin(req, res, next){
@@ -1861,6 +1936,7 @@ app.post('/add-event', imageUpload.single('image'), processImageJpg, (req, res) 
 });
 
 
+
 app.get("/add-event", mustBeAdmin, (req,res) => {
   return res.render("add-event")
 })
@@ -1929,60 +2005,86 @@ app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
   return res.render("transaction-history",{payments, thisUser})
 })
 
-app.get("/edit-users", mustBeAdmin, (req,res) => {
-
-  const search = req.query.search || ""
-  const filter = req.query.filter || "all"
-  let page = req.query.page || 1
-
-  var getUserStatement;
-  var users;
+app.get("/edit-users", mustBeAdmin, (req, res) => {
+  const search = String(req.query.search || "").trim();
+  const filter = String(req.query.filter || "all").trim();       // section filter
+  const membership = String(req.query.membership || "all").trim(); // new: corps/independent/all
+  const page = Math.max(1, parseInt(req.query.page || "1", 10));
 
   const limit = 20;
-  const offSet = (page - 1) * limit
-  
+  const offSet = (page - 1) * limit;
 
-  if(filter!="all")
-  {
-    getUserStatement = db.prepare("SELECT * FROM users WHERE section = ? AND (firstname LIKE ? OR lastname LIKE ?) ORDER BY lastname COLLATE NOCASE LIMIT ? OFFSET ?")
-    users = getUserStatement.all(filter,`%${search}%`,`%${search}%`, limit, offSet)
+  // Build WHERE dynamically
+  const where = [];
+  const params = [];
 
-    count = db.prepare("SELECT COUNT(*) as total FROM users WHERE section = ? AND (firstname LIKE ? OR lastname LIKE ?) ORDER BY lastname COLLATE NOCASE").get(filter,`%${search}%`,`%${search}%`).total;
-  }
-  else
-  {
-    getUserStatement = db.prepare("SELECT * FROM users WHERE firstname LIKE ? OR lastname LIKE ? ORDER BY section, lastname COLLATE NOCASE LIMIT ? OFFSET ?")
-    users = getUserStatement.all(`%${search}%`,`%${search}%`, limit, offSet)
-
-    count = db.prepare("SELECT COUNT(*) as total FROM users WHERE firstname LIKE ? OR lastname LIKE ?").get(`%${search}%`,`%${search}%`).total;
+  if (filter !== "all") {
+    where.push("section = ?");
+    params.push(filter);
   }
 
-  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
-  const forms = getRequiredForms.all(Date().now)
+  if (search) {
+    where.push("(firstname LIKE ? OR lastname LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`);
+  }
 
+  if (membership === "corps") {
+    where.push("contractedCorps = 1");
+  } else if (membership === "independent") {
+    where.push("contractedIndependent = 1");
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
+  // Order: if section filter applied, just by lastname; else by section then lastname (same as before)
+  const orderSql = filter !== "all"
+    ? "ORDER BY lastname COLLATE NOCASE"
+    : "ORDER BY section, lastname COLLATE NOCASE";
 
-  const totalPages = Math.ceil(count / limit)
+  // Fetch users
+  const listSql = `
+    SELECT *
+    FROM users
+    ${whereSql}
+    ${orderSql}
+    LIMIT ? OFFSET ?
+  `;
+  const users = db.prepare(listSql).all(...params, limit, offSet);
+
+  // Count for pagination
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM users
+    ${whereSql}
+  `;
+  const count = db.prepare(countSql).get(...params).total;
+  const totalPages = Math.max(1, Math.ceil(count / limit));
+
+  // (kept from your code) compute allForms flag
+  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?");
+  const forms = getRequiredForms.all(Date.now()); // fixed minor bug from Date().now
 
   users.forEach(thisUser => {
-    let getUserForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-    let userForms = getUserForms.all(thisUser.id)
+    const getUserForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?");
+    const userForms = getUserForms.all(thisUser.id);
+    thisUser.allForms = userForms.length > 0 ? 1 : 0;
 
+    for (const form of forms) {
+      const found = userForms.some(item => item.document_id === form.id);
+      if (!found) { thisUser.allForms = 0; break; }
+    }
+  });
 
-    thisUser.allForms = 1;
+  res.render("edit-users", {
+    users,
+    search,
+    filter,
+    membership,     // <-- pass to EJS
+    page,
+    count,
+    totalPages
+  });
+});
 
-    if(userForms.length == 0)
-      thisUser.allForms = 0;
-    
-    forms.forEach(form => {
-      found = userForms.some(item => item.document_id === form.id)
-      if(!found)
-        thisUser.allForms = 0
-    })
-  })
-
-  return res.render("edit-users", {users, search, filter, page, count, totalPages})
-})
 
 app.get("/send-message/:id", mustBeAdmin, (req,res) => {
   const sendId = req.params.id;
@@ -2103,6 +2205,25 @@ app.get("/shows/2023-esto-perpetua", (req,res) => {
 
 
   return res.render("show-2023", {events ,center})
+})
+
+app.get("/shows/2024-ghost-stallion", (req,res) => {
+  const events = [
+    { date: '2024-07-05', location: 'Hillsboro, OR' },
+    { date: '2024-07-06', location: 'Seattle, WA' },
+    { date: '2024-07-08', location: 'Kennewick, WA' },
+    { date: '2024-07-09', location: 'Boise, ID' },
+  ];
+
+  // Attach coordinates to events
+  events.forEach(event => {
+    event.coords = coordinates[event.location];
+  });
+
+  const center = getGraphicCenter(events)
+
+
+  return res.render("show-2024", {events ,center})
 })
 
 app.get("/update-emergency", mustBeLoggedIn, (req,res) => {
@@ -2666,6 +2787,8 @@ app.post("/donate", async (req, res) => {
       return res.status(400).send("Missing required donation fields.");
     }
 
+
+
     // payment input expected in dollars (e.g. 25.00)
     const amountCents = Math.round(Number(req.body.payment) * 100);
     if (!Number.isFinite(amountCents) || amountCents < 50) { // minimum $0.50 per your form
@@ -2932,6 +3055,449 @@ app.post(
   }
 );
 
+app.get('/edit-event/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+  if (!event) return res.status(404).send('Event not found');
+
+  // helper to format for <input type="datetime-local">
+  const toLocal = (s) => {
+    if (!s) return '';
+    const d = new Date(s);
+    if (isNaN(d)) return s; // already formatted
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  event.datetime_local = toLocal(event.datetime);
+  event.endtime_local  = toLocal(event.endtime);
+
+  res.render('edit-event', { event });
+});
+
+app.post('/events/:id/edit', imageUpload.single('image'), processImageJpgOptional, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+  if (!existing) return res.status(404).send('Event not found');
+
+  const {
+    title,
+    description,
+    datetime,
+    endtime = '',
+    location,
+    link = '',
+    cost,
+    type
+  } = req.body;
+
+  // If processImageJpg handled a new file, it should set req.savedFilename.
+  const hasNewImage = !!req.savedFilename;
+  const newImagePath = hasNewImage ? req.savedFilename : existing.image;
+
+  const costInt = Number.isFinite(Number(cost)) ? parseInt(cost, 10) : 0;
+  const slug = `${id}-${slugify(title)}`;
+
+  const update = db.prepare(`
+    UPDATE events
+       SET title = ?, description = ?, datetime = ?, endtime = ?, location = ?,
+           image = ?, link = ?, cost = ?, type = ?, slug = ?
+     WHERE id = ?
+  `);
+
+  // Do the DB update first
+  try {
+    update.run(
+      title,
+      description,
+      datetime,
+      endtime || null,
+      location,
+      newImagePath || null,
+      link || '',
+      costInt,
+      type,
+      slug,
+      id
+    );
+  } catch (err) {
+    console.error('Update failed:', err);
+    return res.status(500).send('Failed to update event');
+  }
+
+  // After successful update, if we swapped images, remove the old file (best-effort)
+  if (hasNewImage && existing.image && existing.image !== newImagePath) {
+    try {
+      const oldAbs = path.join(__dirname, 'public', existing.image.replace(/^\/+/, ''));
+      fs.unlink(oldAbs, () => {});
+    } catch (_) {}
+  }
+
+  return res.redirect('/events-admin');
+});
+
+app.get('/calendar', (req, res) => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end   = new Date(start.getFullYear(), start.getMonth() + 12, 1);
+
+  // Pull only fields we need
+  const rows = db.prepare(`
+    SELECT id, title, slug, datetime, type, image
+    FROM events
+    WHERE datetime >= ? AND datetime < ?
+    ORDER BY datetime ASC
+  `).all(
+    start.toISOString().slice(0,19),  // "YYYY-MM-DDTHH:MM:SS"
+    end.toISOString().slice(0,19)
+  );
+
+  res.render('calendar', { events: rows });
+});
+
+app.get("/event/:slug", (req,res) => {
+  const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
+  
+  if(!event)
+    return res.redirect("/")
+
+  const locale = "https://www.google.com/maps/search/"+event.location.replace(/ /g, '+');
+  const mapAddy = event.location.replace(/ /g, '+');
+
+  const rsvps = db.prepare("SELECT * FROM rsvp WHERE event_id = ?").all(event.id)
+
+  reservedSelf = false;
+
+  if(req.user){
+    reservedSelf = db.prepare("SELECT * FROM rsvp WHERE event_id = ? AND user_id = ?").get(event.id,req.user.userid)
+  }
+
+  return res.render("event", {event, locale, mapAddy, rsvps, reservedSelf})
+})
+
+
+// GET /event/:slug/rsvps-data?q=&section=*
+// Admin-only JSON endpoint for live RSVP search
+app.get("/event/:slug/rsvps-data", mustBeAdmin, (req, res) => {
+  const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const q = String(req.query.q || "").trim();
+  const sectionFilter = String(req.query.section || "all").trim();
+
+  // Build LIKEs for name search (case-insensitive)
+  const likeStr = `%${q}%`;
+
+  let sql = `
+    SELECT r.id as rsvp_id,
+           r.paid,
+           u.id as user_id,
+           u.firstname,
+           u.lastname,
+           COALESCE(NULLIF(TRIM(u.section), ''), 'Unassigned') as section,
+           COALESCE(NULLIF(TRIM(u.instrument), ''), 'Unassigned') as instrument
+    FROM rsvp r
+    JOIN users u ON u.id = r.user_id
+    WHERE r.event_id = ?
+      AND (
+            ? = '' OR
+            u.firstname LIKE ? OR
+            u.lastname LIKE ? OR
+            (u.firstname || ' ' || u.lastname) LIKE ?
+          )
+  `;
+
+  const params = [event.id, q, likeStr, likeStr, likeStr];
+
+  if (sectionFilter !== "all") {
+    sql += ` AND COALESCE(NULLIF(TRIM(u.section), ''), 'Unassigned') = ? `;
+    params.push(sectionFilter);
+  }
+
+  sql += `
+    ORDER BY section COLLATE NOCASE,
+             instrument COLLATE NOCASE,
+             u.lastname COLLATE NOCASE,
+             u.firstname COLLATE NOCASE
+  `;
+
+  const rsvps = db.prepare(sql).all(...params);
+
+  // Distinct sections for dropdown (based on *all* RSVPs for this event)
+  const allSections = db.prepare(`
+    SELECT DISTINCT
+      COALESCE(NULLIF(TRIM(u.section), ''), 'Unassigned') as section
+    FROM rsvp r
+    JOIN users u ON u.id = r.user_id
+    WHERE r.event_id = ?
+    ORDER BY section COLLATE NOCASE
+  `).all(event.id).map(row => row.section);
+
+  res.json({ rsvps, sections: allSections });
+});
+
+
+// POST /event/:slug/rsvp  - decides free vs paid
+app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
+  const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
+  if (!event) return res.redirect("/");
+
+  // Already RSVP'd?
+  const existing = db.prepare("SELECT * FROM rsvp WHERE user_id = ? AND event_id = ?").get(req.user.userid, event.id);
+  if (existing) {
+    req.session.flashMessage = "You're already RSVP'd for this event.";
+    return res.redirect(`/event/${event.slug}`);
+  }
+
+  const amountCents = toCents(event.cost || 0);
+
+  // Free RSVP: just insert and done
+  if (amountCents <= 0) {
+    db.prepare("INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, ?)").run(req.user.userid, event.id, 0);
+    req.session.flashMessage = "You're RSVP'd!";
+    return res.redirect(`/event/${event.slug}`);
+  }
+
+  // Paid RSVP: create potential, start Stripe Checkout
+  const processingFee = Math.round(amountCents * 0.05); // 5%
+  const totalCharge   = amountCents + processingFee;
+
+  const insertPot = db.prepare(`
+    INSERT INTO potential_event_rsvp (user_id, event_id, amount, processing_fee, total_charge, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.user.userid, event.id, amountCents, processingFee, totalCharge, Date.now());
+
+  const potentialId = insertPot.lastInsertRowid;
+
+  try {
+    const sessionObj = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `RSVP: ${event.title}`,
+              description: `Event on ${new Date(event.datetime).toLocaleString("en-US")}`
+            },
+            unit_amount: totalCharge
+          },
+          quantity: 1
+        }
+      ],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/event/${event.slug}/rsvp/success/${potentialId}`,
+      cancel_url: `${process.env.BASEURL}/event/${event.slug}`
+    });
+
+    db.prepare("UPDATE potential_event_rsvp SET stripe_session_id = ? WHERE id = ?")
+      .run(sessionObj.id, potentialId);
+
+    // 303 redirect is ideal after POST
+    return res.redirect(303, sessionObj.url);
+  } catch (err) {
+    console.error("Stripe RSVP session error:", err);
+    req.session.flashMessage = "We couldn't start the checkout. Please try again.";
+    return res.redirect(`/event/${event.slug}`);
+  }
+});
+
+// GET /event/:slug/rsvp/success/:potentialId  - finalize paid RSVP
+app.get("/event/:slug/rsvp/success/:potentialId", mustBeLoggedIn, (req, res) => {
+  const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
+  if (!event) return res.redirect("/");
+
+  const potential = db.prepare(`
+    SELECT * FROM potential_event_rsvp WHERE id = ? AND user_id = ? AND event_id = ?
+  `).get(Number(req.params.potentialId), req.user.userid, event.id);
+
+  if (!potential) {
+    return res.redirect(`/event/${event.slug}`);
+  }
+
+  // Guard: if already RSVP'd (e.g., user hits back/refresh)
+  const existing = db.prepare("SELECT * FROM rsvp WHERE user_id = ? AND event_id = ?").get(req.user.userid, event.id);
+  if (!existing) {
+    // Mark RSVP paid
+    db.prepare("INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 1)")
+      .run(req.user.userid, event.id);
+
+    // Record in paymentHistory (optional but consistent)
+    const totalString = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
+      .format(potential.total_charge / 100);
+
+    db.prepare(`
+      INSERT INTO paymentHistory (title, description, amount, method, date, user_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      `Event RSVP: ${event.title}`,
+      `RSVP fee collected (${totalString}).`,
+      potential.total_charge,
+      "Stripe",
+      Date.now(),
+      req.user.userid
+    );
+  }
+
+  // Cleanup potential (prevent reuse)
+  db.prepare("DELETE FROM potential_event_rsvp WHERE id = ?").run(potential.id);
+
+  req.session.flashMessage = "You're RSVP'd! See you there.";
+  return res.redirect(`/event/${event.slug}`);
+});
+
+// Helpers for meta/excerpt
+function stripHtml(s = "") {
+  return String(s).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+function excerpt(s, n = 160) {
+  const t = stripHtml(s);
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+}
+
+// PUBLIC: list
+app.get("/news", (req, res) => {
+  const posts = db.prepare(`
+    SELECT id, title, slug, hero, created_at
+    FROM news
+    ORDER BY created_at DESC
+  `).all();
+  res.render("news-list", { posts });
+});
+
+
+
+// ADMIN: hub
+app.get("/news-admin", mustBeAdmin, (req, res) => {
+  const posts = db.prepare(`
+    SELECT id, title, slug, created_at, updated_at
+    FROM news ORDER BY created_at DESC
+  `).all();
+  res.render("news-admin", { posts });
+});
+
+// ADMIN: new
+app.get("/news/new", mustBeAdmin, (req, res) => {
+  res.render("news-new");
+});
+
+app.post("/news/new", mustBeAdmin, imageUpload.single("hero"), processImageJpg, (req, res) => {
+  const title = String(req.body.title || "").trim();
+  const html  = String(req.body.html  || "").trim();
+  if (!title || !html) return res.status(400).send("Title and content are required");
+
+  const now  = Date.now();
+  const slug = slugify(title);
+  const hero = req.savedFilename || null;
+
+  // Handle rare slug collision by adding -id after insert
+  const insert = db.prepare(`INSERT INTO news (title, slug, html, hero, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?)`);
+  try {
+    insert.run(title, slug, html, hero, now, now);
+  } catch (e) {
+    // If UNIQUE failed due to slug, fall back to slug-with-timestamp
+    const alt = `${slug}-${Math.floor(now/1000)}`;
+    insert.run(title, alt, html, hero, now, now);
+  }
+
+  return res.redirect("/news-admin");
+});
+
+// ADMIN: edit
+app.get("/news/:id/edit", mustBeAdmin, (req, res) => {
+  const post = db.prepare(`SELECT * FROM news WHERE id = ?`).get(Number(req.params.id));
+  if (!post) return res.redirect("/news-admin");
+  res.render("news-edit", { post });
+});
+
+app.post("/news/:id/edit", mustBeAdmin, imageUpload.single("hero"), processImageJpgOptional, (req, res) => {
+  const id    = Number(req.params.id);
+  const row   = db.prepare(`SELECT * FROM news WHERE id = ?`).get(id);
+  if (!row) return res.redirect("/news-admin");
+
+  const title = String(req.body.title || "").trim();
+  const html  = String(req.body.html  || "").trim();
+  const hero  = req.savedFilename ? req.savedFilename : row.hero;
+  const slug  = slugify(title);
+  const now   = Date.now();
+
+  try {
+    db.prepare(`
+      UPDATE news
+         SET title = ?, slug = ?, html = ?, hero = ?, updated_at = ?
+       WHERE id = ?
+    `).run(title, slug, html, hero, now, id);
+  } catch (e) {
+    // On slug conflict, append -id and retry
+    const alt = `${slug}-${id}`;
+    db.prepare(`
+      UPDATE news
+         SET title = ?, slug = ?, html = ?, hero = ?, updated_at = ?
+       WHERE id = ?
+    `).run(title, alt, html, hero, now, id);
+  }
+
+  res.redirect("/news-admin");
+});
+
+// ADMIN: delete
+app.post("/news/:id/delete", mustBeAdmin, (req, res) => {
+  const id   = Number(req.params.id);
+  const post = db.prepare(`SELECT * FROM news WHERE id = ?`).get(id);
+  if (post) {
+    // best-effort remove image file if it exists and changed
+    if (post.hero) {
+      try {
+        const oldAbs = path.join(__dirname, "public", "img", "publicupload", post.hero);
+        if (fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
+      } catch (_) {}
+    }
+    db.prepare(`DELETE FROM news WHERE id = ?`).run(id);
+  }
+  res.redirect("/news-admin");
+});
+
+// PUBLIC: detail
+app.get("/news/:slug", (req, res) => {
+  const post = db.prepare(`SELECT * FROM news WHERE slug = ?`).get(req.params.slug);
+  if (!post) return res.status(404).render("404");
+
+  // Meta tags
+  const base = "https://boisegems.org";
+  const url  = `${base}/news/${post.slug}`;
+  const img  = post.hero ? `${base}/img/publicupload/${post.hero}` : undefined;
+  const desc = excerpt(post.html);
+
+  res.render("news-detail", {
+    post,
+    meta: {
+      title: `${post.title} — Boise Gems`,
+      description: desc,
+      url,
+      image: img
+    }
+  });
+});
+
+app.get("/view-emergency/:id", mustBeAdmin, (req,res) => {
+  const thisUser = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id)
+
+  if(!thisUser)
+    return res.redirect("/")
+
+  const contacts = db.prepare("SELECT * FROM emergencyContacts WHERE user_id = ?").all(req.params.id)
+
+  return res.render("emergency-contacts", {contacts, thisUser})
+})
+
+app.get("/join-corps", (req,res) => {
+  return res.render("join-corps")
+})
+
+app.get("/join-independent", (req,res) => {
+  return res.render("join-independent")
+})
 
 app.use((req, res) => {
     res.status(404).render('404');

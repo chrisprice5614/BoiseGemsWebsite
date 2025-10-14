@@ -36,6 +36,7 @@
       <input type="text" name="position" value="<%= staffer.position %>" required>
     </div>
 
+    <!-- SINGLE Category + Display Order row -->
     <div class="duple-to-single">
       <div>
         <label>Category</label>
@@ -46,34 +47,23 @@
         </select>
       </div>
       <div>
-        <label>Replace Image (optional)</label>
-        <input type="file" name="image" accept="image/*">
-        <small class="muted">Leave blank to keep current. Default used if empty: /img/ui/gem.png</small>
+        <label>Display Order</label>
+        <input type="number" name="sort_order" value="<%= Number.isFinite(Number(staffer.sort_order)) ? staffer.sort_order : 0 %>" min="0" step="1">
+        <small class="muted">Lower numbers show first within the category.</small>
       </div>
+    </div>
+
+    <!-- Image upload on its own row -->
+    <div>
+      <label>Replace Image (optional)</label>
+      <input type="file" name="image" accept="image/*">
+      <small class="muted">Leave blank to keep current. Default used if empty: /img/ui/gem.png</small>
     </div>
 
     <div>
       <label>Short Bio</label>
       <textarea name="bio" rows="6"><%= staffer.bio %></textarea>
     </div>
-
-    <div class="duple-to-single">
-    <div>
-        <label>Category</label>
-        <select name="category">
-        <% categories.forEach(c => { %>
-            <option value="<%= c %>" <%= c===staffer.category ? 'selected' : '' %>><%= c %></option>
-        <% }) %>
-        </select>
-    </div>
-
-    <div>
-        <label>Display Order</label>
-        <input type="number" name="sort_order" value="<%= Number.isFinite(Number(staffer.sort_order)) ? staffer.sort_order : 0 %>" min="0" step="1">
-        <small class="muted">Lower numbers show first within the category.</small>
-    </div>
-    </div>
-
 
     <div style="margin-top:12px;">
       <button type="submit">Save</button>

@@ -928,6 +928,10 @@ app.get("/verify/:id", (req,res) => {
 })
 
 app.post("/register-member", (req,res) => {
+
+  if(req.user)
+    return res.redirect("/")
+
   let errors = [];
 
   let firstname = req.body.firstname || "";
@@ -1041,6 +1045,9 @@ app.get("/register-parent", (req,res) => {
 })
 
 app.get("/register-member", (req,res) => {
+  if(req.user)
+    return res.redirect("/member-portal")
+
   return res.render("register-member", {placeholders: undefined})
 })
 
@@ -1978,7 +1985,8 @@ app.post('/add-event', imageUpload.single('image'), processImageJpg, (req, res) 
     imageFilename,
     link,
     parseInt(cost),
-    type
+    type,
+    endtime
   );
 
   const eventId = result.lastInsertRowid;
@@ -3051,6 +3059,7 @@ app.get("/set-materials", mustBeStaff, (req,res) => {
 })
 
 
+// ADD/REPLACE your current /set-materials handler with this updated version
 app.post(
   "/set-materials",
   mustBeStaff,
@@ -3059,67 +3068,62 @@ app.post(
     { name: "drumline", maxCount: 1 },
     { name: "guard", maxCount: 1 },
     { name: "front", maxCount: 1 },
+
+    // NEW:
+    { name: "drum_major", maxCount: 1 },            // Drum Major Audition
+    { name: "drumline_independent", maxCount: 1 },  // Drumline (Independent)
+    { name: "front_independent", maxCount: 1 }      // Front Ensemble (Independent)
   ]),
   (req, res) => {
     try {
       const files = req.files || {};
 
-      // map form field names to table section names
+      // map form field names -> materials.section values in DB
       const sectionMap = {
         brass: "brass",
         drumline: "drumline",
         guard: "guard",
         front: "front ensemble",
+
+        // NEW:
+        drum_major: "drum major",
+        drumline_independent: "drumline (independent)",
+        front_independent: "front ensemble (independent)"
       };
 
-      // Ensure upload dir exists (multer should already create it, but safe)
-      const uploadDir = path.join(__dirname, "pdf", "publicpdf");
+      // Ensure upload dir exists
+      const uploadDir = path.join(__dirname, "public", "pdf", "publicpdf");
       if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
       Object.keys(sectionMap).forEach((field) => {
-        // only handle fields that were uploaded
-        if (!files[field] || !files[field][0]) return;
+        if (!files[field] || !files[field][0]) return; // only process uploaded ones
 
         const file = files[field][0];
         const section = sectionMap[field];
         const pdfPath = `/pdf/publicpdf/${file.filename}`; // what we store in DB
 
         // Get existing row (if any) including the old pdf path
-        const checkStmt = db.prepare("SELECT id, pdf FROM materials WHERE section = ?");
-        const existing = checkStmt.get(section);
+        const existing = db.prepare("SELECT id, pdf FROM materials WHERE section = ?").get(section);
 
         if (existing) {
-          // Delete previous PDF file (if present) to avoid orphaned files
+          // best-effort delete previous PDF file to avoid orphans
           if (existing.pdf) {
             try {
-              // existing.pdf is stored like '/pdf/publicpdf/oldfile.pdf'
-              const relative = existing.pdf.replace(/^\/+/, ""); // remove leading slash
+              const relative = existing.pdf.replace(/^\/+/, "");
               const oldFullPath = path.join(__dirname, "public", relative);
-              if (fs.existsSync(oldFullPath)) {
-                fs.unlinkSync(oldFullPath);
-              }
-            } catch (unlinkErr) {
-              // Log and continue — don't fail the whole request for unlink errors
-              console.error("Failed to delete old PDF:", unlinkErr);
+              if (fs.existsSync(oldFullPath)) fs.unlinkSync(oldFullPath);
+            } catch (e) {
+              console.error("Failed to delete old PDF:", e);
             }
           }
-
-          // Update the DB row with the new path
-          const updateStmt = db.prepare("UPDATE materials SET pdf = ? WHERE section = ?");
-          updateStmt.run(pdfPath, section);
+          db.prepare("UPDATE materials SET pdf = ? WHERE section = ?").run(pdfPath, section);
         } else {
-          // Insert new row
-          const insertStmt = db.prepare("INSERT INTO materials (section, pdf) VALUES (?, ?)");
-          insertStmt.run(section, pdfPath);
+          db.prepare("INSERT INTO materials (section, pdf) VALUES (?, ?)").run(section, pdfPath);
         }
       });
 
       req.session.flashMessage = "Audition materials updated successfully.";
-
-      if(req.admin)
-        return res.redirect("/admin-portal")
-
-      return res.redirect("/member-portal");
+      return req.admin ? res.redirect("/admin-portal") : res.redirect("/member-portal");
     } catch (err) {
       console.error("Error in /set-materials:", err);
       req.session.flashMessage = "There was an error uploading materials.";
@@ -3127,6 +3131,7 @@ app.post(
     }
   }
 );
+
 
 app.get('/edit-event/:id', (req, res) => {
   const id = Number(req.params.id);
@@ -3216,7 +3221,7 @@ app.get('/calendar', (req, res) => {
 
   // Pull only fields we need
   const rows = db.prepare(`
-    SELECT id, title, slug, datetime, type, image
+    SELECT id, title, slug, datetime, type, image, endtime
     FROM events
     WHERE datetime >= ? AND datetime < ?
     ORDER BY datetime ASC
@@ -3584,6 +3589,8 @@ const STAFF_CATEGORIES = [
   "Color-Guard",
   "Front Ensemble",
   "Visual",
+  "Board",
+  "Advisory Board",
   "Other"
 ];
 
@@ -3833,23 +3840,30 @@ app.post("/whistleblower", async (req, res) => {
 
 // PUBLIC: audition materials
 app.get("/view-materials", (req, res) => {
-  // Normalize sections we care about (keys must match what you store in DB)
-  const SECTIONS = ["brass", "drumline", "guard", "front ensemble"];
+  // Include the new sections
+  const SECTIONS = [
+    "brass",
+    "drumline",
+    "guard",
+    "front ensemble",
+    "drum major",                 // NEW
+    "drumline (independent)",     // NEW
+    "front ensemble (independent)"// NEW
+  ];
 
-  // Pull all materials (table is already created by your code)
   const rows = db.prepare("SELECT section, pdf FROM materials").all();
 
-  // Build a simple { sectionKey: '/pdf/publicpdf/xxx.pdf' | null }
   const materials = Object.fromEntries(SECTIONS.map(s => [s, null]));
   for (const r of rows) {
     const key = String(r.section || "").toLowerCase().trim();
     if (materials.hasOwnProperty(key) && r.pdf) {
-      materials[key] = r.pdf; // e.g. "/pdf/publicpdf/2025-audition-brass.pdf"
+      materials[key] = r.pdf;
     }
   }
 
   res.render("view-materials", { materials });
 });
+
 
 
 

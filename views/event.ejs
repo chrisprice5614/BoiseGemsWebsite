@@ -38,7 +38,12 @@
             </h1>
             <br>
             <small><%= new Date(event.datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %> • </small>
-            <small><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></small><br>
+            <small><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></small>
+            <% if(event.endtime>event.datetime){ %>
+            <small> - <%= new Date(event.endtime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %> • </small>
+            <small><%= new Date(event.endtime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></small>
+            <% } %>
+            <br>
             <small><a href="<%= locale %>" target="_blank"><%= event.location %></a></small>
             <br>
             <br>

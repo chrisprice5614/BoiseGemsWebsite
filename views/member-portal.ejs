@@ -4,6 +4,83 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Boise Gems</title>
     <%- include("includes/head") %>
+    <style>
+  /* Scope: only this link+button */
+  a[href="/view-materials"] {
+    display: inline-block;
+  }
+  a[href="/view-materials"] > button {
+    position: relative;
+    overflow: hidden;                 /* keep sheen inside */
+    background: linear-gradient(180deg, #b79a26, #8f761b);
+    color: #fff;
+    border: 0;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-weight: 700;
+    box-shadow: 0 6px 14px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+  }
+  a[href="/view-materials"] > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.3);
+    filter: saturate(1.05);
+    cursor: pointer;
+  }
+  a[href="/view-materials"] > button:active {
+    transform: translateY(0);
+    box-shadow: 0 6px 14px rgba(0,0,0,.15);
+  }
+
+  /* Sheen: sits ABOVE the button face */
+  a[href="/view-materials"] > button::before {
+    content: "";
+    position: absolute;
+    top: -20%;
+    left: -40%;
+    width: 40%;
+    height: 140%;
+    pointer-events: none;
+    transform: skewX(-20deg) translateX(-120%);
+    background: linear-gradient(
+      90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.75) 45%,
+      rgba(255,255,255,0.9) 50%,
+      rgba(255,255,255,.75) 55%,
+      rgba(255,255,255,0) 100%
+    );
+    mix-blend-mode: screen;           /* brightens gold nicely */
+    opacity: .0;
+    animation: gems-sheen 7s ease-in-out infinite;
+  }
+
+  /* Trigger a quick sweep on hover, too */
+  a[href="/view-materials"] > button:hover::before {
+    animation: gems-sheen-hover 1.2s ease-out 0s 1;
+    opacity: 1;
+  }
+
+  @keyframes gems-sheen {
+    /* long loop with a brief sweep and long idle */
+    0%   { transform: skewX(-20deg) translateX(-120%); opacity: 0; }
+    6%   { transform: skewX(-20deg) translateX(140%);  opacity: .9; }
+    8%   { transform: skewX(-20deg) translateX(240%);  opacity: 0; }
+    100% { transform: skewX(-20deg) translateX(240%);  opacity: 0; }
+  }
+
+  @keyframes gems-sheen-hover {
+    0%   { transform: skewX(-20deg) translateX(-120%); opacity: .2; }
+    100% { transform: skewX(-20deg) translateX(240%);  opacity: 0; }
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    a[href="/view-materials"] > button::before { animation: none; opacity: 0; }
+    a[href="/view-materials"] > button:hover::before { animation: none; opacity: 0; }
+  }
+</style>
+
 </head>
 <body>
     <header>
@@ -48,7 +125,7 @@
                     <br>
                     <p><b>Phone:</b> <%= member.phone %></p>
                     <br>
-                    <p><b>Birthday:</b> <%= new Date( member.birthday ).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
+                    <p><b>Birthday:</b> <%= new Date( member.birthday + ((24 * 60 * 60)*1000) ).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
                     <br>
                     <p><b>Email verified: </b>✅</p>
                     <br>
@@ -98,7 +175,7 @@
                     </div>
                     <br>
                     <% if(!member.staff) { %>
-                        <% if((leftoverForms > 0)&&((member.contractedCorps)||(member.contractedIndependent))) { %>
+                        <% if((leftoverForms > 0)) { %>
                             <div style="text-align: center;">
                                 <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
                                 <br>

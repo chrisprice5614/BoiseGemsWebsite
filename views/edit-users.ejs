@@ -125,6 +125,17 @@
 
           <div class="user-expand" id="user-expand-<%= idx %>">
             <br/>
+            <div style="text-align: center;">
+              <div>
+                <div class="image-wrapper" style="text-align: center; width: 33%;">
+                  <a href="/update-profile-photo">
+                    <% const srcImage = thisUser.img == null ? "/img/ui/gem.png" : thisUser.img %>
+                      <img src="<%= srcImage %>" alt="Member photo for <%= thisUser.firstname %> <%= thisUser.lastname %>">
+                  </a>
+                </div>
+              </div>
+            </div>
+            <br>
             <div class="triple-to-single triple-to-single-mod">
               <div>
                 <p><b>Email: </b><span onclick="copyText(this)"><%= thisUser.email %></span></p>

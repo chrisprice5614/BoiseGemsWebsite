@@ -1,131 +1,143 @@
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems — Audition Materials</title>
-    <%- include("includes/head") %>
-
-    <style>
-      .materials-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-      }
-      .mat-card {
-        background: #fff;
-        border: 1px solid #eee;
-        border-radius: 12px;
-        padding: 14px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
-      }
-      .mat-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 24px rgba(0,0,0,.06);
-        border-color: #e6e6e6;
-      }
-      .mat-title {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 700;
-      }
-      .mat-desc {
-        margin: 0;
-        color: #666;
-        font-size: 14px;
-        line-height: 1.5;
-      }
-      .mat-actions {
-        margin-top: 8px;
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .btn-outline {
-        background: #fff;
-        border: 1px solid var(--border-color, #ddd);
-        border-radius: 10px;
-        padding: 8px 12px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      .btn-primary {
-        background: var(--primary-color, #60437D);
-        border: 1px solid var(--primary-color, #60437D);
-        color: #fff;
-        border-radius: 10px;
-        padding: 8px 12px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .btn-disabled {
-        background: #f3f3f3;
-        border: 1px dashed #ddd;
-        color: #888;
-        cursor: not-allowed;
-      }
-      .note {
-        background: #f7f4fb;
-        border: 1px solid #eadff7;
-        color: #3d2a54;
-        padding: 10px 12px;
-        border-radius: 10px;
-        margin-bottom: 12px;
-      }
-    </style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Boise Gems — Audition Materials</title>
+  <%- include("includes/head") %>
+  <style>
+    .materials-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .mat-card {
+      background: #fff;
+      border: 1px solid #eee;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+    .mat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(0,0,0,.06);
+      border-color: #e6e6e6;
+    }
+    .mat-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .mat-desc {
+      margin: 0;
+      color: #666;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .mat-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .btn-outline {
+      background: #fff;
+      border: 1px solid var(--border-color, #ddd);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+    }
+    .btn-primary {
+      background: var(--primary-color, #60437D);
+      border: 1px solid var(--primary-color, #60437D);
+      color: #fff;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-disabled {
+      background: #f3f3f3;
+      border: 1px dashed #ddd;
+      color: #888;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 600;
+      cursor: not-allowed;
+    }
+    .note {
+      background: #f7f4fb;
+      border: 1px solid #eadff7;
+      color: #3d2a54;
+      padding: 10px 12px;
+      border-radius: 10px;
+      margin: 0 auto 12px;
+      max-width: 880px;
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
+<header><%- include("includes/header") %></header>
 
-    <main>
-      <div style="padding: 8px;">
-        <h1 style="text-align:center; margin: 8px 0 4px;">Audition Materials</h1>
-        <p class="note" style="max-width: 880px; margin: 0 auto;">
-          Download the latest audition packets for your section. If a section shows “Coming soon,” check back later—materials are being updated.
-        </p>
+<main>
+  <div style="padding: 8px;">
+    <h1 style="text-align:center; margin: 8px 0 4px;">Audition Materials</h1>
+    <p class="note">
+      Download the latest audition packets for your section. If a section shows “Coming soon,” check back later—materials are being updated.
+    </p>
 
-        <div class="materials-grid" style="margin-top: 14px;">
-          <% const pretty = {
-               "brass": "Brass",
-               "drumline": "Drumline (Battery)",
-               "guard": "Color Guard",
-               "front ensemble": "Front Ensemble"
-             }; %>
+    <% 
+      // Order and labels for display
+      const order = [
+        "brass",
+        "drumline",
+        "guard",
+        "front ensemble",
+        "drum major",
+        "drumline (independent)",
+        "front ensemble (independent)"
+      ];
+      const pretty = {
+        "brass": "Brass",
+        "drumline": "Drumline (Battery)",
+        "guard": "Color Guard",
+        "front ensemble": "Front Ensemble",
+        "drum major": "Drum Major Audition",
+        "drumline (independent)": "Drumline (Independent)",
+        "front ensemble (independent)": "Front Ensemble (Independent)"
+      };
+    %>
 
-          <% Object.keys(pretty).forEach(key => { 
-               const link = materials[key]; 
-          %>
-            <article class="mat-card">
-              <h3 class="mat-title"><%= pretty[key] %></h3>
-              <p class="mat-desc">
-                <%= link ? "Download the current audition packet as a PDF." : "Materials for this section will be posted here soon." %>
-              </p>
-              <div class="mat-actions">
-                <% if (link) { %>
-                  <!-- View in browser -->
-                  <a class="btn-outline" href="<%= link %>" target="_blank" rel="noopener">
-                    View PDF
-                  </a>
-                  <!-- Force download (most browsers honor `download`) -->
-                  <a class="btn-primary" href="<%= link %>" download>
-                    Download
-                  </a>
-                <% } else { %>
-                  <button class="btn-disabled" disabled>Coming soon</button>
-                <% } %>
-              </div>
-            </article>
-          <% }) %>
-        </div>
-      </div>
-    </main>
+    <div class="materials-grid" style="margin-top: 14px;">
+      <% order.forEach((key) => { 
+           const link = materials && materials[key];
+      %>
+        <article class="mat-card">
+          <h3 class="mat-title"><%= pretty[key] %></h3>
+          <p class="mat-desc">
+            <%= link ? "Download the current audition packet as a PDF." : "Materials for this section will be posted here soon." %>
+          </p>
+          <div class="mat-actions">
+            <% if (link) { %>
+              <a class="btn-outline" href="<%= link %>" target="_blank" rel="noopener">View PDF</a>
+              <a class="btn-primary" href="<%= link %>" download>Download</a>
+            <% } else { %>
+              <button class="btn-disabled" disabled>Coming soon</button>
+            <% } %>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+  </div>
+</main>
 
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+<footer><%- include("includes/footer") %></footer>
 </body>
 </html>

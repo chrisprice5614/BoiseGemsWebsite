@@ -3233,25 +3233,46 @@ app.get('/calendar', (req, res) => {
   res.render('calendar', { events: rows });
 });
 
-app.get("/event/:slug", (req,res) => {
+app.get("/event/:slug", (req, res) => {
   const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
-  
-  if(!event)
-    return res.redirect("/")
+  if (!event) return res.status(404).render("404");
 
-  const locale = "https://www.google.com/maps/search/"+event.location.replace(/ /g, '+');
-  const mapAddy = event.location.replace(/ /g, '+');
+  // Build Google Maps links
+  const locale  = "https://www.google.com/maps/search/" + String(event.location || "").replace(/ /g, "+");
+  const mapAddy = String(event.location || "").replace(/ /g, "+");
 
-  const rsvps = db.prepare("SELECT * FROM rsvp WHERE event_id = ?").all(event.id)
-
-  reservedSelf = false;
-
-  if(req.user){
-    reservedSelf = db.prepare("SELECT * FROM rsvp WHERE event_id = ? AND user_id = ?").get(event.id,req.user.userid)
+  // RSVPs
+  const rsvps = db.prepare("SELECT * FROM rsvp WHERE event_id = ?").all(event.id);
+  let reservedSelf = false;
+  if (req.user) {
+    reservedSelf = !!db.prepare("SELECT 1 FROM rsvp WHERE event_id = ? AND user_id = ?").get(event.id, req.user.userid);
   }
 
-  return res.render("event", {event, locale, mapAddy, rsvps, reservedSelf})
-})
+  // Meta tags (match the style used in /news/:slug)
+  const base = "https://boisegems.org";
+  const url  = `${base}/event/${event.slug}`;
+  const img  = event.image ? `${base}/img/publicupload/${event.image}` : undefined;
+
+  // Use your existing excerpt() helper if available (same as news)
+  const desc = typeof excerpt === "function"
+    ? excerpt(event.description || "")
+    : (event.description || "").toString().slice(0, 180); // safe fallback
+
+  return res.render("event", {
+    event,
+    locale,
+    mapAddy,
+    rsvps,
+    reservedSelf,
+    meta: {
+      title: `${event.title} — Boise Gems`,
+      description: desc,
+      url,
+      image: img
+    }
+  });
+});
+
 
 
 // GET /event/:slug/rsvps-data?q=&section=*

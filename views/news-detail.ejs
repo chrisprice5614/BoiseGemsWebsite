@@ -21,42 +21,108 @@
     <meta name="twitter:title" content="<%= meta.title %>">
     <meta name="twitter:description" content="<%= meta.description %>">
   <% } %>
+
+  <style>
+    .share-row{ display:flex; align-items:center; gap:10px; margin:12px 0; }
+    .share-label{ font-weight:700; letter-spacing:.02em; }
+    .share-ico{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:36px; height:36px; border-radius:999px;
+      background:#121318; border:1px solid #2a2c33; color:#e9eaee;
+      text-decoration:none; cursor:pointer; transition:transform .12s ease, box-shadow .12s ease;
+    }
+    .share-ico:hover{ transform: translateY(-1px); box-shadow:0 6px 14px rgba(0,0,0,.35); }
+    .share-ico ion-icon{ font-size:18px; }
+    #share-copy.copied{ outline:2px solid #43a047; }
+  </style>
 </head>
 <body>
 <header><%- include("includes/header") %></header>
+
 <main>
   <section style="margin:12px">
     <div style="width:100%; aspect-ratio:16/6; background:#eee; background-image:url('/img/publicupload/<%= post.hero %>'); background-size:cover; background-position:center;"></div>
+
+    <% 
+      const sharePlainUrl = (meta && meta.url) ? meta.url : ('https://boisegems.org/news/' + post.slug);
+      const shareUrl = encodeURIComponent(sharePlainUrl);
+      const shareText = encodeURIComponent(post.title);
+    %>
+
+    <!-- Share row -->
+    <div class="share-row">
+      <span class="share-label">Share:</span>
+
+      <!-- Copy link -->
+      <a id="share-copy" href="#" class="share-ico" rel="noopener">
+        <ion-icon name="link-outline"></ion-icon>
+      </a>
+
+      <!-- Facebook -->
+      <a class="share-ico" target="_blank" rel="noopener"
+         href="https://www.facebook.com/sharer/sharer.php?u=<%= shareUrl %>"
+         title="Share on Facebook" aria-label="Share on Facebook">
+        <ion-icon name="logo-facebook"></ion-icon>
+      </a>
+
+      <!-- X (Twitter) -->
+      <a class="share-ico" target="_blank" rel="noopener"
+         href="https://twitter.com/intent/tweet?url=<%= shareUrl %>&text=<%= shareText %>"
+         title="Share on X" aria-label="Share on X">
+        <ion-icon name="logo-twitter"></ion-icon>
+      </a>
+
+      <!-- Reddit -->
+      <a class="share-ico" target="_blank" rel="noopener"
+         href="https://www.reddit.com/submit?url=<%= shareUrl %>&title=<%= shareText %>"
+         title="Share on Reddit" aria-label="Share on Reddit">
+        <ion-icon name="logo-reddit"></ion-icon>
+      </a>
+
+      <!-- Email -->
+      <a class="share-ico"
+         href="mailto:?subject=<%= shareText %>&body=<%= sharePlainUrl %>"
+         title="Share via Email" aria-label="Share via Email">
+        <ion-icon name="mail-outline"></ion-icon>
+      </a>
+    </div>
+
     <h1 style="margin-top:12px;"><%= post.title %></h1>
     <small><%= new Date(post.created_at).toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'}) %></small>
     <br><br>
     <div><%- post.html %></div>
-
     <br>
-    <!-- Share buttons -->
-    <div>
-      <button id="share-copy">Copy Link</button>
-      <a target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=<%= encodeURIComponent(meta?.url || ('https://boisegems.org/news/' + post.slug)) %>"><button>Share on Facebook</button></a>
-      <a target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?url=<%= encodeURIComponent(meta?.url || ('https://boisegems.org/news/' + post.slug)) %>&text=<%= encodeURIComponent(post.title) %>"><button>Share on X</button></a>
-      <a target="_blank" rel="noopener" href="https://www.reddit.com/submit?url=<%= encodeURIComponent(meta?.url || ('https://boisegems.org/news/' + post.slug)) %>&title=<%= encodeURIComponent(post.title) %>"><button>Share on Reddit</button></a>
-      <a target="_blank" rel="noopener" href="mailto:?subject=<%= encodeURIComponent(post.title) %>&body=<%= encodeURIComponent((meta?.url || ('https://boisegems.org/news/' + post.slug))) %>"><button>Email</button></a>
-    </div>
   </section>
 </main>
+
 <footer><%- include("includes/footer") %></footer>
 
 <script>
+  // Use existing site toast (showMessage) to confirm copy
   (function(){
     const btn = document.getElementById('share-copy');
+    const url = "<%- sharePlainUrl %>";
     if (!btn) return;
+
     btn.addEventListener('click', async () => {
-      const url = "<%= meta?.url || ('https://boisegems.org/news/' + post.slug) %>";
       try {
         await navigator.clipboard.writeText(url);
-        btn.textContent = "Copied!";
-        setTimeout(() => (btn.textContent = "Copy Link"), 1500);
       } catch {
-        window.prompt("Copy this link:", url);
+        // Fallback copy
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      // Visual tick + toast
+      btn.classList.add('copied');
+      setTimeout(() => btn.classList.remove('copied'), 1200);
+      if (typeof showMessage === 'function') {
+        showMessage("Link Copied to Clipboard!");
       }
     });
   })();

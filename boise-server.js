@@ -3221,7 +3221,7 @@ app.get('/calendar', (req, res) => {
 
   // Pull only fields we need
   const rows = db.prepare(`
-    SELECT id, title, slug, datetime, type, image, endtime
+    SELECT id, title, slug, datetime, type, image, endtime, description, cost
     FROM events
     WHERE datetime >= ? AND datetime < ?
     ORDER BY datetime ASC

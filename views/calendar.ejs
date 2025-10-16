@@ -12,6 +12,36 @@
     .cal .key .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#1b1b1d; color:#fff; }
     .cal .key .swatch { width:10px; height:10px; border-radius:2px; display:inline-block; }
 
+    /* Featured soonest events */
+    .featured-wrap { margin: 28px 4px 20px; }
+    .featured { display:flex; flex-direction:column; gap:12px; }
+    .feat-card {
+      display:flex; gap:14px; align-items:stretch; text-decoration:none;
+      background:#edeff0; border:1px solid #2a2c33; border-radius:14px;
+      box-shadow:0 10px 22px rgba(0,0,0,.35);
+      padding:10px; color:#e9eaee;
+    }
+    .feat-card:hover { transform: translateY(-1px); box-shadow:0 14px 28px rgba(0,0,0,.42); transition: all .18s ease; }
+
+    .feat-media { display:flex; flex-direction:column; gap:8px; width:220px; flex:0 0 auto; }
+    .feat-img { width:100%; aspect-ratio: 4/3; border-radius:10px; overflow:hidden; background:#17181c; }
+    .feat-img img { width:100%; height:100%; object-fit:cover; display:block; }
+    .feat-type-pill {
+      display:inline-block; width:max-content;
+      padding:5px 10px; border-radius:999px; color:#fff; font-size:12px; font-weight:700; line-height:1;
+      box-shadow:0 6px 14px rgba(0,0,0,.35);
+    }
+
+    .feat-body { flex:1 1 auto; display:flex; flex-direction:column; gap:6px; min-width:0; }
+    .feat-title { margin:0; font-size:18px; font-weight:700; line-height:1.25; }
+    .feat-desc {
+      color:#3d3e40; font-size:14px; line-height:1.45;
+      display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+    }
+    .feat-meta { display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:#535458; font-size:13.5px; }
+    .feat-cost { color:rgb(15,190,41); font-weight:700; }
+
+    /* Calendar grid */
     .cal .month { margin:14px 0 20px 0; }
     .cal .month h2 { font-size:18px; margin:8px 0; }
     .cal .weekdays {
@@ -44,6 +74,7 @@
     .cal .event.type-performance     { border-left-color:#5c6bc0; background:linear-gradient(90deg, rgba(92,107,192,.18), transparent); }
     .cal .event.type-fundraiser      { border-left-color:#ef6c00; background:linear-gradient(90deg, rgba(239,108,0,.18), transparent); }
     .cal .event.type-spring-training { border-left-color:#9e9d24; background:linear-gradient(90deg, rgba(158,157,36,.18), transparent); }
+    .cal .event.type-other           { border-left-color:#eeaaee; background:linear-gradient(90deg, rgba(238,170,238,.18), transparent); }
 
     .cal .evt-label { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
@@ -84,10 +115,16 @@
       font-size:12px;
       font-weight:700;
       line-height:1;
-      box-shadow:0 6px 14px rgba(0,0,0,.35); /* shadow on the pill */
+      box-shadow:0 6px 14px rgba(0,0,0,.35);
       white-space:nowrap;
     }
     .cal .evt-pop-meta{ font-size:13.5px; line-height:1.2; color:#b7bac2; white-space:nowrap; }
+
+    /* Responsive tweaks for featured cards */
+    @media (max-width: 680px) {
+      .feat-card { flex-direction:column; }
+      .feat-media { width:100%; }
+    }
   </style>
 </head>
 <body>
@@ -102,6 +139,7 @@
       <span class="chip"><span class="swatch" style="background:#5c6bc0"></span>Performance</span>
       <span class="chip"><span class="swatch" style="background:#ef6c00"></span>Fundraiser</span>
       <span class="chip"><span class="swatch" style="background:#9e9d24"></span>Spring Training</span>
+      <span class="chip"><span class="swatch" style="background:#eeaaee"></span>Other</span>
     </div>
 
     <%
@@ -161,6 +199,21 @@
       const fmtDate = (d) => d.toLocaleDateString('en-US',{ weekday:'short', month:'short', day:'numeric' });
       const fmtTime = (d) => d.toLocaleTimeString('en-US',{ hour:'numeric', minute:'2-digit' });
 
+      // Smart range label reused for both featured and popover
+      const makeRangeLabel = (ev) => {
+        const dtStart = parseEventDate(ev.datetime);
+        const dtEnd = ev.endtime ? parseEventDate(ev.endtime) : null;
+        if (dtStart && dtEnd) {
+          const sameDay = dtStart.toDateString() === dtEnd.toDateString();
+          return sameDay
+            ? `${fmtDate(dtStart)} · ${fmtTime(dtStart)}–${fmtTime(dtEnd)}`
+            : `${fmtDate(dtStart)} · ${fmtTime(dtStart)} → ${fmtDate(dtEnd)} · ${fmtTime(dtEnd)}`;
+        } else if (dtStart) {
+          return `${fmtDate(dtStart)} · ${fmtTime(dtStart)}`;
+        }
+        return '';
+      };
+
       /* ===== Build events-by-day map (with multi-day expansion) ===== */
       const eventsByDay = {};
       (events || []).forEach(ev => {
@@ -175,7 +228,55 @@
           }
         });
       });
+
+      /* ===== Pick soonest 3 events (upcoming) for featured ===== */
+      const now = new Date();
+      const normalized = (events || [])
+        .map(ev => ({ ev, start: parseEventDate(ev.datetime) }))
+        .filter(x => x.start);
+
+      const upcoming = normalized
+        .filter(x => x.start >= now)
+        .sort((a,b) => a.start - b.start)
+        .slice(0,3)
+        .map(x => x.ev);
+
+      const featuredEvents = upcoming.length ? upcoming
+        : normalized.sort((a,b) => a.start - b.start).slice(0,3).map(x => x.ev);
     %>
+
+    <!-- Featured soonest events -->
+    <% if (featuredEvents.length) { %>
+      <section class="featured-wrap">
+        <div class="featured">
+          <% featuredEvents.forEach(e => { 
+               const label = makeRangeLabel(e);
+               const cost = (e.cost != null && e.cost !== '') ? Number(e.cost) : null;
+          %>
+            <a class="feat-card" href="/event/<%= e.slug %>">
+              <div class="feat-media">
+                <div class="feat-img">
+                  <img src="/img/publicupload/<%- e.image %>" alt="<%- e.title %> preview">
+                </div>
+                <span class="feat-type-pill" style="background:<%= typeColor(e.type) %>"><%= e.type %></span>
+              </div>
+              <div class="feat-body">
+                <h3 class="feat-title"><%- e.title %></h3>
+                <% if (e.description || e.desc) { %>
+                  <p class="feat-desc"><%- e.description || e.desc %></p>
+                <% } %>
+                <div class="feat-meta">
+                  <% if (label) { %><span><%= label %></span><% } %>
+                  <% if (cost !== null && !Number.isNaN(cost)) { %>
+                    <span class="feat-cost"><%= cost.toLocaleString('en-US',{ style:'currency', currency:'USD' }) %></span>
+                  <% } %>
+                </div>
+              </div>
+            </a>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
 
     <% for (let m = 0; m < monthsToShow; m++) {
          const first = new Date(start.getFullYear(), start.getMonth() + m, 1);
@@ -202,18 +303,7 @@
               <div class="date"><%= day %></div>
               <div class="events">
                 <% (eventsByDay[dayKey] || []).forEach(e => {
-                     const dtStart = parseEventDate(e.datetime);
-                     const dtEnd   = e.endtime ? parseEventDate(e.endtime) : null;
-
-                     let rangeLabel = '';
-                     if (dtStart && dtEnd) {
-                       const sameDay = dtStart.toDateString() === dtEnd.toDateString();
-                       rangeLabel = sameDay
-                         ? `${fmtDate(dtStart)} · ${fmtTime(dtStart)}–${fmtTime(dtEnd)}`
-                         : `${fmtDate(dtStart)} · ${fmtTime(dtStart)} → ${fmtDate(dtEnd)} · ${fmtTime(dtEnd)}`;
-                     } else if (dtStart) {
-                       rangeLabel = `${fmtDate(dtStart)} · ${fmtTime(dtStart)}`;
-                     }
+                     const rangeLabel = makeRangeLabel(e);
                 %>
                   <a class="event type-<%= typeClass(e.type) %>" href="/event/<%= e.slug %>" title="<%- e.title %>">
                     <span class="evt-label"><%- e.title %></span>
@@ -227,7 +317,7 @@
                           <span class="evt-pop-title"><%- e.title %></span>
 
                           <!-- Type pill -->
-                          <span class="evt-type-pill" style="background:<%= typeColor(e.type) %>">
+                          <span class="cal evt-type-pill" style="background:<%= typeColor(e.type) %>">
                             <%= e.type %>
                           </span>
 

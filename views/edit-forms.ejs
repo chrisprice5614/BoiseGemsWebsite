@@ -25,23 +25,35 @@
                             <div>
                                 <div style="text-align: right;">
                                     <% if(form.document_path) { %>
-                                    
-                                        <a href="<%= form.document_path %>" target="_blank" style="margin-right: 24px; font-size: 1.5rem;"><ion-icon name="document-text-outline"></ion-icon></a>
+                                        <a href="<%= form.document_path %>" target="_blank" style="margin-right: 24px; font-size: 1.5rem;">
+                                            <ion-icon name="document-text-outline"></ion-icon>
+                                        </a>
                                         <button class="confirm-btn" next="/delete-form/<%= form.id %>">Delete Form</button>
                                     <% } %>
                                 </div>
                             </div>
+
+                            <!-- Left column metadata -->
                             <div>
-                                Due: <%= new Date(form.due_date + 86400000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) %>
+                                Due:
+                                <%= new Date(form.due_date + 86400000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) %>
                             </div>
                             <div></div>
                             <div>
-                                Expires: <%= new Date(form.expire_date + 86400000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) %>
+                                Expires:
+                                <%= new Date(form.expire_date + 86400000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) %>
                             </div>
                         </div>
+
+                        <!-- NEW badges row -->
+                        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                          <span class="pill">Upload Required: <b><%= form.upload ? "Yes" : "No" %></b></span>
+                          <span class="pill">Audience: <b><%= (form.ensemble_type||"all") %></b></span>
+                          <span class="pill">Contracted Only: <b><%= form.contracted ? "Yes" : "No" %></b></span>
+                        </div>
+
                         <hr>
                         <p><%= form.description %></p>
-                        
                     </div>
                 <% }) %>
             <% } %>

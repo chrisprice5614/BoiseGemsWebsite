@@ -644,6 +644,106 @@ const createTables = db.transaction(() => {
 
 createTables();
 
+function migrateFormsTable(db) {
+  // 1) Ensure base table exists (as in your original)
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS forms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT,
+      description TEXT,
+      document_path TEXT,
+      upload INTEGER,
+      content TEXT,
+      expire_date INTEGER,
+      season TEXT,
+      due_date INTEGER
+    )
+  `).run();
+
+  // 2) Discover existing columns
+  const cols = db.prepare(`PRAGMA table_info(forms)`).all().map(c => c.name);
+
+  // 3) Add missing columns (idempotent)
+  if (!cols.includes('ensemble_type')) {
+    // TEXT, default handled in backfill/trigger
+    db.prepare(`ALTER TABLE forms ADD COLUMN ensemble_type TEXT`).run();
+  }
+  if (!cols.includes('contracted')) {
+    // store booleans as 0/1
+    db.prepare(`ALTER TABLE forms ADD COLUMN contracted INTEGER DEFAULT 0`).run();
+  }
+
+  // 4) Backfill existing rows (safe to re-run)
+  // Normalize ensemble_type -> 'all' when NULL/blank
+  db.prepare(`
+    UPDATE forms
+    SET ensemble_type = 'all'
+    WHERE ensemble_type IS NULL OR TRIM(ensemble_type) = ''
+  `).run();
+
+  // contracted = 1 for corps/independent
+  db.prepare(`
+    UPDATE forms
+    SET contracted = 1
+    WHERE LOWER(ensemble_type) IN ('corps','independent')
+  `).run();
+
+  // contracted = 0 for 'all' or null (defensive)
+  db.prepare(`
+    UPDATE forms
+    SET contracted = 0
+    WHERE ensemble_type IS NULL OR LOWER(ensemble_type) = 'all'
+  `).run();
+
+  // 5) Triggers to keep data consistent going forward (idempotent; they coerce values)
+  // NOTE: These are AFTER triggers that update the just-inserted/updated row.
+  // SQLite won't recurse into triggers again unless PRAGMA recursive_triggers=ON.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS forms_contract_after_insert
+    AFTER INSERT ON forms
+    BEGIN
+      -- normalize NULL/blank ensemble_type to 'all'
+      UPDATE forms
+      SET ensemble_type = 'all'
+      WHERE id = NEW.id AND (NEW.ensemble_type IS NULL OR TRIM(NEW.ensemble_type) = '');
+
+      -- contracted = 1 for corps/independent
+      UPDATE forms
+      SET contracted = 1
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) IN ('corps','independent');
+
+      -- contracted = 0 for 'all' or anything else
+      UPDATE forms
+      SET contracted = 0
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) NOT IN ('corps','independent');
+    END;
+  `);
+
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS forms_contract_after_update
+    AFTER UPDATE OF ensemble_type, contracted ON forms
+    BEGIN
+      -- normalize NULL/blank ensemble_type to 'all'
+      UPDATE forms
+      SET ensemble_type = 'all'
+      WHERE id = NEW.id AND (NEW.ensemble_type IS NULL OR TRIM(NEW.ensemble_type) = '');
+
+      -- contracted = 1 for corps/independent
+      UPDATE forms
+      SET contracted = 1
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) IN ('corps','independent');
+
+      -- contracted = 0 for 'all' or anything else
+      UPDATE forms
+      SET contracted = 0
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) NOT IN ('corps','independent');
+    END;
+  `);
+}
+
+// call it on boot
+migrateFormsTable(db);
+
 const app = express()
 app.use(express.json())
 app.set("view engine", "ejs")
@@ -731,6 +831,76 @@ function mustBeMember(req,res, next){
 
   res.redirect("/")
 }
+
+//
+// === FORMS VISIBILITY + COMPLETENESS HELPERS ===
+//
+
+// Build the WHERE and params for "required forms this user must complete"
+function buildFormsQueryForUser(user) {
+  const now = Date.now();
+
+  // Not contracted to either group
+  if (!user?.contractedCorps && !user?.contractedIndependent) {
+    return {
+      sql: `
+        SELECT *
+        FROM forms
+        WHERE expire_date > ?
+          AND LOWER(COALESCE(ensemble_type,'all')) = 'all'
+          AND COALESCE(contracted,0) = 0
+        ORDER BY due_date IS NULL, due_date ASC, id DESC
+      `,
+      params: [now]
+    };
+  }
+
+  // Contracted to one or both groups
+  const wantCorps        = user.contractedCorps ? 1 : 0;
+  const wantIndependent  = user.contractedIndependent ? 1 : 0;
+
+  // Base always includes public (non-contracted) "all" forms
+  let sql = `
+    SELECT *
+    FROM forms
+    WHERE expire_date > ?
+      AND (
+        (LOWER(COALESCE(ensemble_type,'all')) = 'all' AND COALESCE(contracted,0) = 0)
+  `;
+  const params = [now];
+
+  // Add corps / independent contracted forms as needed
+  if (wantCorps) {
+    sql += ` OR (LOWER(ensemble_type) = 'corps' AND COALESCE(contracted,0) = 1)`;
+  }
+  if (wantIndependent) {
+    sql += ` OR (LOWER(ensemble_type) = 'independent' AND COALESCE(contracted,0) = 1)`;
+  }
+
+  sql += `)
+          ORDER BY due_date IS NULL, due_date ASC, id DESC`;
+
+  return { sql, params };
+}
+
+// Get the required forms for a user (returns rows[])
+function getRequiredFormsForUser(userId) {
+  const user = db.prepare(`SELECT id, contractedCorps, contractedIndependent FROM users WHERE id = ?`).get(userId);
+  const q = buildFormsQueryForUser(user || { contractedCorps: 0, contractedIndependent: 0 });
+  return db.prepare(q.sql).all(...q.params);
+}
+
+// Given requiredForms[] and uploads[] => mark uploaded + compute leftover count
+function markUploadsAndCount(requiredForms, uploads) {
+  const uploadedIds = new Set((uploads || []).map(u => u.document_id));
+  let leftover = 0;
+  for (const f of requiredForms) {
+    f.uploaded = uploadedIds.has(f.id);
+    if (!f.uploaded) leftover++;
+  }
+  return leftover;
+}
+
 
 function getGraphicCenter(events) {
   if(!events.length) return null;
@@ -1069,92 +1239,61 @@ app.get("/forgot-password", (req,res) => {
 })
 
 app.get("/member-portal", mustBeMember, (req,res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  const contracts = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?").all(req.user.userid);
 
-  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
-  const member = getUserStatement.get(req.user.userid)
+  // REQUIRED FORMS (by rules)
+  const requiredForms = getRequiredFormsForUser(req.user.userid);
+  const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(req.user.userid);
+  const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
 
-  const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?")
-  const contracts = getContractStatement.all(req.user.userid)
+  const allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid);
 
-  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
-  const requiredForms = getRequiredForms.all(Date.now())
+  return res.render("member-portal", { member, contracts, leftoverForms, allergy });
+});
 
-  let leftoverForms = requiredForms.length;
-
-  const getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-  const uploadedForms = getUploadedForms.all(req.user.userid);
-
-  requiredForms.forEach(requiredForm => {
-    const alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
-    if (alreadyUploaded) {
-      leftoverForms--;
-    }
-  });
-
-  const allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid)
-
-  return res.render("member-portal", {member, contracts, leftoverForms, allergy})
-})
 
 app.get("/member-forms", mustBeMember, (req,res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!member) return res.redirect("/");
 
-  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid)
+  const requiredForms = getRequiredFormsForUser(req.user.userid);
+  const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(req.user.userid);
+  const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
 
-  if(!member)
-    return res.redirect("/")
+  const birthday = db.prepare("SELECT birthday FROM users WHERE id = ?").get(req.user.userid);
 
-  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
-  const requiredForms = getRequiredForms.all(Date.now())
-
-  let leftoverForms = requiredForms.length;
-
-  const getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-  const uploadedForms = getUploadedForms.all(req.user.userid);
-
-  requiredForms.forEach(requiredForm => {
-    const alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
-    if (alreadyUploaded) {
-      leftoverForms--;
-      requiredForm.uploaded = true;
-    }
+  return res.render("member-forms", {
+    requiredForms,
+    leftoverForms,
+    birthday: birthday?.birthday
   });
+});
 
-  const birthday = db.prepare("SELECT birthday FROM users WHERE id = ?").get(req.user.userid)
-
-  return res.render("member-forms", {requiredForms, leftoverForms, birthday: birthday.birthday})
-})
 
 
 app.get("/member-forms-parent/:id", mustBeParent, (req,res) => {
+  const childId = Number(req.params.id);
 
-  const getParentIdStatement = db.prepare("SELECT parentId FROM users WHERE id = ?").get(req.params.id)
-  const isParent = getParentIdStatement.parentId == req.user.userid;
+  const isParent = db.prepare("SELECT parentId FROM users WHERE id = ?").get(childId)?.parentId == req.user.userid;
+  if (!isParent) return res.redirect("/");
 
-  if(!isParent)
-    return res.redirect("/")
+  const requiredForms = getRequiredFormsForUser(childId);
+  const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(childId);
+  const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
 
-  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
-  const requiredForms = getRequiredForms.all(Date.now())
+  const birthday = db.prepare("SELECT birthday FROM users WHERE id = ?").get(childId);
 
-  let leftoverForms = requiredForms.length;
+  req.session.child = childId;
 
-  const getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-  const uploadedForms = getUploadedForms.all(req.params.id);
-
-  requiredForms.forEach(requiredForm => {
-    const alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
-    if (alreadyUploaded) {
-      leftoverForms--;
-      requiredForm.uploaded = true;
-    }
+  return res.render("member-forms", {
+    requiredForms,
+    leftoverForms,
+    birthday: birthday?.birthday,
+    parent: childId
   });
+});
 
-  const birthday = db.prepare("SELECT birthday FROM users WHERE id = ?").get(req.user.userid)
-
-  req.session.child = req.params.id;
-
-  return res.render("member-forms", {requiredForms, leftoverForms, birthday: birthday.birthday, parent: req.params.id})
-})
 
 app.get("/upload-form-parent/:id/:child", mustBeParent, (req,res) => {
 
@@ -1166,12 +1305,15 @@ app.get("/upload-form-parent/:id/:child", mustBeParent, (req,res) => {
     return res.redirect("/")
 
   //Making sure we didn't already upload this form
-  const didUpload = db.prepare("SELECT * FROM formUploads WHERE id = ? AND user_id = ?").get(req.params.id, req.user.userid)
+  // Correct check: document_id + child (not parent) user_id
+  const didUpload = db.prepare("SELECT 1 FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(req.params.id, req.params.child);
 
-  if(didUpload){
-    req.session.flashMessage = "You've already uploaded this form."
-    return res.redirect(`/member-forms/${req.user.userid}`)
+  if (didUpload) {
+    req.session.flashMessage = "You've already uploaded this form.";
+    return res.redirect(`/member-forms-parent/${req.params.child}`);
   }
+
 
   const getRequiredForm = db.prepare("SELECT * FROM forms WHERE id = ?")
   const thisForm = getRequiredForm.get(req.params.id)
@@ -1240,20 +1382,19 @@ app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single(
 });
 
 app.get("/upload-form/:id", mustBeMember, (req,res) => {
-  //Making sure we didn't already upload this form
-  const didUpload = db.prepare("SELECT * FROM formUploads WHERE id = ? AND user_id = ?").get(req.params.id, req.user.userid)
+  // Correct check: same document_id + same user_id
+  const already = db.prepare("SELECT 1 FROM formUploads WHERE document_id = ? AND user_id = ?")
+                    .get(req.params.id, req.user.userid);
 
-  if(didUpload){
-    req.session.flashMessage = "You've already uploaded this form."
-    return res.redirect(`/member-forms/${req.user.userid}`)
+  if (already) {
+    req.session.flashMessage = "You've already uploaded this form.";
+    return res.redirect(`/member-forms/${req.user.userid}`);
   }
 
-  const getRequiredForm = db.prepare("SELECT * FROM forms WHERE id = ?")
-  const thisForm = getRequiredForm.get(req.params.id)
+  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
+  return res.render("upload-form", { thisForm });
+});
 
-
-  return res.render("upload-form", {thisForm})
-})
 
 app.get("/secure-pdf/:filename", mustBeAdmin, (req, res) => {
   const filePath = path.join(__dirname, "private/pdf", req.params.filename);
@@ -1722,7 +1863,7 @@ app.post("/sign-contract/:id", mustBeLoggedIn, async (req, res) => {
 
   // Stripe checkout flow for $50 down payment + 5% processing fee
   const downPayment = 5000; // in pennies ($50)
-  const processingFee = Math.ceil(downPayment * 0.05);
+  const processingFee = Math.ceil(downPayment * 0.06);
   const totalAmount = downPayment + processingFee;
 
   // Save potential payment
@@ -1915,23 +2056,16 @@ app.post("/extend-contract/:id", mustBeStaff, (req,res) => {
 
 
 app.get("/view-forms/:id", mustBeAdmin, (req,res) => {
-  const userId = req.params.id;
-  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
-  const thisUser = getUserStatement.get(userId);
+  const userId = Number(req.params.id);
+  const thisUser = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+  if (!thisUser) return res.redirect("/");
 
-  if(!thisUser){
-    return res.redirect("/")
-  }
+  const forms = getRequiredFormsForUser(userId);
+  const userForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?").all(userId);
 
-  const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
-  const forms = getRequiredForms.all(new Date().getTime())
+  return res.render("user-forms", { forms, userForms, thisUser });
+});
 
-
-  const userFormsStatement = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-  const userForms = userFormsStatement.all(Number(req.params.id))
-
-  return res.render("user-forms",{forms, userForms, thisUser})
-})
 
 app.get("/set-tuition", mustBeAdmin, (req,res) => {
   const corpsFees = db.prepare("SELECT * FROM tuitionFees WHERE ensemble = ?").get("corps")
@@ -2125,16 +2259,14 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
   const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?");
   const forms = getRequiredForms.all(Date.now()); // fixed minor bug from Date().now
 
+  // Compute allForms per user (by the new rules)
   users.forEach(thisUser => {
-    const getUserForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?");
-    const userForms = getUserForms.all(thisUser.id);
-    thisUser.allForms = userForms.length > 0 ? 1 : 0;
-
-    for (const form of forms) {
-      const found = userForms.some(item => item.document_id === form.id);
-      if (!found) { thisUser.allForms = 0; break; }
-    }
+    const required = getRequiredFormsForUser(thisUser.id);
+    const uploaded = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(thisUser.id);
+    const missing = markUploadsAndCount(required, uploaded);
+    thisUser.allForms = missing === 0 ? 1 : 0;
   });
+
 
   res.render("edit-users", {
     users,
@@ -2399,52 +2531,31 @@ app.post("/add-member", mustBeParent, (req,res) => {
 })
 
 app.get("/parent-portal", mustBeParent, (req,res) => {
-  const getMember = db.prepare("SELECT * FROM users WHERE id = ?")
-  const member = getMember.get(req.user.userid)
-
-  const getChildren = db.prepare("SELECT * FROM users WHERE parentId = ?")
-  const children = getChildren.all(req.user.userid)
-
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  const children = db.prepare("SELECT * FROM users WHERE parentId = ?").all(req.user.userid);
 
   children.forEach(child => {
+    // minor flag (kept)
     if (child.birthday) {
       const birthday = new Date(child.birthday);
       const today = new Date();
-
-      const age = today.getFullYear() - birthday.getFullYear();
-      const hasHadBirthdayThisYear =
-          today.getMonth() > birthday.getMonth() ||
-          (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
-
-      const realAge = hasHadBirthdayThisYear ? age : age - 1;
-
-      child.minor = realAge < 18;
+      let age = today.getFullYear() - birthday.getFullYear();
+      const hadBDay =
+        today.getMonth() > birthday.getMonth() ||
+        (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+      if (!hadBDay) age--;
+      child.minor = age < 18;
     }
 
-    let getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?")
-    let requiredForms = getRequiredForms.all(Date.now())
+    // NEW: child-specific required forms
+    const reqForms = getRequiredFormsForUser(child.id);
+    const uploaded = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(child.id);
+    child.leftoverForms = markUploadsAndCount(reqForms, uploaded);
+  });
 
-    let leftoverForms = requiredForms.length;
+  return res.render("parent-portal", { member, children });
+});
 
-    let getUploadedForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?")
-    let uploadedForms = getUploadedForms.all(child.id);
-
-    
-
-    requiredForms.forEach(requiredForm => {
-      let alreadyUploaded = uploadedForms.some(uploaded => uploaded.document_id === requiredForm.id);
-      if (alreadyUploaded) {
-        leftoverForms--;
-      }
-    });
-
-    child.leftoverForms = leftoverForms;
-
-
-  })
-
-  return res.render("parent-portal", {member, children})
-})
 
 app.get("/add-transaction/:id", mustBeAdmin, (req,res) => {
   const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
@@ -2516,25 +2627,46 @@ app.get("/edit-forms",mustBeAdmin, (req,res) => {
 })
 
 app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res) => {
-  const title = req.body.title;
-  const description = req.body.description;
-  const expire_date = new Date(req.body.expire_date).getTime();
-  const due_date = new Date(req.body.due_date).getTime();
-  const content = req.body.content;
+  const title        = String(req.body.title || "").trim();
+  const description  = String(req.body.description || "").trim();
+  const expire_date  = new Date(req.body.expire_date).getTime();
+  const due_date     = new Date(req.body.due_date).getTime();
+  const content      = String(req.body.content || "").trim();
 
-  // If a file was uploaded, build its path
+  // NEW: ensemble_type & contracted (coerced)
+  let ensemble_type  = String(req.body.ensemble_type || "all").trim().toLowerCase();
+  if (!["all", "corps", "independent"].includes(ensemble_type)) ensemble_type = "all";
+
+  // If ensemble_type is corps/independent => contracted must be 1, else honor the checkbox
+  let contracted = (ensemble_type === "corps" || ensemble_type === "independent")
+    ? 1
+    : (req.body.contracted ? 1 : 0);
+
+  // Optional: let triggers normalize later, but we still write clearly here
   const filePath = req.file ? `/pdf/publicpdf/${req.file.filename}` : null;
 
-  const addFormStatement = db.prepare(`
-    INSERT INTO forms (title, description, document_path, expire_date, due_date, content)
-    VALUES (?, ?, ?, ?, ?, ?)
+  const addForm = db.prepare(`
+    INSERT INTO forms (title, description, document_path, upload, content, expire_date, season, due_date, ensemble_type, contracted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  addFormStatement.run(title, description, filePath, expire_date, due_date, content);
+  addForm.run(
+    title,
+    description,
+    filePath,
+    req.body.upload ? 1 : 0,      // keep supporting "upload" if you use it
+    content,
+    expire_date || null,
+    req.body.season || null,      // keep supporting "season" if present
+    due_date || null,
+    ensemble_type,
+    contracted
+  );
 
   req.session.flashMessage = "Form added";
   return res.redirect("/edit-forms");
 });
+
 
 app.get("/delete-form/:id", mustBeAdmin, (req,res) => {
   const formId = req.params.id;
@@ -2564,7 +2696,7 @@ app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
   }
 
   const tuitionAmount = Number(req.body.payment) * 100; // pennies (base tuition payment)
-  const processingFee = Math.round(tuitionAmount * 0.05); // 5% processing fee
+  const processingFee = Math.round(tuitionAmount * 0.06); // 5% processing fee
   const totalCharge = tuitionAmount + processingFee;      // Stripe total
 
   // Save the potential payment (store tuition and processing fee separately)
@@ -2708,7 +2840,7 @@ app.post("/make-payment", mustBeLoggedIn, (req, res) => {
   }
 
   const tuitionAmount = Number(req.body.payment) * 100; // pennies (base tuition payment)
-  const processingFee = Math.round(tuitionAmount * 0.05); // 5% processing fee
+  const processingFee = Math.round(tuitionAmount * 0.06); // 5% processing fee
   const totalCharge = tuitionAmount + processingFee;
 
   // Save the potential payment
@@ -2873,7 +3005,7 @@ app.post("/donate", async (req, res) => {
     }
 
     // processing fee: 5%
-    const processingFee = Math.round(amountCents * 0.05);
+    const processingFee = Math.round(amountCents * 0.06);
     const totalCharge = amountCents + processingFee;
 
     // insert a potential_donation row
@@ -3358,7 +3490,7 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
   }
 
   // Paid RSVP: create potential, start Stripe Checkout
-  const processingFee = Math.round(amountCents * 0.05); // 5%
+  const processingFee = Math.round(amountCents * 0.06); // 5%
   const totalCharge   = amountCents + processingFee;
 
   const insertPot = db.prepare(`

@@ -116,14 +116,14 @@
     <p>In 2023, we fielded our first corps, and toured to three cities in the northwest. These include Kennewick, Washington — Boise, Idaho — and Salt Lake City, Utah. We made our official DCI debut at Corps Encore in Salt Lake City, and were proud to represent Idaho on the international stage. The 2023 program was entitled <em>Esto Perpetua</em>, which is also Idaho's state motto. It means “may it be eternal” or “may it last forever.” This is also the Corps motto, as we hope and work towards lasting far into the future. We scored a 78.33 in the SoundSport Division at Salt Lake this season, our highest score as of 2023.</p>
     <p>In 2024, the Gems fielded a corps of over 80+ members from 8 different states, some members coming from as far as Texas and North Carolina. The 2024 program, <em>Ghost Stallion</em>, featured music from <em>The Rite of Spring</em>, <em>Mahler 5</em>, and <em>Symphonie Fantastique</em>, alongside original compositions and arrangements. The corps donned a bold new look to fit the program, with cowboy hats, dark cloaks, and cowboy-inspired uniforms. The 2024 Gems helped revive the DCI Northwest tour with four stops — Hillsboro, OR; Seattle, WA; Tri-Cities, WA; and Boise, ID — and set a new program record with an 80.33 in SoundSport. Our corps song, <em>With All Thanks</em> (a blend of “Amazing Grace” and “Be Thou My Vision”), honors all who’ve made this journey possible — past, present, and future: volunteers, donors, supporters, and sponsors.</p>
     <p>The 2025 season was filled with firsts: the corps’ first year performing copyrighted music, first use of large-scale props, introduction of a Corps identity through new uniforms, and year 1 of evaluation for DCI Open Class. To close the season, the organization announced the creation of Boise Gems Independent, an indoor percussion ensemble set to debut in fall 2025 and compete in spring 2026; marking the next exciting chapter in Gems Performing Arts’ growth.</p>
-</div>
+  </div>
 </section>
 
 <section class="about-section">
   <div class="about-wrap">
     <h2>Staff</h2>
 
-    <% 
+    <%
       // Order categories with "Director" first, then common ones, then alpha
       const catOrder = ["Director","Design","Brass","Color-Guard","Percussion","Admin","Other"];
       const cats = Object.keys(grouped).sort((a,b) => {
@@ -138,9 +138,25 @@
       <h3 class="staff-category"><%= cat %></h3>
       <div class="staff-block">
         <div class="staff-grid">
-          <% grouped[cat].forEach(s => { 
-               const imgUrl = s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png';
-               const href = s.slug ? `/staff/${s.slug}` : `/staff/${s.id}`;
+          <%
+            // Make a working copy of this category's staff
+            const staffList = (grouped[cat] || []).slice();
+
+            // If category is Design, move Chris Price to the front (case-insensitive match)
+            if (cat === 'Design') {
+              const i = staffList.findIndex(s =>
+                String(s.first || '').toLowerCase() === 'chris' &&
+                String(s.last  || '').toLowerCase()  === 'price'
+              );
+              if (i > 0) {
+                const [chris] = staffList.splice(i, 1);
+                staffList.unshift(chris);
+              }
+            }
+
+            staffList.forEach(s => {
+              const imgUrl = s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png';
+              const href = s.slug ? `/staff/${s.slug}` : `/staff/${s.id}`;
           %>
             <article class="staff-card card">
               <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">

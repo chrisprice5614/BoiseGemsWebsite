@@ -49,7 +49,7 @@
             <br>
             <p><%= event.description %></p>
             <br>
-
+            <% if((event.type == "camp")||(event.type=="experience camp")||(event.type == "Spring Training")) { %>
             <% if(user) { %>
               <% if (isPast) { %>
                 <p style="color:#b00020;"><strong>RSVP is closed for this event.</strong></p>
@@ -70,6 +70,7 @@
                 <br>
                 <button onclick="window.location='/login'">Login</button>
               <% } %>
+            <% } %>
             <% } %>
 
             <br>

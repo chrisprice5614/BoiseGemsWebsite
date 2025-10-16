@@ -57,7 +57,7 @@
 
       <label for="type">Type of Event</label><br>
       <select name="type" id="type">
-        <% const types = ["camp","spring training","experience camp","performance","fundraiser"]; %>
+        <% const types = ["camp","spring training","experience camp","performance","fundraiser","other"]; %>
         <% types.forEach(t => { %>
           <option value="<%- t %>" <%= (String(event.type||'').toLowerCase() === t) ? 'selected' : '' %>><%- t.charAt(0).toUpperCase()+t.slice(1) %></option>
         <% }) %>

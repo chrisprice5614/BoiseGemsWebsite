@@ -82,28 +82,65 @@
             </div>
         </div>
         <div class="purple-storm-2" style="padding: 8px;">
-            <div class="triple-to-duple">
-                <% events.forEach(event => { %>
-                    <div>
-                        <div class="event-card" style="cursor: pointer;" onclick="window.location='/event/<%= event.slug %>'">
-                            <div style="text-align: center;">
-                                <img src="img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
-                            </div>
-                            <div>
-                                <h2 style="text-align: left;"><%= event.title %></h2>
-                                <small style="text-align: left;"><%= event.type %> <% if(event.cost) { %> <span style="color: var(--dark-half)">|</span> <span style="color: rgb(15, 190, 41)"><%= (event.cost).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) %>
-                                </span><% } %></small>
-                                <br>
-                                <br>
-                                <p><%= new Date(event.datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %></p>
-                                <p><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></p>
-                                <small><%= event.location %></small>
-                            </div>
-                        </div>
-                    </div>
-                <% })%>
+        <% 
+            // Helpers
+            const parseEventDate = (s) => {
+            if (!s) return null;
+            const d = new Date(s);
+            return isNaN(d) ? null : d;
+            };
+
+            const now = new Date();
+
+            // Normalize -> filter upcoming -> sort -> take 3
+            const normalized = (events || [])
+            .map(ev => ({ ev, start: parseEventDate(ev.datetime) }))
+            .filter(x => x.start); // drop invalid dates
+
+            const upcoming = normalized
+            .filter(x => x.start >= now)
+            .sort((a,b) => a.start - b.start)
+            .slice(0,3)
+            .map(x => x.ev);
+
+            // Fallback to earliest 3 if no upcoming
+            const toShow = upcoming.length ? upcoming
+            : normalized.sort((a,b) => a.start - b.start).slice(0,3).map(x => x.ev);
+        %>
+
+        <div class="triple-to-single">
+            <% toShow.forEach(event => { %>
+            <div>
+                <div class="event-card" style="cursor: pointer;" onclick="window.location='/event/<%= event.slug %>'">
+                <div style="text-align: center;">
+                    <img src="/img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
+                </div>
+                <div>
+                    <h2 style="text-align: left;"><%= event.title %></h2>
+                    <small style="text-align: left;">
+                    <%= event.type %>
+                    <% if (event.cost) { %>
+                        <span style="color: var(--dark-half)">|</span>
+                        <span style="color: rgb(15, 190, 41)">
+                        <%= Number(event.cost).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) %>
+                        </span>
+                    <% } %>
+                    </small>
+                    <br><br>
+                    <p><%= new Date(event.datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %></p>
+                    <p><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></p>
+                    <small><%= event.location %></small>
+                </div>
+                </div>
             </div>
+            <% }) %>
         </div>
+
+        <% if (!toShow.length) { %>
+            <p>No events to display.</p>
+        <% } %>
+        </div>
+
     </div>
     <footer>
         <%- include("includes/footer") %>

@@ -1034,7 +1034,7 @@ app.post("/register-parent", (req,res) => {
   const emailsecret = bcrypt.hashSync(firstname + Date.now().toString(), salt).replace(/[^a-zA-Z0-9]/g, '')
 
   const addParent = db.prepare("INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ?)")
-  const newParent = addParent.run(firstname, lastname, password, address, birthday, email, phone, 0, 1, parent)
+  const newParent = addParent.run(firstname, lastname, password, address, birthday, email, phone, 0, 1, "parent")
   const parentId = newParent.lastInsertRowid;
 
 

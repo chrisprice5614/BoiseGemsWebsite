@@ -1,0 +1,65 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | Bulk Email</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+<header>
+    <%- include("includes/header") %>
+</header>
+<main>
+    <br>
+    <h1 style="text-align: center;">Send Bulk Email</h1>
+    <br>
+
+    <div style="padding: 12px;">
+        <form method="POST" action="/email-members">
+            <div class="duple-to-single" style="gap: 16px;">
+                <div>
+                    <label for="section">Section</label>
+                    <select name="section" id="section">
+                        <option value="all">All Sections</option>
+                        <option value="brass">Brass</option>
+                        <option value="drumline">Drumline</option>
+                        <option value="front ensemble">Front Ensemble</option>
+                        <option value="guard">Guard</option>
+                        <option value="drum major">Drum Major</option>
+                        <option value="staff">Staff</option>
+                        <option value="parent">Parent</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="membership">Membership</label>
+                    <select name="membership" id="membership">
+                        <option value="all">All Members</option>
+                        <option value="corps">Contracted Corps</option>
+                        <option value="independent">Contracted Independent</option>
+                    </select>
+                </div>
+            </div>
+
+            <br><br>
+
+            <label for="subject">Subject</label>
+            <input type="text" name="subject" id="subject" required>
+
+            <br><br>
+
+            <label for="message">Message</label>
+            <textarea name="message" id="message" required placeholder="Enter message here"></textarea>
+
+            <br><br>
+
+            <div style="text-align: center;">
+                <button type="submit">Send Bulk Email</button>
+            </div>
+        </form>
+    </div>
+</main>
+<footer>
+    <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

@@ -291,6 +291,21 @@ const createTables = db.transaction(() => {
         `
     ).run()
 
+     db.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS instruments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        instrument_type TEXT,
+        model TEXT,
+        serial TEXT,
+        checked_out_date INTEGER,
+        checked_in_date INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+      `
+    ).run();
+
     db.prepare(`
       CREATE TABLE IF NOT EXISTS potential_payment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -586,6 +601,31 @@ const createTables = db.transaction(() => {
 
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (event_id) REFERENCES events(id)
+        )
+      `
+    ).run()
+
+     db.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS music (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ensemble STRING,
+        type STRING,  -- Warmup, Repertoire, etc
+        version INTEGER, -- Use datetime object
+        section STRING, --Brass, Front Ensemble, Drumline, etc
+        part STRING
+        )
+      `
+    ).run()
+
+    db.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS viewed (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        music_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (music_id) REFERENCES music(id)
         )
       `
     ).run()
@@ -967,10 +1007,22 @@ app.use(function (req, res, next) {
     next()
 })
 
-app.get("/", (req,res) => {
-  const events = db.prepare("SELECT * FROM events ORDER BY datetime DESC").all()
-    return res.render("index", {admin: true, events})
-})
+app.get("/", (req, res) => {
+  const events = db.prepare("SELECT * FROM events ORDER BY datetime DESC").all();
+
+  const news = db.prepare(`
+    SELECT id, title, slug, hero, created_at
+    FROM news
+    ORDER BY created_at DESC
+    LIMIT 3
+  `).all();
+
+  return res.render("index", {
+    admin: true,
+    events,
+    news
+  });
+});
 
 app.get("/admin-portal", mustBeAdmin, (req,res) => {
   const memberStatement = db.prepare("SELECT * FROM users WHERE id = ?")
@@ -2178,12 +2230,34 @@ app.post("/change-email/:id", mustBeAdmin, (req,res) => {
   return res.redirect("/edit-users")
 })
 
-app.get("/pay-history", mustBeAdmin, (req,res) => {
-  const paymentHistoryStatement = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC")
-  const payments = paymentHistoryStatement.all();
+app.get("/pay-history", mustBeAdmin, (req, res) => {
+  const search = String(req.query.search || "").trim();
+  let payments;
 
-  return res.render("payment-history", {payments})
-})
+  if (search) {
+    const like = `%${search}%`;
+    payments = db.prepare(`
+      SELECT p.*, u.firstname, u.lastname, u.email
+      FROM paymentHistory p
+      LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.title       LIKE ?
+         OR p.description LIKE ?
+         OR u.firstname   LIKE ?
+         OR u.lastname    LIKE ?
+         OR u.email       LIKE ?
+      ORDER BY p.date DESC
+    `).all(like, like, like, like, like);
+  } else {
+    payments = db.prepare(`
+      SELECT p.*, u.firstname, u.lastname, u.email
+      FROM paymentHistory p
+      LEFT JOIN users u ON u.id = p.user_id
+      ORDER BY p.date DESC
+    `).all();
+  }
+
+  return res.render("payment-history", { payments, search });
+});
 
 app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
 
@@ -2665,6 +2739,109 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res)
 
   req.session.flashMessage = "Form added";
   return res.redirect("/edit-forms");
+});
+
+app.get("/instruments/:id", mustBeAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
+  const thisUser = getUserStatement.get(userId);
+
+  if (!thisUser) return res.redirect("/edit-users");
+
+  const instruments = db.prepare(`
+    SELECT *
+    FROM instruments
+    WHERE user_id = ?
+    ORDER BY checked_out_date DESC, id DESC
+  `).all(userId);
+
+  return res.render("instruments", { thisUser, instruments });
+});
+
+app.post("/instruments/:id/add", mustBeAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
+  const thisUser = getUserStatement.get(userId);
+
+  if (!thisUser) return res.redirect("/edit-users");
+
+  const instrument_type = String(req.body.instrument_type || "").trim();
+  const model           = String(req.body.model || "").trim();
+  const serial          = String(req.body.serial || "").trim();
+
+  if (!instrument_type) {
+    req.session.flashMessage = "Instrument type is required.";
+    return res.redirect(`/instruments/${userId}`);
+  }
+
+  const checked_out_date = Date.now();
+
+  db.prepare(`
+    INSERT INTO instruments (user_id, instrument_type, model, serial, checked_out_date, checked_in_date)
+    VALUES (?, ?, ?, ?, ?, NULL)
+  `).run(userId, instrument_type, model, serial, checked_out_date);
+
+  req.session.flashMessage = "Instrument checkout recorded.";
+  return res.redirect(`/instruments/${userId}`);
+});
+
+app.post("/instruments/:id/checkin/:instId", mustBeAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  const instId = Number(req.params.instId);
+
+  db.prepare(
+    "UPDATE instruments SET checked_in_date = ? WHERE id = ? AND user_id = ?"
+  ).run(Date.now(), instId, userId);
+
+  req.session.flashMessage = "Instrument checked in.";
+  return res.redirect(`/instruments/${userId}`);
+});
+
+app.get("/email-members", mustBeAdmin, (req, res) => {
+  res.render("email-members");
+});
+
+app.post("/email-members", mustBeAdmin, (req, res) => {
+  const subject = String(req.body.subject || "").trim();
+  const message = String(req.body.message || "").trim();
+  const section = String(req.body.section || "all").trim();
+  const membership = String(req.body.membership || "all").trim();
+
+  if (!subject || !message) {
+    req.session.flashMessage = "Subject and message are required.";
+    return res.redirect("/email-members");
+  }
+
+  const where = [];
+  const params = [];
+
+  if (section !== "all") {
+    where.push("section = ?");
+    params.push(section);
+  }
+
+  if (membership === "corps") {
+    where.push("contractedCorps = 1");
+  } else if (membership === "independent") {
+    where.push("contractedIndependent = 1");
+  }
+
+  where.push("email IS NOT NULL AND TRIM(email) <> ''");
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const rows = db.prepare(`
+    SELECT email, firstname, lastname
+    FROM users
+    ${whereSql}
+  `).all(...params);
+
+  rows.forEach(row => {
+    sendEmail(row.email, subject, message);
+  });
+
+  req.session.flashMessage = `Bulk email sent to ${rows.length} recipient(s).`;
+  return res.redirect("/admin-portal");
 });
 
 
@@ -3621,15 +3798,47 @@ app.post("/news/new", mustBeAdmin, imageUpload.single("hero"), processImageJpg, 
   const slug = slugify(title);
   const hero = req.savedFilename || null;
 
-  // Handle rare slug collision by adding -id after insert
-  const insert = db.prepare(`INSERT INTO news (title, slug, html, hero, created_at, updated_at)
-                             VALUES (?, ?, ?, ?, ?, ?)`);
+  const insert = db.prepare(`
+    INSERT INTO news (title, slug, html, hero, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let finalSlug = slug;
+
   try {
     insert.run(title, slug, html, hero, now, now);
   } catch (e) {
-    // If UNIQUE failed due to slug, fall back to slug-with-timestamp
-    const alt = `${slug}-${Math.floor(now/1000)}`;
+    const alt = `${slug}-${Math.floor(now / 1000)}`;
     insert.run(title, alt, html, hero, now, now);
+    finalSlug = alt;
+  }
+
+  // Email all registered emails about the new post
+  try {
+    const recipients = db.prepare(`
+      SELECT email, firstname, lastname
+      FROM users
+      WHERE email IS NOT NULL
+        AND TRIM(email) <> ''
+    `).all();
+
+    const base = process.env.BASEURL || "https://boisegems.org";
+    const link = `${base}/news/${finalSlug}`;
+    const subject = `New Boise Gems News: ${title}`;
+
+    recipients.forEach(row => {
+      const name = [row.firstname || "", row.lastname || ""].join(" ").trim();
+      const body = `
+        <h1>${title}</h1>
+        <p>We've posted a new update on the Boise Gems website.</p>
+        <p><a href="${link}">Click here to read it.</a></p>
+        <hr/>
+        <p>This email was sent to all registered emails on the Boise Gems website.</p>
+      `;
+      sendEmail(row.email, subject, body);
+    });
+  } catch (err) {
+    console.error("Error sending news email blast:", err);
   }
 
   return res.redirect("/news-admin");

@@ -141,6 +141,38 @@
         <% } %>
         </div>
 
+          <% if (news && news.length) { %>
+            <br>
+            <h2 style="text-align: center; color: var(--light-half); font-weight: 800; font-size: clamp(2rem, 5vw, 3rem);">
+                Latest News
+            </h2>
+            <br>
+
+            <div class="triple-to-single">
+                <% news.forEach(post => { %>
+                    <div>
+                        <div class="event-card" style="cursor: pointer;" onclick="window.location='/news/<%= post.slug %>'">
+                            <% if (post.hero) { %>
+                                <div style="text-align: center;">
+                                    <img src="/img/publicupload/<%= post.hero %>" alt="News cover image for <%= post.title %>">
+                                </div>
+                            <% } %>
+                            <div>
+                                <h2 style="text-align: left;"><%= post.title %></h2>
+                                <small>
+                                    <%= new Date(post.created_at).toLocaleDateString("en-US", {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric"
+                                    }) %>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                <% }) %>
+            </div>
+        <% } %>
+
     </div>
     <footer>
         <%- include("includes/footer") %>

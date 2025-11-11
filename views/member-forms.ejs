@@ -30,14 +30,14 @@
                                 <h2>Form uploaded! ✅</h2>
                             <% } else { %>
                                 <% let isMinor = (Date.now() - birthday) < (18 * 365.25 * 24 * 60 * 60 * 1000); %>
-                                <% if(isMinor) { %>
+                                <% if(isMinor)&&(!parent) { %>
                                     <button disabled>Upload Form</button>
                                     <br>
                                     
                                     <br>
                                     <p style="text-align: left; padding: 4px;">You are under 18. You must have a parent fill out the form.</p>
                                 <% } else { %>
-                                    <% if((parent === "undefined")||(parent == 0)||(parent==null)) {%>
+                                    <% if((typeof parent === "undefined")||(parent == 0)||(parent==null)) {%>
                                         <a href="/upload-form/<%= form.id %>"><button>Upload Form</button></a>
                                     <% } else { %>
                                         <a href="/upload-form-parent/<%= form.id %>/<%= parent %>"><button>Upload Child's Form</button></a>

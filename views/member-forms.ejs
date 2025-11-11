@@ -30,7 +30,7 @@
                                 <h2>Form uploaded! ✅</h2>
                             <% } else { %>
                                 <% let isMinor = (Date.now() - birthday) < (18 * 365.25 * 24 * 60 * 60 * 1000); %>
-                                <% if(isMinor)&&(!parent) { %>
+                                <% if((isMinor)&&(!parent)) { %>
                                     <button disabled>Upload Form</button>
                                     <br>
                                     

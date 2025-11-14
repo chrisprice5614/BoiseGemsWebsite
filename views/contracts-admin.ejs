@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Contract PDFs — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <div style="margin:12px;">
+    <h1>Contract PDFs</h1>
+    <p>Upload the official contract PDFs for Corps and Independent. These will be shown on the contract acceptance page instead of the long HTML.</p>
+
+    <form action="/contracts-admin" method="POST" enctype="multipart/form-data">
+      <h2>Corps Contract</h2>
+      <% if (corpsContract) { %>
+        <p>Current file: <a href="<%= corpsContract.pdf_path %>" target="_blank">View PDF</a></p>
+      <% } else { %>
+        <p><i>No corps contract PDF uploaded yet.</i></p>
+      <% } %>
+      <label>Upload new Corps PDF</label>
+      <input type="file" name="corps_pdf" accept="application/pdf">
+      <br><br>
+
+      <h2>Independent Contract</h2>
+      <% if (independentContract) { %>
+        <p>Current file: <a href="<%= independentContract.pdf_path %>" target="_blank">View PDF</a></p>
+      <% } else { %>
+        <p><i>No independent contract PDF uploaded yet.</i></p>
+      <% } %>
+      <label>Upload new Independent PDF</label>
+      <input type="file" name="independent_pdf" accept="application/pdf">
+      <br><br>
+
+      <div style="text-align:center;">
+        <button>Save PDFs</button>
+      </div>
+    </form>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

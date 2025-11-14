@@ -65,6 +65,16 @@
                 <label for="content">Form content (optional)</label>
                 <textarea name="content" placeholder="Enter form data here"></textarea>
                 <br><br>
+                <label for="role_scope">Form type</label>
+                <select name="role_scope" id="role_scope">
+                    <option value="member" selected>Performer / Member</option>
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <small style="display:block; opacity:.8;">
+                    Performers do not need to upload staff/admin forms.
+                </small>
+                <br><br>
 
                 <div style="text-align: center;">
                     <button>Add</button>

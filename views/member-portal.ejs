@@ -175,9 +175,11 @@
                     </div>
                     <br>
                     <% if(!member.staff) { %>
-                        <% if((leftoverForms > 0)) { %>
+                        <% if((leftoverForms > -5)) { %>
                             <div style="text-align: center;">
+                                <% if((leftoverForms > 0)) { %>
                                 <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
+                                <% } %>
                                 <br>
                                 <% if(new Date(member.birthday) <= new Date(new Date().setFullYear(new Date().getFullYear() - 18))){ %>
                                     <a href="/member-forms"><button>View Forms</button></a>

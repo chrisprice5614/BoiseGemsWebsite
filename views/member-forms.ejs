@@ -28,7 +28,8 @@
                         <div style="text-align: right;">
                             <% if(form.uploaded) { %>
                                 <h2>Form uploaded! ✅</h2>
-                            <% } else { %>
+                            <% } %>
+                            
                                 <% let isMinor = (Date.now() - birthday) < (18 * 365.25 * 24 * 60 * 60 * 1000); %>
                                 <% if((isMinor)&&(!parent)) { %>
                                     <button disabled>Upload Form</button>
@@ -43,7 +44,6 @@
                                         <a href="/upload-form-parent/<%= form.id %>/<%= parent %>"><button>Upload Child's Form</button></a>
                                     <% } %>
                                 <% } %>
-                            <% } %>
                         </div>
                     </div>
                     <hr>

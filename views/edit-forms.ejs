@@ -28,8 +28,10 @@
                                         <a href="<%= form.document_path %>" target="_blank" style="margin-right: 24px; font-size: 1.5rem;">
                                             <ion-icon name="document-text-outline"></ion-icon>
                                         </a>
+                                        <% } %>
+                                        <a href="/edit-form/<%= form.id %>"><button>Edit</button></a>
                                         <button class="confirm-btn" next="/delete-form/<%= form.id %>">Delete Form</button>
-                                    <% } %>
+
                                 </div>
                             </div>
 

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Forms Completion — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <div style="margin:12px;">
+    <h1>Forms Completion</h1>
+
+    <form method="GET" action="/admin-forms" style="margin-bottom:16px;">
+      <label>Membership:
+        <select name="membership">
+          <option value="all" <%= membership==="all" ? "selected" : "" %>>All</option>
+          <option value="corps" <%= membership==="corps" ? "selected" : "" %>>Corps</option>
+          <option value="independent" <%= membership==="independent" ? "selected" : "" %>>Independent</option>
+        </select>
+      </label>
+
+      <label style="margin-left:12px;">
+        Section:
+        <input type="text" name="section" value="<%= sectionFilter %>" placeholder="e.g. Trumpet">
+      </label>
+
+      <button style="margin-left:12px;">Filter</button>
+    </form>
+
+    <% if (!rows.length) { %>
+      <p>No users matched that filter.</p>
+    <% } else { %>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+        <tr>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">Name</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">Section</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">Instrument</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">Membership</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">Performer Forms</th>
+        </tr>
+        </thead>
+        <tbody>
+        <% rows.forEach(function(r){ 
+             const u = r.user;
+             const finished = r.requiredCount > 0 && r.missingCount === 0;
+             let memberLabel = "None";
+             if (u.contractedCorps) memberLabel = "Corps";
+             if (u.contractedIndependent) memberLabel = "Independent";
+        %>
+          <tr>
+            <td><%= u.firstname %> <%= u.lastname %></td>
+            <td><%= u.section || "" %></td>
+            <td><%= u.instrument || "" %></td>
+            <td><%= memberLabel %></td>
+            <td>
+              <% if (!r.requiredCount) { %>
+                n/a
+              <% } else if (finished) { %>
+                ✅ <%= r.requiredCount %> / <%= r.requiredCount %>
+              <% } else { %>
+                ❌ <%= r.requiredCount - r.missingCount %> / <%= r.requiredCount %>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

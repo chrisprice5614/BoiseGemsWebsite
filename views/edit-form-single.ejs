@@ -1,0 +1,119 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Form | Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+<header>
+    <%- include("includes/header") %>
+</header>
+<main>
+    <br>
+    <h1 style="text-align: center;">Edit Form</h1>
+    <br>
+
+    <div style="padding: 8px;">
+        <form action="/edit-form/<%= form.id %>" method="POST" enctype="multipart/form-data">
+            <label for="title">Title</label>
+            <input type="text" name="title" value="<%= form.title %>" required>
+            <br><br>
+
+            <label for="description">Description</label>
+            <input type="text" name="description" value="<%= form.description %>" required>
+            <br><br>
+
+            <p><b>Current PDF:</b>
+              <% if (form.document_path) { %>
+                <a href="<%= form.document_path %>" target="_blank">View current PDF</a>
+              <% } else { %>
+                (none)
+              <% } %>
+            </p>
+
+            <label for="document_path">Replace PDF (optional)</label>
+            <input type="file" name="document_path" accept="application/pdf">
+            <br><br>
+
+            <div style="align-items: center;">
+                <label for="upload">Require user to upload form?</label>
+                <input type="checkbox" name="upload" <%= form.upload ? "checked" : "" %> >
+            </div>
+            <br>
+
+            <!-- Audience / Contracted -->
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:center;">
+                <div>
+                    <label for="ensemble_type">Ensemble Audience</label>
+                    <select name="ensemble_type" id="ensemble_type">
+                        <option value="all" <%= (form.ensemble_type||"all")==="all" ? "selected" : "" %>>All members</option>
+                        <option value="corps" <%= (form.ensemble_type||"")=="corps" ? "selected" : "" %>>Corps (contracted)</option>
+                        <option value="independent" <%= (form.ensemble_type||"")=="independent" ? "selected" : "" %>>Independent (contracted)</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="contracted">Contracted only?</label>
+                    <input type="checkbox" name="contracted" id="contracted" <%= form.contracted ? "checked" : "" %> >
+                    <small style="display:block; opacity:.8;">
+                        If you pick “Corps” or “Independent”, this will auto-enable.
+                    </small>
+                </div>
+            </div>
+            <br>
+
+            <!-- NEW: Role scope -->
+            <label for="role_scope">Form type</label>
+            <select name="role_scope" id="role_scope">
+                <option value="member" <%= (form.role_scope||"member")==="member" ? "selected" : "" %>>Performer / Member</option>
+                <option value="staff" <%= form.role_scope==="staff" ? "selected" : "" %>>Staff</option>
+                <option value="admin" <%= form.role_scope==="admin" ? "selected" : "" %>>Admin</option>
+            </select>
+            <small style="display:block; opacity:.8;">
+                Performers do not need to upload staff/admin forms.
+            </small>
+            <br><br>
+
+            <label for="due_date">Due Date</label>
+            <input type="date" name="due_date"
+                   value="<%= form.due_date ? new Date(form.due_date).toISOString().slice(0,10) : '' %>">
+            <br><br>
+
+            <label for="expire_date">Expiration Date</label>
+            <input type="date" name="expire_date"
+                   value="<%= form.expire_date ? new Date(form.expire_date).toISOString().slice(0,10) : '' %>">
+            <br><br>
+
+            <label for="content">Form content (optional)</label>
+            <textarea name="content" placeholder="Enter form data here"><%= form.content || "" %></textarea>
+            <br><br>
+
+            <div style="text-align: center;">
+                <button>Save Changes</button>
+            </div>
+        </form>
+    </div>
+</main>
+<footer>
+    <%- include("includes/footer") %>
+</footer>
+
+<script>
+  (function(){
+    const sel = document.getElementById('ensemble_type');
+    const chk = document.getElementById('contracted');
+    function sync() {
+      const v = (sel.value || '').toLowerCase();
+      if (v === 'corps' || v === 'independent') {
+        chk.checked = true;
+        chk.disabled = true;
+      } else {
+        chk.disabled = false;
+      }
+    }
+    sel.addEventListener('change', sync);
+    sync();
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RSVPs & Forms — Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <div style="margin:12px;">
+    <h1>RSVPs by Event</h1>
+    <% if (!events.length) { %>
+      <p>No events found.</p>
+    <% } %>
+
+    <% events.forEach(function(evt){ %>
+      <section style="margin-bottom:24px;">
+        <h2><%= evt.title %></h2>
+        <p>
+          <b>Date:</b>
+          <%= evt.datetime ? new Date(evt.datetime).toLocaleString("en-US") : "TBA" %><br>
+          <b>Location:</b> <%= evt.location || "TBA" %>
+        </p>
+
+        <% if (!evt.rsvps.length) { %>
+          <p><i>No RSVPs yet.</i></p>
+        <% } else { %>
+          <table style="width:100%; border-collapse:collapse;">
+            <thead>
+            <tr>
+              <th style="text-align:left; border-bottom:1px solid #ccc;">Name</th>
+              <th style="text-align:left; border-bottom:1px solid #ccc;">Section</th>
+              <th style="text-align:left; border-bottom:1px solid #ccc;">Instrument</th>
+              <th style="text-align:left; border-bottom:1px solid #ccc;">Role</th>
+              <th style="text-align:left; border-bottom:1px solid #ccc;">Paid</th>
+              <th style="text-align:left; border-bottom:1px solid #ccc;">Performer Forms</th>
+            </tr>
+            </thead>
+            <tbody>
+            <% evt.rsvps.forEach(function(r){ 
+                 const status = formsStatus[r.user_id] || { requiredCount: 0, missingCount: 0 };
+                 const finished = status.requiredCount > 0 && status.missingCount === 0;
+                 const role =
+                   r.admin ? "Admin" : (r.staff ? "Staff" : "Performer");
+            %>
+              <tr>
+                <td><%= r.firstname %> <%= r.lastname %></td>
+                <td><%= r.section || "" %></td>
+                <td><%= r.instrument || "" %></td>
+                <td><%= role %></td>
+                <td><%= r.paid ? "Yes" : "No" %></td>
+                <td>
+                  <% if (!status.requiredCount) { %>
+                    n/a
+                  <% } else if (finished) { %>
+                    ✅ <%= status.requiredCount %> / <%= status.requiredCount %>
+                  <% } else { %>
+                    ❌ <%= status.requiredCount - status.missingCount %> / <%= status.requiredCount %>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+            </tbody>
+          </table>
+        <% } %>
+      </section>
+    <% }); %>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

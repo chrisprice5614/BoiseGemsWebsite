@@ -13,14 +13,49 @@
         <div style="padding: 12px;">
             <form action="/set-tuition" method="POST">
                 <br>
-                <label for="corps">Set Corps Fees in Dollars</label>
-                <input type="number" name="corps" step="0.01" min="0.01" autocomplete="off" value="<%= corpsFees.amount/100 %>" required/>
-                <br>
-                <br>
+                  <label for="corps">Set Corps Fees in Dollars</label>
+                <input
+                  type="number"
+                  name="corps"
+                  step="0.01"
+                  autocomplete="off"
+                  value="<%= corpsFees.amount/100 %>"
+                  required
+                />
+                <br><br>
+
+                <label for="corps_deposit">Corps Deposit (Down Payment) in Dollars</label>
+                <input
+                  type="number"
+                  name="corps_deposit"
+                  step="0.01"
+                  autocomplete="off"
+                  value="<%= (corpsFees.deposit_amount || 5000)/100 %>"
+                  required
+                />
+                <br><br>
+
                 <label for="independent">Set Independent Fees in Dollars</label>
-                <input type="number" name="independent" step="0.01" min="0.01" autocomplete="off" value="<%= independentFees.amount/100 %>" required/>
-                <br>
-                <br>
+                <input
+                  type="number"
+                  name="independent"
+                  step="0.01"
+                  autocomplete="off"
+                  value="<%= independentFees.amount/100 %>"
+                  required
+                />
+                <br><br>
+
+                <label for="independent_deposit">Independent Deposit (Down Payment) in Dollars</label>
+                <input
+                  type="number"
+                  name="independent_deposit"
+                  step="0.01"
+                  autocomplete="off"
+                  value="<%= (independentFees.deposit_amount || 5000)/100 %>"
+                  required
+                />
+                <br><br>
                 <div style="text-align: center;">
                     <button>Set Fees</button>
                 </div>

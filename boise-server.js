@@ -781,6 +781,39 @@ function migrateFormsTable(db) {
   `);
 }
 
+  // ---- Extra columns for forms: role_scope (member/staff/admin) ----
+  const formCols = db.prepare(`PRAGMA table_info(forms)`).all().map(c => c.name);
+  if (!formCols.includes("role_scope")) {
+    db.prepare(`ALTER TABLE forms ADD COLUMN role_scope TEXT`).run();
+    db.prepare(`
+      UPDATE forms
+      SET role_scope = 'member'
+      WHERE role_scope IS NULL OR TRIM(role_scope) = ''
+    `).run();
+  }
+
+  // ---- Deposit amount on tuitionFees (per ensemble) ----
+  const tfCols = db.prepare(`PRAGMA table_info(tuitionFees)`).all().map(c => c.name);
+  if (!tfCols.includes("deposit_amount")) {
+    db.prepare(`ALTER TABLE tuitionFees ADD COLUMN deposit_amount INTEGER`).run();
+    // default deposit: $50 = 5000 cents if not set
+    db.prepare(`
+      UPDATE tuitionFees
+      SET deposit_amount = 5000
+      WHERE deposit_amount IS NULL
+    `).run();
+  }
+
+  // ---- Contract PDFs (corps / independent) ----
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS contractPdfs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ensemble TEXT NOT NULL,            -- 'corps' or 'independent'
+      pdf_path TEXT NOT NULL,            -- /pdf/publicpdf/...
+      uploaded_at INTEGER NOT NULL
+    )
+  `).run();
+
 // call it on boot
 migrateFormsTable(db);
 
@@ -889,6 +922,7 @@ function buildFormsQueryForUser(user) {
         WHERE expire_date > ?
           AND LOWER(COALESCE(ensemble_type,'all')) = 'all'
           AND COALESCE(contracted,0) = 0
+          AND COALESCE(role_scope,'member') = 'member'
         ORDER BY due_date IS NULL, due_date ASC, id DESC
       `,
       params: [now]
@@ -900,12 +934,16 @@ function buildFormsQueryForUser(user) {
   const wantIndependent  = user.contractedIndependent ? 1 : 0;
 
   // Base always includes public (non-contracted) "all" forms
-  let sql = `
-    SELECT *
-    FROM forms
-    WHERE expire_date > ?
-      AND (
-        (LOWER(COALESCE(ensemble_type,'all')) = 'all' AND COALESCE(contracted,0) = 0)
+  sql = `
+      SELECT *
+      FROM forms
+      WHERE expire_date > ?
+        AND COALESCE(role_scope,'member') = 'member'
+        AND (
+          (
+            LOWER(COALESCE(ensemble_type,'all')) = 'all'
+            AND COALESCE(contracted,0) = 0)
+            )
   `;
   const params = [now];
 
@@ -1356,16 +1394,6 @@ app.get("/upload-form-parent/:id/:child", mustBeParent, (req,res) => {
   if(!isParent)
     return res.redirect("/")
 
-  //Making sure we didn't already upload this form
-  // Correct check: document_id + child (not parent) user_id
-  const didUpload = db.prepare("SELECT 1 FROM formUploads WHERE document_id = ? AND user_id = ?")
-    .get(req.params.id, req.params.child);
-
-  if (didUpload) {
-    req.session.flashMessage = "You've already uploaded this form.";
-    return res.redirect(`/member-forms-parent/${req.params.child}`);
-  }
-
 
   const getRequiredForm = db.prepare("SELECT * FROM forms WHERE id = ?")
   const thisForm = getRequiredForm.get(req.params.id)
@@ -1388,13 +1416,23 @@ app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single(
   const userId = req.params.child;
 
   // Check if user has already uploaded this form
-  const didUpload = db.prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    // If they already uploaded, delete old row + file (resubmission)
+  const old = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
     .get(documentId, userId);
 
-  if (didUpload) {
-    req.session.flashMessage = "You've already uploaded this form.";
-    return res.redirect(`/member-forms-parent/${userId}`);
+  if (old && old.upload_path && old.upload_path.startsWith("/secure-pdf/")) {
+    const oldFsPath = path.join(__dirname, "private", "pdf", path.basename(old.upload_path));
+    try {
+      if (fs.existsSync(oldFsPath)) fs.unlinkSync(oldFsPath);
+    } catch (err) {
+      console.error("Failed to delete old secure pdf (parent):", err);
+    }
+    db.prepare("DELETE FROM formUploads WHERE id = ?").run(old.id);
   }
+
+  // Pull form data
+
 
   // Pull form data
   const name = req.body.name;
@@ -1435,15 +1473,7 @@ app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single(
 
 app.get("/upload-form/:id", mustBeMember, (req,res) => {
   // Correct check: same document_id + same user_id
-  const already = db.prepare("SELECT 1 FROM formUploads WHERE document_id = ? AND user_id = ?")
-                    .get(req.params.id, req.user.userid);
-
-  if (already) {
-    req.session.flashMessage = "You've already uploaded this form.";
-    return res.redirect(`/member-forms/${req.user.userid}`);
-  }
-
-  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
+    const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
   return res.render("upload-form", { thisForm });
 });
 
@@ -1463,29 +1493,33 @@ app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path
   const documentId = parseInt(req.params.id);
   const userId = req.user.userid;
 
-  console.log("WTF")
-
-  // Check if user has already uploaded this form
-  const didUpload = db.prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+  // If they already uploaded, delete old row + file (resubmission)
+  const old = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
     .get(documentId, userId);
 
-  if (didUpload) {
-    req.session.flashMessage = "You've already uploaded this form.";
-    return res.redirect(`/member-forms/${userId}`);
+  if (old && old.upload_path && old.upload_path.startsWith("/secure-pdf/")) {
+    const oldFsPath = path.join(__dirname, "private", "pdf", path.basename(old.upload_path));
+    try {
+      if (fs.existsSync(oldFsPath)) fs.unlinkSync(oldFsPath);
+    } catch (err) {
+      console.error("Failed to delete old secure pdf:", err);
+    }
+
+    db.prepare("DELETE FROM formUploads WHERE id = ?").run(old.id);
   }
 
   // Pull form data
-  const name = req.body.name;
-  const email = req.body.email;
+  const name      = req.body.name;
+  const email     = req.body.email;
   const signature = req.body.signature;
   const dateSigned = new Date(req.body.date).getTime();
-  const consent = req.body.read ? 1 : 0;
+  const consent   = req.body.read ? 1 : 0;
 
-  const ip = req.ip;
-  const userAgent = req.headers['user-agent'];
+  const ip        = req.ip;
+  const userAgent = req.headers["user-agent"];
   const documentPath = req.file ? `/secure-pdf/${req.file.filename}` : null;
 
-  // Insert into database
   const insertFormUpload = db.prepare(`
     INSERT INTO formUploads (
       signer_name, signer_email, upload_path, document_id,
@@ -1504,12 +1538,13 @@ app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path
     userAgent,
     signature,
     consent,
-    userId
+    Number(userId)
   );
 
   req.session.flashMessage = "Form uploaded.";
-  return res.redirect(`/member-forms`);
+  return res.redirect(`/member-forms/${userId}`);
 });
+
 
 
 app.post("/forgot-password", (req,res) => {
@@ -1829,27 +1864,51 @@ app.get("/extend-contract/:id", mustBeStaff, (req,res) => {
   return res.render("extend-contract",{thisUser})
 })
 
-app.get("/accept-contract/:id", mustBeLoggedIn, (req,res) => {
-  const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
+app.get("/accept-contract/:id", mustBeLoggedIn, (req, res) => {
+  const getContractStatement = db.prepare(
+    "SELECT * FROM contractExtension WHERE id = ?"
+  );
   const contractExtension = getContractStatement.get(req.params.id);
 
-  if(contractExtension.user_id != req.user.userid)
-  {
-    return res.redirect("/")
+  if (!contractExtension || contractExtension.user_id != req.user.userid) {
+    return res.redirect("/");
   }
 
-  if(!contractExtension){
-    return res.redirect("/")
-  }
-
-  let group = "Independent"
+  let groupLabel = "Independent";
+  let ensemble = "independent";
 
   if (contractExtension.season.includes("corps")) {
-    group = "Drum & Bugle Corps";
+    groupLabel = "Drum & Bugle Corps";
+    ensemble = "corps";
   }
 
-  return res.render("accept-contract",{group, season: CURRENTSEASON, contractExtension, bypass: contractExtension.bypass_fee})
-})
+  // Tuition + deposit info
+  const tuitionRow = db
+    .prepare("SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?")
+    .get(ensemble);
+
+  const depositCents = tuitionRow?.deposit_amount || 5000;
+  const depositLabel = (depositCents / 100).toFixed(2);
+
+  // Contract PDF (if any)
+  const pdfRow = db
+    .prepare(
+      "SELECT pdf_path FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    .get(ensemble);
+
+  const contractPdfPath = pdfRow ? pdfRow.pdf_path : null;
+
+  return res.render("accept-contract", {
+    group: groupLabel,
+    season: CURRENTSEASON,
+    contractExtension,
+    bypass: contractExtension.bypass_fee,
+    depositLabel,
+    contractPdfPath,
+  });
+});
+
 
 app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
   const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
@@ -1886,13 +1945,12 @@ app.post("/sign-contract/:id", mustBeLoggedIn, async (req, res) => {
   // Determine ensemble type
   const ensemble = contractExtension.season.includes("corps") ? "corps" : "independent";
 
-  // Fetch tuition fees for this ensemble
   const getTuitionStatement = db.prepare(
-    "SELECT amount FROM tuitionFees WHERE ensemble = ?"
+    "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
   );
   const tuition = getTuitionStatement.get(ensemble);
   if (!tuition) {
-    return res.redirect("/"); // no tuition record found
+    return res.redirect("/");
   }
 
   // If bypass fee is true, skip Stripe
@@ -1914,7 +1972,7 @@ app.post("/sign-contract/:id", mustBeLoggedIn, async (req, res) => {
   }
 
   // Stripe checkout flow for $50 down payment + 5% processing fee
-  const downPayment = 5000; // in pennies ($50)
+  const downPayment = tuition.deposit_amount || 5000; // cents
   const processingFee = Math.ceil(downPayment * 0.06);
   const totalAmount = downPayment + processingFee;
 
@@ -2126,13 +2184,24 @@ app.get("/set-tuition", mustBeAdmin, (req,res) => {
   return res.render("set-tuition", {corpsFees, independentFees})
 })
 
-app.post("/set-tuition", mustBeAdmin, (req,res) => {
-  db.prepare("UPDATE tuitionFees set amount = ? WHERE ensemble = ?").run(req.body.corps*100,"corps")
-  db.prepare("UPDATE tuitionFees set amount = ? WHERE ensemble = ?").run(req.body.independent*100,"independent")
+app.post("/set-tuition", mustBeAdmin, (req, res) => {
+  const corpsAmount       = Math.round(Number(req.body.corps || 0) * 100);
+  const independentAmount = Math.round(Number(req.body.independent || 0) * 100);
+  const corpsDeposit      = Math.round(Number(req.body.corps_deposit || 0) * 100);
+  const independentDeposit= Math.round(Number(req.body.independent_deposit || 0) * 100);
 
-  req.session.flashMessage = "Tuition fees updated!"
-  return res.redirect("/admin-portal")
-})
+  db.prepare(
+    "UPDATE tuitionFees SET amount = ?, deposit_amount = ? WHERE ensemble = ?"
+  ).run(corpsAmount, corpsDeposit, "corps");
+
+  db.prepare(
+    "UPDATE tuitionFees SET amount = ?, deposit_amount = ? WHERE ensemble = ?"
+  ).run(independentAmount, independentDeposit, "independent");
+
+  req.session.flashMessage = "Tuition fees updated!";
+  return res.redirect("/admin-portal");
+});
+
 
 app.get("/events-admin", mustBeAdmin, (req,res) => {
   const events = db.prepare("SELECT * FROM events ORDER BY datetime DESC").all();
@@ -2700,12 +2769,129 @@ app.get("/edit-forms",mustBeAdmin, (req,res) => {
   return res.render("edit-forms",{forms})
 })
 
+app.get("/edit-form/:id", mustBeAdmin, (req, res) => {
+  const form = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
+  if (!form) {
+    req.session.flashMessage = "Form not found.";
+    return res.redirect("/edit-forms");
+  }
+  return res.render("edit-form-single", { form });
+});
+
+app.post(
+  "/edit-form/:id",
+  mustBeAdmin,
+  pdfUpload.single("document_path"),
+  (req, res) => {
+    const formId = Number(req.params.id);
+    const existing = db
+      .prepare("SELECT * FROM forms WHERE id = ?")
+      .get(formId);
+
+    if (!existing) {
+      req.session.flashMessage = "Form not found.";
+      return res.redirect("/edit-forms");
+    }
+
+    const title       = String(req.body.title || "").trim();
+    const description = String(req.body.description || "").trim();
+    const expire_date = req.body.expire_date
+      ? new Date(req.body.expire_date).getTime()
+      : null;
+    const due_date    = req.body.due_date
+      ? new Date(req.body.due_date).getTime()
+      : null;
+    const content     = String(req.body.content || "").trim();
+
+    let ensemble_type = String(req.body.ensemble_type || "all").trim().toLowerCase();
+    if (!["all", "corps", "independent"].includes(ensemble_type)) {
+      ensemble_type = "all";
+    }
+
+    let contracted =
+      ensemble_type === "corps" || ensemble_type === "independent"
+        ? 1
+        : req.body.contracted
+        ? 1
+        : 0;
+
+    let role_scope = String(
+      req.body.role_scope || existing.role_scope || "member"
+    )
+      .trim()
+      .toLowerCase();
+    if (!["member", "staff", "admin"].includes(role_scope)) {
+      role_scope = "member";
+    }
+
+    // keep old pdf unless a new one is uploaded
+    let document_path = existing.document_path;
+    if (req.file) {
+      if (
+        document_path &&
+        document_path.startsWith("/pdf/publicpdf/")
+      ) {
+        const oldFsPath = path.join(
+          __dirname,
+          "public",
+          "pdf",
+          "publicpdf",
+          path.basename(document_path)
+        );
+        try {
+          if (fs.existsSync(oldFsPath)) fs.unlinkSync(oldFsPath);
+        } catch (err) {
+          console.error("Failed to delete old form pdf:", err);
+        }
+      }
+      document_path = `/pdf/publicpdf/${req.file.filename}`;
+    }
+
+    db.prepare(
+      `
+      UPDATE forms
+         SET title = ?,
+             description = ?,
+             document_path = ?,
+             upload = ?,
+             content = ?,
+             expire_date = ?,
+             due_date = ?,
+             ensemble_type = ?,
+             contracted = ?,
+             role_scope = ?
+       WHERE id = ?
+    `
+    ).run(
+      title,
+      description,
+      document_path,
+      req.body.upload ? 1 : 0,
+      content,
+      expire_date,
+      due_date,
+      ensemble_type,
+      contracted,
+      role_scope,
+      formId
+    );
+
+    req.session.flashMessage = "Form updated.";
+    return res.redirect("/edit-forms");
+  }
+);
+
 app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res) => {
   const title        = String(req.body.title || "").trim();
   const description  = String(req.body.description || "").trim();
   const expire_date  = new Date(req.body.expire_date).getTime();
   const due_date     = new Date(req.body.due_date).getTime();
   const content      = String(req.body.content || "").trim();
+
+    let role_scope = String(req.body.role_scope || "member").trim().toLowerCase();
+  if (!["member", "staff", "admin"].includes(role_scope)) {
+    role_scope = "member";
+  }
 
   // NEW: ensemble_type & contracted (coerced)
   let ensemble_type  = String(req.body.ensemble_type || "all").trim().toLowerCase();
@@ -2719,22 +2905,35 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res)
   // Optional: let triggers normalize later, but we still write clearly here
   const filePath = req.file ? `/pdf/publicpdf/${req.file.filename}` : null;
 
-  const addForm = db.prepare(`
-    INSERT INTO forms (title, description, document_path, upload, content, expire_date, season, due_date, ensemble_type, contracted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    const addForm = db.prepare(`
+    INSERT INTO forms (
+      title,
+      description,
+      document_path,
+      upload,
+      content,
+      expire_date,
+      season,
+      due_date,
+      ensemble_type,
+      contracted,
+      role_scope
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   addForm.run(
     title,
     description,
     filePath,
-    req.body.upload ? 1 : 0,      // keep supporting "upload" if you use it
+    req.body.upload ? 1 : 0,
     content,
     expire_date || null,
-    req.body.season || null,      // keep supporting "season" if present
+    req.body.season || null,
     due_date || null,
     ensemble_type,
-    contracted
+    contracted,
+    role_scope
   );
 
   req.session.flashMessage = "Form added";
@@ -3977,6 +4176,196 @@ app.get("/staff-admin", mustBeAdmin, (req, res) => {
 app.get("/staff/new", mustBeAdmin, (req, res) => {
   res.render("staff-new", { categories: STAFF_CATEGORIES });
 });
+
+app.get("/contracts-admin", mustBeAdmin, (req, res) => {
+  const corpsContract = db
+    .prepare(
+      "SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    .get("corps");
+
+  const independentContract = db
+    .prepare(
+      "SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    .get("independent");
+
+  res.render("contracts-admin", {
+    corpsContract,
+    independentContract,
+  });
+});
+
+app.post(
+  "/contracts-admin",
+  mustBeAdmin,
+  pdfUpload.fields([
+    { name: "corps_pdf", maxCount: 1 },
+    { name: "independent_pdf", maxCount: 1 },
+  ]),
+  (req, res) => {
+    const now = Date.now();
+
+    if (req.files && req.files["corps_pdf"] && req.files["corps_pdf"][0]) {
+      const file = req.files["corps_pdf"][0];
+      const pdfPath = `/pdf/publicpdf/${file.filename}`;
+      db.prepare(
+        "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
+      ).run("corps", pdfPath, now);
+    }
+
+    if (req.files && req.files["independent_pdf"] && req.files["independent_pdf"][0]) {
+      const file = req.files["independent_pdf"][0];
+      const pdfPath = `/pdf/publicpdf/${file.filename}`;
+      db.prepare(
+        "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
+      ).run("independent", pdfPath, now);
+    }
+
+    req.session.flashMessage = "Contract PDFs updated.";
+    return res.redirect("/contracts-admin");
+  }
+);
+
+app.get("/admin-rsvps", mustBeAdmin, (req, res) => {
+  // Get all events with their RSVPs and users
+  const rows = db.prepare(`
+    SELECT
+      e.id            AS event_id,
+      e.title         AS event_title,
+      e.datetime      AS event_datetime,
+      e.location      AS event_location,
+      r.id            AS rsvp_id,
+      r.paid          AS rsvp_paid,
+      u.id            AS user_id,
+      u.firstname,
+      u.lastname,
+      u.section,
+      u.instrument,
+      u.staff,
+      u.admin
+    FROM events e
+    LEFT JOIN rsvp r ON r.event_id = e.id
+    LEFT JOIN users u ON u.id = r.user_id
+    ORDER BY e.datetime DESC, u.lastname, u.firstname
+  `).all();
+
+  // group by event
+  const eventsMap = new Map();
+  const userIds = new Set();
+
+  for (const row of rows) {
+    if (!eventsMap.has(row.event_id)) {
+      eventsMap.set(row.event_id, {
+        id: row.event_id,
+        title: row.event_title,
+        datetime: row.event_datetime,
+        location: row.event_location,
+        rsvps: [],
+      });
+    }
+    const evt = eventsMap.get(row.event_id);
+    if (row.rsvp_id) {
+      evt.rsvps.push({
+        rsvp_id: row.rsvp_id,
+        paid: row.rsvp_paid,
+        user_id: row.user_id,
+        firstname: row.firstname,
+        lastname: row.lastname,
+        section: row.section,
+        instrument: row.instrument,
+        staff: row.staff,
+        admin: row.admin,
+      });
+      if (row.user_id) userIds.add(row.user_id);
+    }
+  }
+
+  // compute "remaining performer forms" for each user
+  const formsStatus = {};
+  for (const uid of userIds) {
+    const required = getRequiredFormsForUser(uid);
+    const uploads = db
+      .prepare("SELECT * FROM formUploads WHERE user_id = ?")
+      .all(uid);
+    const leftover = markUploadsAndCount(required, uploads);
+    formsStatus[uid] = {
+      requiredCount: required.length,
+      missingCount: leftover,
+    };
+  }
+
+  const events = Array.from(eventsMap.values());
+
+  res.render("admin-rsvps", {
+    events,
+    formsStatus,
+  });
+});
+
+app.get("/admin-forms", mustBeAdmin, (req, res) => {
+  const membership = String(req.query.membership || "all").toLowerCase(); // all|corps|independent
+  const sectionFilter = String(req.query.section || "").trim();
+
+  const where = ["1=1"];
+  const params = [];
+
+  if (membership === "corps") {
+    where.push("contractedCorps = 1");
+  } else if (membership === "independent") {
+    where.push("contractedIndependent = 1");
+  }
+
+  if (sectionFilter) {
+    where.push("section = ?");
+    params.push(sectionFilter);
+  }
+
+  const users = db
+    .prepare(
+      `
+      SELECT id, firstname, lastname, section, instrument,
+             contractedCorps, contractedIndependent
+      FROM users
+      WHERE ${where.join(" AND ")}
+      ORDER BY lastname, firstname
+    `
+    )
+    .all(...params);
+
+  const rows = [];
+  for (const u of users) {
+    const required = getRequiredFormsForUser(u.id);
+    const uploads = db
+      .prepare("SELECT * FROM formUploads WHERE user_id = ?")
+      .all(u.id);
+    const missing = markUploadsAndCount(required, uploads);
+
+    rows.push({
+      user: u,
+      requiredCount: required.length,
+      missingCount: missing,
+    });
+  }
+
+  // finished first
+  rows.sort((a, b) => {
+    const aFinished = a.requiredCount > 0 && a.missingCount === 0;
+    const bFinished = b.requiredCount > 0 && b.missingCount === 0;
+    if (aFinished && !bFinished) return -1;
+    if (!aFinished && bFinished) return 1;
+    return 0;
+  });
+
+  res.render("admin-forms", {
+    rows,
+    membership,
+    sectionFilter,
+  });
+});
+
+
+
 
 // Create staff
 app.post("/staff/new", mustBeAdmin, imageUpload.single("image"), processImageJpgOptional, (req, res) => {

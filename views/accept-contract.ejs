@@ -15,76 +15,21 @@
         <br>
         <div style="padding: 24px;">
 
-            <p>This Member Contract ("Agreement") is entered into by and between <strong>Boise Gems <%= group %></strong> (the "Organization") and the undersigned individual ("Member") for participation in the <%= season %> season of the Boise Gems <%= group %> drum and bugle corps program, under the governing body of <strong><%= group.includes('Independent') ? 'Winter Guard International (WGI)' : 'Drum Corps International (DCI)' %></strong>.</p>
-
-            <h3>1. Purpose</h3>
-            <p>
-            This Agreement outlines the expectations, responsibilities, and code of conduct required of all participants. By signing this contract, the Member affirms their commitment to uphold the values, mission, and standards of Boise Gems <%= group %> throughout the entire <%= season %> season.
-            </p>
-
-            <h3>2. Code of Conduct</h3>
-            <p>
-            All members are expected to maintain the highest level of personal integrity, respect, and professionalism both on and off the field. Participation in Boise Gems <%= group %> is a privilege, and any conduct that undermines the safety, unity, or reputation of the ensemble will not be tolerated.
-            </p>
-
-            <p>Members are expressly prohibited from engaging in the following:</p>
-            <ul>
-                <li><strong>Bullying, Harassment, or Intimidation:</strong> Including but not limited to verbal abuse, derogatory language, threats, humiliation, exclusion, or targeted online behavior.</li>
-                <li><strong>Sexual Misconduct:</strong> Any form of unwanted sexual attention, harassment, or behavior, including inappropriate comments, gestures, advances, or physical contact.</li>
-                <li><strong>Physical Assault or Violence:</strong> Including threats or acts of physical aggression, regardless of intent or provocation.</li>
-                <li><strong>Possession or Use of Drugs and Alcohol:</strong> The use, possession, or distribution of illegal substances is strictly forbidden. Alcohol and marijuana use are also prohibited at all official events, rehearsals, and housing sites—regardless of legal age.</li>
-                <li><strong>Discrimination:</strong> All members will respect diversity and inclusion. Discrimination on the basis of race, gender, sexual orientation, religion, disability, or any other protected class is not tolerated.</li>
-                <li><strong>Social Media Misconduct:</strong> Members are representatives of Boise Gems <%= group %> and must exercise discretion online. Defamatory, divisive, or offensive content that reflects poorly on the organization is grounds for removal.</li>
-            </ul>
-
-            <p>
-            Failure to comply with any of the above may result in disciplinary action including warnings, suspension, or permanent dismissal from the organization, at the discretion of the staff and board of directors.
-            </p>
-
-            <h3>3. Attendance and Commitment</h3>
-            <p>
-            Members agree to attend all scheduled rehearsals, performances, camps, and tours for the duration of the <%= season %> season unless excused by staff. Absences must be communicated in advance and approved. Excessive or unexcused absences may result in alternate assignment or dismissal.
-            </p>
-
-            <h3>4. Expectations for Personal Growth and Development</h3>
-            <p>
-            Boise Gems <%= group %> is not only an ensemble, but a space for growth, discipline, and transformation. Members are expected to bring a growth mindset to every rehearsal and interaction—believing in their ability to improve through effort, resilience, and a willingness to learn.
-            </p>
-
-            <ul>
-                <li>Accept constructive feedback with humility and a desire to grow.</li>
-                <li>Encourage your peers, recognizing that individual excellence contributes to ensemble success.</li>
-                <li>Show up prepared, both physically and mentally, for the demands of the activity.</li>
-                <li>Be adaptable, positive, and willing to push through challenges together.</li>
-            </ul>
-
-            <p>
-            We value commitment over perfection, effort over ego, and community over comparison. You are not only an individual performer—you are a vital part of something greater than yourself.
-            </p>
-
-            <h3>5. Health, Safety, and Wellness</h3>
-            <p>
-            You are expected to prioritize your physical and mental health throughout the season. The staff is committed to creating a supportive and safe environment, and any concerns should be reported to leadership immediately. We believe in injury prevention, recovery, and open communication about mental wellness.
-            </p>
-
-            <h3>6. Liability and Agreement to Participate</h3>
-            <p>
-            The Member understands the physical demands of drum corps and voluntarily assumes all risks associated with participation, including injury. The Organization is not liable for personal belongings lost or damaged during the season.
-            </p>
-
-            <h3>7. Termination of Agreement</h3>
-            <p>
-            This Agreement may be terminated by the Organization at any time due to violation of the Code of Conduct, failure to meet expectations, or circumstances deemed harmful to the ensemble or its members. Likewise, the Member may withdraw from the season with written notice, but acknowledges that fees paid are non-refundable unless otherwise stated in the financial policy.
-            </p>
-
-            <h3>8. Acknowledgment</h3>
-            <p>
-            By signing below, the Member confirms they have read and understood the expectations outlined in this contract and agree to abide by the terms set forth for the duration of the <%= season %> Boise Gems <%= group %> season.
-            </p>
+            <% if (contractPdfPath) { %>
+                <p>Please read the official contract PDF below before continuing:</p>
+                <div style="margin: 16px 0;">
+                    <iframe
+                    src="<%= contractPdfPath %>"
+                    style="width:100%; max-width:900px; height:600px; border:1px solid #ccc; border-radius:6px;"
+                    ></iframe>
+                </div>
+            <% } %>
             <br>
             <div style="text-align: center;">
-                <% if(!bypass) {%>
-                <p>For commitment purposes, we require a $50 down payment before signing the contract.</p>
+                   <% if(!bypass) { %>
+                  <p>
+                    For commitment purposes, we require a $<%= depositLabel %> down payment before signing the contract.
+                  </p>
                 <% } %>
                 <br>
                 <a href="/sign-contract/<%= contractExtension.id %>"><button>Make Payment and Sign</button></a>

@@ -4426,11 +4426,40 @@ app.get("/admin-rsvps", mustBeAdmin, (req, res) => {
     };
   }
 
+  const parentIds = [...userIds];
+  const childrenByParent = {};
+
+  if (parentIds.length) {
+    const placeholders = parentIds.map(() => "?").join(",");
+    const childRows = db
+      .prepare(
+        `
+        SELECT id, firstname, lastname, parentId
+        FROM users
+        WHERE parentId IN (${placeholders})
+        ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+        `
+      )
+      .all(...parentIds);
+
+    for (const child of childRows) {
+      if (!childrenByParent[child.parentId]) {
+        childrenByParent[child.parentId] = [];
+      }
+      childrenByParent[child.parentId].push({
+        id: child.id,
+        firstname: child.firstname,
+        lastname: child.lastname,
+      });
+    }
+  }
+
   const events = Array.from(eventsMap.values());
 
   res.render("admin-rsvps", {
     events,
     formsStatus,
+    childrenByParent,
   });
 });
 

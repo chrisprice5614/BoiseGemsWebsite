@@ -46,11 +46,21 @@
                    r.admin ? "Admin" : (r.staff ? "Staff" : "Performer");
             %>
               <tr>
-                <td><%= r.firstname %> <%= r.lastname %></td>
-                <td><%= r.section || "" %></td>
-                <td><%= r.instrument || "" %></td>
-                <td><%= role %></td>
-                <td><%= r.paid ? "Yes" : "No" %></td>
+                 <td>
+                   <%= r.firstname %> <%= r.lastname %>
+                   <% if (typeof childrenByParent !== "undefined" && childrenByParent[r.user_id] && childrenByParent[r.user_id].length) { %>
+                     <ul class="rsvp-children" style="margin:4px 0 0 0; padding-left:1.2em; font-size:0.9em;">
+                       <% childrenByParent[r.user_id].forEach(function(child){ %>
+                         <li>Child: <%= child.firstname %> <%= child.lastname %></li>
+                       <% }); %>
+                     </ul>
+                   <% } %>
+                 </td>
+                 <td><%= r.section || "" %></td>
+                 <td><%= r.instrument || "" %></td>
+                 <td><%= role %></td>
+                 <td><%= r.paid ? "Yes" : "No" %></td>
+                 <td>
                 <td>
                   <% if (!status.requiredCount) { %>
                     n/a

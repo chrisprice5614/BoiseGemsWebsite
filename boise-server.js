@@ -1079,7 +1079,7 @@ const coordinates = {
 
 
 
-app.post("/register-parent", (req,res) => {
+app.post("/register-parent", (req, res) => {
   let errors = [];
 
   let firstname = req.body.firstname || "";
@@ -1090,65 +1090,89 @@ app.post("/register-parent", (req,res) => {
   let password = req.body.password || "";
   let passwordRetype = req.body.passwordRetype || "";
   let birthday = new Date(req.body.birthday).getTime();
-  
 
-  firstname = req.body.firstname.trim()
-  lastname = req.body.lastname.trim()
-  phone = req.body.phone.trim()
-  email = req.body.email.trim().toLowerCase()
-  address = req.body.address.trim()
+  firstname = req.body.firstname.trim();
+  lastname = req.body.lastname.trim();
+  phone = req.body.phone.trim();
+  email = req.body.email.trim().toLowerCase();
+  address = req.body.address.trim();
 
-  placeholders = {firstname, lastname, phone, email, address, birthday};
+  placeholders = { firstname, lastname, phone, email, address, birthday };
 
-  if(password.length < 8)
-    errors.push("Your password must be at least 8 characters long")
+  if (password.length < 8)
+    errors.push("Your password must be at least 8 characters long");
 
   //Checking if email already exists
-  const checkEmailstatement = db.prepare("SELECT * FROM users WHERE email = ?")
+  const checkEmailstatement = db.prepare("SELECT * FROM users WHERE email = ?");
   const EmailExists = checkEmailstatement.get(email);
 
-  if(EmailExists)
-    errors.push("Email is already in use")
+  if (EmailExists) errors.push("Email is already in use");
 
-  if(password !== passwordRetype)
-    errors.push("Passwords do not match")
-  
+  if (password !== passwordRetype) errors.push("Passwords do not match");
+
   res.locals.errors = errors;
-  
-  if(errors.length)
-    return res.render("register-parent", {placeholders})
 
-  const salt = bcrypt.genSaltSync(10)
-  password = bcrypt.hashSync(password, salt)
-  
-  const emailsecret = bcrypt.hashSync(firstname + Date.now().toString(), salt).replace(/[^a-zA-Z0-9]/g, '')
+  if (errors.length) return res.render("register-parent", { placeholders });
 
-  const addParent = db.prepare("INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ?)")
-  const newParent = addParent.run(firstname, lastname, password, address, birthday, email, phone, 0, 1, "parent")
+  const salt = bcrypt.genSaltSync(10);
+  password = bcrypt.hashSync(password, salt);
+
+  // ✅ Instantly verified = 1, no emailsecret/userVerify row
+  const addParent = db.prepare(
+    "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
+  );
+  const newParent = addParent.run(
+    firstname,
+    lastname,
+    password,
+    address,
+    birthday,
+    email,
+    phone,
+    1, // verified
+    1, // parent flag
+    "parent"
+  );
   const parentId = newParent.lastInsertRowid;
 
+  // ✅ Auto-login just like /login
+  const ourTokenValue = jwt.sign(
+    {
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
+      userid: parentId,
+      firstname,
+      lastname,
+      email,
+      admin: 0,
+      staff: 0,
+      parent: 1,
+    },
+    process.env.JWTSECRET
+  );
 
-  const addEmailVerify = db.prepare("INSERT INTO userVerify (code, user_id) VALUES (? , ?)")
-  addEmailVerify.run(emailsecret, parentId);
+  res.cookie("bgcookie", ourTokenValue, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24,
+  });
 
+  // ✅ Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
-    Please click the button below to verify your account!
-    <br/>
-    <p style="text-align: center; margin: 32px 0;">
-                <a href="${process.env.BASEURL}/verify/${emailsecret}" target="_blank" style="background-color: #9D76BB; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 4px; font-weight: bold; display: inline-block;">
-                  Verify Account
-                </a>
-              </p>
-    <br/>
-    If the button above isn't working, please click here: <a href="${process.env.BASEURL}/verify/${emailsecret}">${process.env.BASEURL}/verify/${emailsecret}</a>
-  `
+    <p>Welcome to Boise Gems! Your account has been created successfully.</p>
 
-  sendEmail(email,"Verify Your Account", html)
+    <p>You can log in anytime here: <a href="${process.env.BASEURL}/login">${process.env.BASEURL}/login</a></p>
 
-  return res.redirect("/check-email")
-})
+    <p>If you didn't create this account, please contact us.</p>
+  `;
+
+  sendEmail(email, "Welcome to Boise Gems!", html);
+
+  return res.redirect("/");
+});
+
 
 app.get("/verify/:id", (req,res) => {
   const verifyCheck = req.params.id;
@@ -1187,10 +1211,8 @@ app.get("/verify/:id", (req,res) => {
   return res.redirect("/")
 })
 
-app.post("/register-member", (req,res) => {
-
-  if(req.user)
-    return res.redirect("/")
+app.post("/register-member", (req, res) => {
+  if (req.user) return res.redirect("/");
 
   let errors = [];
 
@@ -1202,71 +1224,112 @@ app.post("/register-member", (req,res) => {
   let password = req.body.password || "";
   let passwordRetype = req.body.passwordRetype || "";
   let birthday = new Date(req.body.birthday).getTime();
-  
 
-  firstname = req.body.firstname.trim()
-  lastname = req.body.lastname.trim()
-  phone = req.body.phone.trim()
-  email = req.body.email.trim().toLowerCase()
-  address = req.body.address.trim()
-  section = req.body.section.trim()
-  instrument = req.body.instrument.trim()
+  firstname = req.body.firstname.trim();
+  lastname = req.body.lastname.trim();
+  phone = req.body.phone.trim();
+  email = req.body.email.trim().toLowerCase();
+  address = req.body.address.trim();
+  let section = req.body.section.trim();
+  let instrument = req.body.instrument.trim();
 
-  placeholders = {firstname, lastname, phone, email, address, birthday, section, instrument};
+  placeholders = {
+    firstname,
+    lastname,
+    phone,
+    email,
+    address,
+    birthday,
+    section,
+    instrument,
+  };
 
-  if(password.length < 8)
-    errors.push("Your password must be at least 8 characters long")
+  if (password.length < 8)
+    errors.push("Your password must be at least 8 characters long");
 
   //Checking if email already exists
-  const checkEmailstatement = db.prepare("SELECT * FROM users WHERE email = ?")
+  const checkEmailstatement = db.prepare("SELECT * FROM users WHERE email = ?");
   const EmailExists = checkEmailstatement.get(email);
 
-  if(EmailExists)
-    errors.push("Email is already in use")
+  if (EmailExists) errors.push("Email is already in use");
 
-  if(password !== passwordRetype)
-    errors.push("Passwords do not match")
-  
+  if (password !== passwordRetype) errors.push("Passwords do not match");
+
   res.locals.errors = errors;
-  
-  if(errors.length)
-    return res.render("register-member", {placeholders})
 
-  const salt = bcrypt.genSaltSync(10)
-  password = bcrypt.hashSync(password, salt)
-  
-  const emailsecret = bcrypt.hashSync(firstname + Date.now().toString(), salt).replace(/[^a-zA-Z0-9]/g, '')
+  if (errors.length) return res.render("register-member", { placeholders });
 
-  const addMember = db.prepare("INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)")
-  const newMember = addMember.run(firstname, lastname, password, address, birthday, email, phone, 0, emailsecret, section, instrument)
+  const salt = bcrypt.genSaltSync(10);
+  password = bcrypt.hashSync(password, salt);
+
+  // We can still generate an emailsecret if the column exists, but it won't be used
+  const emailsecret = bcrypt
+    .hashSync(firstname + Date.now().toString(), salt)
+    .replace(/[^a-zA-Z0-9]/g, "");
+
+  // ✅ Instantly verified = 1, no userVerify insert
+  const addMember = db.prepare(
+    "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
+  );
+  const newMember = addMember.run(
+    firstname,
+    lastname,
+    password,
+    address,
+    birthday,
+    email,
+    phone,
+    1, // verified
+    emailsecret, // stored but not used
+    section,
+    instrument
+  );
 
   const newMemberId = newMember.lastInsertRowid;
 
-  const addEmailVerify = db.prepare("INSERT INTO userVerify (code, user_id) VALUES (? , ?)")
-  addEmailVerify.run(emailsecret, newMemberId);
+  const addPermissions = db.prepare(
+    "INSERT INTO permissions (user_id) VALUES (?)"
+  );
+  addPermissions.run(newMemberId);
 
-  const addPermissions = db.prepare("INSERT INTO permissions (user_id) VALUES (?)")
-  addPermissions.run(newMemberId)
-  
+  // ✅ Auto-login
+  const ourTokenValue = jwt.sign(
+    {
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
+      userid: newMemberId,
+      firstname,
+      lastname,
+      email,
+      admin: 0,
+      staff: 0,
+      parent: 0,
+    },
+    process.env.JWTSECRET
+  );
 
+  res.cookie("bgcookie", ourTokenValue, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24,
+  });
+
+  // ✅ Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
-    Please click the button below to verify your account!
-    <br/>
-    <p style="text-align: center; margin: 32px 0;">
-                <a href="${process.env.BASEURL}/verify/${emailsecret}" target="_blank" style="background-color: #9D76BB; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 4px; font-weight: bold; display: inline-block;">
-                  Verify Account
-                </a>
-              </p>
-    <br/>
-    If the button above isn't working, please click here: <a href="${process.env.BASEURL}/verify/${emailsecret}">${process.env.BASEURL}/verify/${emailsecret}</a>
-  `
+    <p>Welcome to Boise Gems! Your account has been created successfully.</p>
 
-  sendEmail(email,"Verify Your Account", html)
+    <p>You can log in anytime here: <a href="${process.env.BASEURL}/login">${process.env.BASEURL}/login</a></p>
 
-  return res.redirect("/check-email")
-})
+    <p>If you didn't create this account, please contact us.</p>
+  `;
+
+  sendEmail(email, "Welcome to Boise Gems!", html);
+
+  return res.redirect("/");
+});
+
 
 app.get("/check-email", (req,res) => {
   return res.render("check-email")
@@ -1637,48 +1700,57 @@ app.post("/reset-password/:id", (req,res) => {
   return res.redirect("/")
 })
 
-app.post("/login", (req,res) => {
+app.post("/login", (req, res) => {
   errors = [];
 
-  const email = req.body.email.trim().toLowerCase()
+  const email = req.body.email.trim().toLowerCase();
   const password = req.body.password;
 
-  const getUserStatement = db.prepare("SELECT * FROM users WHERE email = ?")
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE email = ?");
   const userInQuestion = getUserStatement.get(email);
 
-  if(!userInQuestion)
-  {
-    errors.push("Invalid email/password")
-    return res.render("login", {errors})
+  if (!userInQuestion) {
+    errors.push("Invalid email/password");
+    return res.render("login", { errors });
   }
 
-  if(userInQuestion.verified == false)
-  {
-    errors.push("Please verify your account!")
-    return res.render("login", {errors})
-  }
+  // ❌ old check removed:
+  // if(userInQuestion.verified == false) { ... }
 
-  const matchOrNot = bcrypt.compareSync(req.body.password, userInQuestion.password)
-  if(!matchOrNot)
-  {
-    errors=["Invalid email/password"]
-    return res.render("login", {errors})
+  const matchOrNot = bcrypt.compareSync(
+    req.body.password,
+    userInQuestion.password
+  );
+  if (!matchOrNot) {
+    errors = ["Invalid email/password"];
+    return res.render("login", { errors });
   }
 
   //Logging in
-  // log the user in by giving them a cookie
-  const ourTokenValue = jwt.sign({exp: Math.floor(Date.now() / 1000) + (60*60*24*3), userid: userInQuestion.id, firstname: userInQuestion.firstname, lastname: userInQuestion.lastname, email: userInQuestion.email, admin: userInQuestion.admin, staff: userInQuestion.staff, parent: userInQuestion.parent}, process.env.JWTSECRET) //Creating a token for logging in
-  
-  res.cookie("bgcookie",ourTokenValue, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 1000 * 60 * 60 * 24
-  }) //name, string to remember,
+  const ourTokenValue = jwt.sign(
+    {
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
+      userid: userInQuestion.id,
+      firstname: userInQuestion.firstname,
+      lastname: userInQuestion.lastname,
+      email: userInQuestion.email,
+      admin: userInQuestion.admin,
+      staff: userInQuestion.staff,
+      parent: userInQuestion.parent,
+    },
+    process.env.JWTSECRET
+  ); //Creating a token for logging in
 
-  return res.redirect("/")
+  res.cookie("bgcookie", ourTokenValue, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24,
+  });
 
-})
+  return res.redirect("/");
+});
+
 
 app.get("/change-account-type/:id", mustBeAdmin, (req,res) => {
   const userId = req.params.id;

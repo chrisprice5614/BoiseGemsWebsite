@@ -913,58 +913,81 @@ function mustBeMember(req,res, next){
 function buildFormsQueryForUser(user) {
   const now = Date.now();
 
-  // Not contracted to either group
-  if (!user?.contractedCorps && !user?.contractedIndependent) {
+  const wantCorps       = !!user?.contractedCorps;
+  const wantIndependent = !!user?.contractedIndependent;
+
+  // 1) Not contracted to either group → only general "all", non-contracted, member forms
+  if (!wantCorps && !wantIndependent) {
     return {
       sql: `
         SELECT *
         FROM forms
         WHERE expire_date > ?
-          AND LOWER(COALESCE(ensemble_type,'all')) = 'all'
-          AND COALESCE(contracted,0) = 0
-          AND COALESCE(role_scope,'member') = 'member'
+          AND LOWER(COALESCE(ensemble_type, 'all')) = 'all'
+          AND COALESCE(contracted, 0) = 0
+          AND COALESCE(role_scope, 'member') = 'member'
         ORDER BY due_date IS NULL, due_date ASC, id DESC
       `,
-      params: [now]
+      params: [now],
     };
   }
 
-  // Contracted to one or both groups
-  const wantCorps        = user.contractedCorps ? 1 : 0;
-  const wantIndependent  = user.contractedIndependent ? 1 : 0;
-
-  // Base always includes public (non-contracted) "all" forms
-  sql = `
-      SELECT *
-      FROM forms
-      WHERE expire_date > ?
-        AND COALESCE(role_scope,'member') = 'member'
-        AND (
-          (
-            LOWER(COALESCE(ensemble_type,'all')) = 'all'
-            AND COALESCE(contracted,0) = 0)
-            )
+  // 2) Contracted to corps and/or independent
+  let sql = `
+    SELECT *
+    FROM forms
+    WHERE expire_date > ?
+      AND COALESCE(role_scope, 'member') = 'member'
+      AND (
+        (
+          LOWER(COALESCE(ensemble_type, 'all')) = 'all'
+          AND COALESCE(contracted, 0) = 0
+        )
   `;
   const params = [now];
 
-  // Add corps / independent contracted forms as needed
+  // Add corps contracted forms
   if (wantCorps) {
-    sql += ` OR (LOWER(ensemble_type) = 'corps' AND COALESCE(contracted,0) = 1)`;
-  }
-  if (wantIndependent) {
-    sql += ` OR (LOWER(ensemble_type) = 'independent' AND COALESCE(contracted,0) = 1)`;
+    sql += `
+        OR (
+          LOWER(ensemble_type) = 'corps'
+          AND COALESCE(contracted, 0) = 1
+        )
+    `;
   }
 
-  sql += `)
-          ORDER BY due_date IS NULL, due_date ASC, id DESC`;
+  // Add independent contracted forms
+  if (wantIndependent) {
+    sql += `
+        OR (
+          LOWER(ensemble_type) = 'independent'
+          AND COALESCE(contracted, 0) = 1
+        )
+    `;
+  }
+
+  // Close the big AND ( ... ) and finish query
+  sql += `
+      )
+    ORDER BY due_date IS NULL, due_date ASC, id DESC
+  `;
 
   return { sql, params };
 }
 
-// Get the required forms for a user (returns rows[])
+
 function getRequiredFormsForUser(userId) {
-  const user = db.prepare(`SELECT id, contractedCorps, contractedIndependent FROM users WHERE id = ?`).get(userId);
+  const user = db.prepare(`
+    SELECT id, contractedCorps, contractedIndependent
+    FROM users
+    WHERE id = ?
+  `).get(userId);
+
   const q = buildFormsQueryForUser(user || { contractedCorps: 0, contractedIndependent: 0 });
+
+  console.log("FORMS SQL:", q.sql);
+  console.log("FORMS PARAMS:", q.params);
+
   return db.prepare(q.sql).all(...q.params);
 }
 

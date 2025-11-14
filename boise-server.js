@@ -3925,6 +3925,42 @@ app.get("/event/:slug/rsvps-data", mustBeAdmin, (req, res) => {
 
   const rsvps = db.prepare(sql).all(...params);
 
+   const parentIds = rsvps.map(r => r.user_id).filter(Boolean);
+  if (parentIds.length) {
+    const placeholders = parentIds.map(() => "?").join(",");
+    const childrenByParent = {};
+    const childRows = db
+      .prepare(
+        `
+        SELECT id, firstname, lastname, parentId
+        FROM users
+        WHERE parentId IN (${placeholders})
+        ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+        `
+      )
+      .all(...parentIds);
+
+    for (const child of childRows) {
+      if (!childrenByParent[child.parentId]) {
+        childrenByParent[child.parentId] = [];
+      }
+      childrenByParent[child.parentId].push({
+        id: child.id,
+        firstname: child.firstname,
+        lastname: child.lastname,
+      });
+    }
+
+    for (const r of rsvps) {
+      r.children = childrenByParent[r.user_id] || [];
+    }
+  } else {
+    // keep shape consistent
+    for (const r of rsvps) {
+      r.children = [];
+    }
+  }
+
   // Distinct sections for dropdown (based on *all* RSVPs for this event)
   const allSections = db.prepare(`
     SELECT DISTINCT

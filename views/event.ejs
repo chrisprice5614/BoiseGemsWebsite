@@ -233,6 +233,16 @@
 
               const name = document.createElement('span');
               name.innerHTML = `<strong>${r.firstname} ${r.lastname}</strong>`;
+
+              // If this RSVP is from a parent with children, show them right under the name
+              if (Array.isArray(r.children) && r.children.length) {
+                const label = r.children.length > 1 ? 'Children' : 'Child';
+                const kids = r.children
+                  .map(c => `${c.firstname} ${c.lastname}`)
+                  .join(', ');
+                name.innerHTML += `<br><small>${label}: ${kids}</small>`;
+              }
+
               row.appendChild(name);
 
               if (r.section) row.appendChild(pill(r.section));

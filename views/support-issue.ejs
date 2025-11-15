@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Submit Website Issue | Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="max-width: 800px; margin: 16px auto;">
+    <h1>Submit Website Issue</h1>
+    <p>
+      You are currently logged in as: <strong><%= role %></strong>.<br>
+      Please be as detailed as possible about what isn’t working so we can fix it quickly.
+    </p>
+
+    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+      <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border: 1px solid #ff9c9c;"><%= flashMessage %></p>
+    <% } %>
+
+    <form action="/support/issue" method="post" enctype="multipart/form-data">
+      <div style="margin-bottom: 12px;">
+        <label>
+          Subject:<br>
+          <input type="text" name="subject" required style="width: 100%;" />
+        </label>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label>
+          What were you trying to do, and what went wrong?<br>
+          <textarea name="message" rows="8" required style="width: 100%;"></textarea>
+        </label>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label>
+          Page URL (optional):<br>
+          <input type="url" name="page_url" style="width: 100%;" placeholder="https://www.boisegems.org/..." />
+        </label>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label>
+          Attach screenshots (optional):<br>
+          <input type="file" name="screenshots" multiple accept="image/*" />
+        </label>
+        <p><small>You can attach screenshots or images that show the issue.</small></p>
+      </div>
+
+      <button type="submit">Submit Issue</button>
+    </form>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

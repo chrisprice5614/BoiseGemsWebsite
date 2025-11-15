@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= scope === "corps" ? "Corps" : "Indoor" %> Files — <%= year %> | Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="max-width: 960px; margin: 16px auto;">
+    <p><a href="/files">&larr; Back to Files Home</a></p>
+    <h1><%= scope === "corps" ? "Corps" : "Indoor" %> Files — <%= year %></h1>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 16px;">
+      <% sections.forEach(function(sec) { %>
+        <a href="/files/folder/<%= sec.id %>" style="text-decoration: none;">
+          <div style="padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12);">
+            <h2 style="margin-top: 0;"><%= sec.name %></h2>
+            <p>Section folder for <%= sec.section %>.</p>
+          </div>
+        </a>
+      <% }) %>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

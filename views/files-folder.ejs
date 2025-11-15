@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= folder.name %> | Music & Files | Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="max-width: 1100px; margin: 16px auto;">
+    <nav style="margin-bottom: 8px; font-size: 0.9rem;">
+      <% breadcrumbs.forEach(function(bc, idx) { %>
+        <% if (bc.href) { %>
+          <a href="<%= bc.href %>"><%= bc.label %></a>
+        <% } else { %>
+          <span><%= bc.label %></span>
+        <% } %>
+        <% if (idx < breadcrumbs.length - 1) { %> &raquo; <% } %>
+      <% }) %>
+    </nav>
+
+    <h1><%= folder.name %></h1>
+    <% if (section) { %>
+      <p><strong>Section:</strong> <%= section %> — <strong><%= scope === "corps" ? "Corps" : "Independent" %> <%= year %></strong></p>
+    <% } %>
+
+    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+      <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border: 1px solid #ff9c9c;"><%= flashMessage %></p>
+    <% } %>
+
+    <div class="duple-to-single" style="gap: 16px; align-items: flex-start;">
+      <div style="flex: 2;">
+        <h2>Subfolders</h2>
+        <% if (!subfolders.length) { %>
+          <p><em>No subfolders yet.</em></p>
+        <% } else { %>
+          <ul>
+            <% subfolders.forEach(function(f) { %>
+              <li>
+                <a href="/files/folder/<%= f.id %>"><%= f.name %></a>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+
+        <h2 style="margin-top: 24px;">Files</h2>
+        <% if (!files.length) { %>
+          <p><em>No files have been uploaded here yet.</em></p>
+        <% } else { %>
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.95rem;">
+            <thead>
+              <tr>
+                <th style="text-align: left; border-bottom: 1px solid #ccc; padding: 4px;">Title</th>
+                <th style="text-align: left; border-bottom: 1px solid #ccc; padding: 4px;">Type</th>
+                <th style="text-align: left; border-bottom: 1px solid #ccc; padding: 4px;">Uploaded</th>
+                <% if (canManage) { %>
+                  <th style="border-bottom: 1px solid #ccc; padding: 4px;">Actions</th>
+                <% } %>
+              </tr>
+            </thead>
+            <tbody>
+              <% files.forEach(function(f) { %>
+                <tr>
+                  <td style="border-bottom: 1px solid #eee; padding: 4px;">
+                    <a href="<%= f.stored_path %>" target="_blank"><%= f.title %></a>
+                  </td>
+                  <td style="border-bottom: 1px solid #eee; padding: 4px;">
+                    <%= (f.mime_type || "").split("/")[1] || "file" %>
+                  </td>
+                  <td style="border-bottom: 1px solid #eee; padding: 4px;">
+                    <%= new Date(f.created_at).toLocaleString() %>
+                  </td>
+                  <% if (canManage) { %>
+                    <td style="border-bottom: 1px solid #eee; padding: 4px;">
+                      <form action="/files/item/<%= f.id %>/delete" method="post" style="display: inline;" onsubmit="return confirm('Delete this file?');">
+                        <button type="submit">Delete</button>
+                      </form>
+                    </td>
+                  <% } %>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% } %>
+
+        <% if (canManage) { %>
+          <hr style="margin: 24px 0;">
+          <h2>Create Subfolder</h2>
+          <form action="/files/folder/<%= folder.id %>/new-folder" method="post">
+            <label>
+              Folder name:
+              <input type="text" name="name" required />
+            </label>
+            <br><br>
+            <button type="submit">Create Folder</button>
+          </form>
+
+          <hr style="margin: 24px 0;">
+          <h2>Upload Files</h2>
+          <form action="/files/folder/<%= folder.id %>/upload" method="post" enctype="multipart/form-data">
+            <p>Select one or more files to upload (PDF, audio, etc.).</p>
+            <input type="file" name="files" multiple required />
+
+            <p style="margin-top: 12px;">
+              <strong>Display names (optional):</strong><br>
+              <small>One title per line. If left blank, the original filename will be used.</small><br>
+              <textarea name="titlesText" rows="5" style="width: 100%;"></textarea>
+            </p>
+
+            <p style="margin-top: 12px;">
+              <strong>Who should see these files?</strong><br>
+              <label><input type="radio" name="audience" value="corps" <%= scope === "corps" ? "checked" : "" %>> Corps contracted members only</label><br>
+              <label><input type="radio" name="audience" value="independent" <%= scope === "indoor" ? "checked" : "" %>> BGI contracted members only</label><br>
+              <label><input type="radio" name="audience" value="both"> Both corps &amp; BGI contracted members</label><br>
+              <label><input type="radio" name="audience" value="everyone"> Everyone in this section (contracted or not)</label>
+            </p>
+
+            <button type="submit" style="margin-top: 12px;">Upload</button>
+          </form>
+        <% } %>
+      </div>
+
+      <div style="flex: 1;">
+        <% if(user.admin || user.staff)  { %>
+            <% if (section && roster.length) { %>
+            <h2>Section Roster</h2>
+            <p>
+                <small>
+                Underline = contracted in this ensemble.<br>
+                👁 = has opened this folder since the last change.<br>
+                — = has not opened this folder yet.
+                </small>
+            </p>
+
+            <ul style="list-style: none; padding-left: 0;">
+                <% roster.forEach(function(m) { 
+                const contracted = (scope === "corps" ? m.contractedCorps : m.contractedIndependent);
+                %>
+                <li style="margin-bottom: 8px;">
+                <% const srcImage = m.img == null ? "/img/ui/gem.png" : m.img; %>
+
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="
+                        height: 72px;
+                        width: 72px;
+                        border-radius: 8px;
+                        overflow: hidden;
+                        box-shadow: 2px 2px 8px rgba(0,0,0,0.4);
+                        background-color: #333;
+                        flex-shrink: 0;
+                    ">
+                        <img src="<%= srcImage %>" 
+                            alt="Member photo for <%= m.firstname %> <%= m.lastname %>" 
+                            style="object-fit: cover; width: 100%; height: 100%;">
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="<%= contracted ? 'text-decoration: underline;' : '' %>">
+                            <%= m.name %> <small>(<%= m.instrument %>)</small>
+                        </span>
+
+                        <% if (m.hasViewed) { %>
+                            <span title="Has viewed this folder" style="color: #3ba21f;">👁</span>
+                        <% } else { %>
+                            <span title="Has not yet viewed this folder" style="color: #900f0f;">—</span>
+                        <% } %>
+                    </div>
+                </div>
+            </li>
+
+                <% }) %>
+            </ul>
+            <% } %>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

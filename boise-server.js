@@ -32,6 +32,27 @@ function generateCustomFilename() {
   return `${yymmdd}-${hhmmss}-${random}`;
 }
 
+const FILE_SECTION_CORPS = ["Brass", "Drumline", "Front Ensemble", "Guard"];
+const FILE_SECTION_INDOOR = ["Drumline", "Front Ensemble"];
+
+const filesUpload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      const dest = path.join(__dirname, "public", "uploads", "files");
+      fs.mkdirSync(dest, { recursive: true });
+      cb(null, dest);
+    },
+    filename: function (req, file, cb) {
+      const base = generateCustomFilename();
+      const ext = path.extname(file.originalname || "").toLowerCase();
+      cb(null, base + ext);
+    }
+  })
+});
+
+const supportUpload = multer({
+  storage: multer.memoryStorage()
+});
 
 
 const pdfUpload = multer({
@@ -156,7 +177,7 @@ const processImageJpgOptional = async (req, res, next) => {
 
 
 //mailing function
-async function sendEmail(to, subject, html) {
+async function sendEmail(to, subject, html, attachments = []) {
   if(!online)
     return
 
@@ -254,7 +275,8 @@ async function sendEmail(to, subject, html) {
 </body>
 </html>
 
-        `
+        `,
+        attachments: attachments && attachments.length ? attachments : undefined
 
     })
 
@@ -678,11 +700,130 @@ const createTables = db.transaction(() => {
 
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_staff_category_order ON staff(category, sort_order ASC, last COLLATE NOCASE ASC)`).run();
 
+     db.prepare(`
+      CREATE TABLE IF NOT EXISTS file_folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id INTEGER REFERENCES file_folders(id) ON DELETE CASCADE,
+        scope TEXT NOT NULL,                -- 'corps' or 'indoor'
+        year INTEGER NOT NULL,
+        section TEXT,                       -- e.g., 'Brass', 'Drumline', 'Front Ensemble', 'Guard'
+        name TEXT NOT NULL,                 -- '2026', 'Brass', 'Part 1', etc.
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS file_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id INTEGER NOT NULL REFERENCES file_folders(id) ON DELETE CASCADE,
+        uploader_id INTEGER REFERENCES users(id),
+        title TEXT NOT NULL,                -- display name chosen by staff
+        original_name TEXT NOT NULL,        -- original filename
+        stored_path TEXT NOT NULL,          -- e.g. '/uploads/files/2025-11-14-xxxx.pdf'
+        mime_type TEXT,
+        size INTEGER,
+        allow_corps INTEGER NOT NULL DEFAULT 0,
+        allow_independent INTEGER NOT NULL DEFAULT 0,
+        allow_noncontracted INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS folder_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id INTEGER NOT NULL REFERENCES file_folders(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        viewed_at INTEGER NOT NULL,
+        UNIQUE(folder_id, user_id)
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS support_tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        subject TEXT NOT NULL,
+        message TEXT NOT NULL,
+        page_url TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+
 
 
 })
 
 createTables();
+
+function ensureDefaultFolders() {
+  const FILE_YEAR = 2026;
+  const now = Date.now();
+
+  const corpsSections = ["Brass", "Drumline", "Front Ensemble", "Guard"];
+  const indoorSections = ["Drumline", "Front Ensemble"];
+
+  const getYearFolder = db.prepare(`
+    SELECT * FROM file_folders
+    WHERE parent_id IS NULL
+      AND scope = ?
+      AND year = ?
+      AND name = ?
+    LIMIT 1
+  `);
+
+  const insertFolder = db.prepare(`
+    INSERT INTO file_folders (parent_id, scope, year, section, name, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  ["corps", "indoor"].forEach(scope => {
+    // Year folder (e.g., "2026")
+    let yearFolder = getYearFolder.get(scope, FILE_YEAR, String(FILE_YEAR));
+    if (!yearFolder) {
+      const info = insertFolder.run(
+        null,
+        scope,
+        FILE_YEAR,
+        null,
+        String(FILE_YEAR),
+        now,
+        now
+      );
+      yearFolder = { id: info.lastInsertRowid, scope, year: FILE_YEAR, section: null, name: String(FILE_YEAR) };
+    }
+
+    const sections = scope === "corps" ? corpsSections : indoorSections;
+    sections.forEach(sectionName => {
+      const row = db.prepare(`
+        SELECT * FROM file_folders
+        WHERE parent_id = ?
+          AND scope = ?
+          AND year = ?
+          AND section = ?
+          AND name = ?
+        LIMIT 1
+      `).get(yearFolder.id, scope, FILE_YEAR, sectionName, sectionName);
+
+      if (!row) {
+        insertFolder.run(
+          yearFolder.id,
+          scope,
+          FILE_YEAR,
+          sectionName,
+          sectionName,
+          now,
+          now
+        );
+      }
+    });
+  });
+}
+
+ensureDefaultFolders();
 
 function migrateFormsTable(db) {
   // 1) Ensure base table exists (as in your original)
@@ -904,6 +1045,18 @@ function mustBeMember(req,res, next){
 
   res.redirect("/")
 }
+
+function mustBeLoggedInAny(req, res, next) {
+  if (!req.user) return res.redirect("/");
+  return next();
+}
+
+function mustBeStaffOrAdmin(req, res, next) {
+  if (!req.user) return res.redirect("/");
+  if (req.admin || req.staff) return next();
+  return res.redirect("/");
+}
+
 
 //
 // === FORMS VISIBILITY + COMPLETENESS HELPERS ===
@@ -1848,6 +2001,66 @@ app.get("/change-membership/:id", mustBeAdmin,(req,res) => {
 app.get('/contact', (req,res) => {
   return res.render('contact')
 })
+
+app.get("/support/issue", mustBeLoggedInAny, (req, res) => {
+  let role = "Member";
+  if (req.admin) role = "Admin";
+  else if (req.staff) role = "Staff";
+  else if (req.parent) role = "Parent";
+
+  res.render("support-issue", {
+    role
+  });
+});
+
+app.post("/support/issue", mustBeLoggedInAny, supportUpload.array("screenshots", 5), async (req, res) => {
+  try {
+    const subject = String(req.body.subject || "").trim();
+    const message = String(req.body.message || "").trim();
+    const page_url = String(req.body.page_url || "").trim();
+
+    if (!subject || !message) {
+      req.session.flashMessage = "Please provide a subject and detailed description of the issue.";
+      return res.redirect("back");
+    }
+
+    let role = "Member";
+    if (req.admin) role = "Admin";
+    else if (req.staff) role = "Staff";
+    else if (req.parent) role = "Parent";
+
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO support_tickets (user_id, role, subject, message, page_url, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 'open', ?)
+    `).run(req.user.userid, role, subject, message, page_url, now);
+
+    const attachments = (req.files || []).map(f => ({
+      filename: f.originalname,
+      content: f.buffer,
+      contentType: f.mimetype
+    }));
+
+    const html = `
+      <h1>Website Issue Submitted</h1>
+      <p><strong>User:</strong> ${req.user.firstname} ${req.user.lastname} (ID: ${req.user.userid})</p>
+      <p><strong>Role:</strong> ${role}</p>
+      ${page_url ? `<p><strong>Page URL:</strong> ${page_url}</p>` : ""}
+      <p><strong>Subject:</strong> ${subject}</p>
+      <p><strong>Message:</strong></p>
+      <p>${message.replace(/\n/g, "<br>")}</p>
+    `;
+
+    await sendEmail("chris@chrispricemusic.net", "Boise Gems Website Issue", html, attachments);
+
+    return res.render("message", {
+      message: "Thank you! Your issue has been submitted. We'll take a look as soon as possible."
+    });
+  } catch (err) {
+    console.error("Support issue error:", err);
+    return res.status(500).render("message", { message: "Something went wrong submitting your issue. Please try again shortly." });
+  }
+});
 
 
 
@@ -4747,6 +4960,405 @@ app.post("/whistleblower", async (req, res) => {
     console.error("Whistleblower error:", err);
     return res.status(500).render("message", { message: "Something went wrong. Please try again shortly." });
   }
+});
+
+function getFolderWithAncestors(folderId) {
+  const getFolder = db.prepare("SELECT * FROM file_folders WHERE id = ?");
+  const chain = [];
+  let current = getFolder.get(folderId);
+  if (!current) return null;
+  chain.unshift(current);
+  while (current.parent_id) {
+    current = getFolder.get(current.parent_id);
+    if (!current) break;
+    chain.unshift(current);
+  }
+  return chain; // [root, ..., target]
+}
+
+function deriveFolderContext(chain) {
+  if (!chain || !chain.length) return null;
+  const target = chain[chain.length - 1];
+  let scope = target.scope;
+  let year = target.year;
+  let section = target.section;
+
+  // inherit section from ancestors if missing
+  for (let i = chain.length - 1; i >= 0; i--) {
+    if (!section && chain[i].section) section = chain[i].section;
+  }
+
+  return { scope, year, section, folder: target };
+}
+
+function getSectionRoster(section, scope) {
+  if (!section) return [];
+  const rows = db.prepare(`
+    SELECT id, firstname, lastname, section, instrument, contractedCorps, contractedIndependent, img
+    FROM users
+    WHERE LOWER(section) = LOWER(?)
+      AND (parent IS NULL OR parent = 0)
+  `).all(section);
+
+  const viewsByUser = {}; // filled per folder later
+  return rows;
+}
+
+function buildVisibilityFlags(audience) {
+  // audience: 'corps', 'independent', 'both', 'everyone'
+  let allow_corps = 0;
+  let allow_independent = 0;
+  let allow_noncontracted = 0;
+
+  switch (audience) {
+    case "corps":
+      allow_corps = 1;
+      break;
+    case "independent":
+      allow_independent = 1;
+      break;
+    case "both":
+      allow_corps = 1;
+      allow_independent = 1;
+      break;
+    case "everyone":
+      allow_corps = 1;
+      allow_independent = 1;
+      allow_noncontracted = 1;
+      break;
+    default:
+      allow_corps = 1;
+      allow_independent = 1;
+  }
+
+  return { allow_corps, allow_independent, allow_noncontracted };
+}
+
+function canUserSeeFileItem(userRow, fileRow) {
+  if (!userRow) return false;
+  const isCorps = !!userRow.contractedCorps;
+  const isInd = !!userRow.contractedIndependent;
+
+  if (fileRow.allow_noncontracted) {
+    // Everyone can see
+    return true;
+  }
+
+  // Contracted only
+  if (fileRow.allow_corps && isCorps) return true;
+  if (fileRow.allow_independent && isInd) return true;
+
+  // Edge case: both but user not contracted in either => no
+  return false;
+}
+
+// Files home — choose Corps vs Indoor (2026)
+app.get("/files", mustBeLoggedInAny, (req, res) => {
+  res.render("files-root", {
+    user: req.user
+  });
+});
+
+
+
+// View a specific folder (and its contents)
+app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
+  const folderId = parseInt(req.params.id, 10);
+  const chain = getFolderWithAncestors(folderId);
+  if (!chain) {
+    return res.status(404).render("message", { message: "Folder not found." });
+  }
+
+  const ctx = deriveFolderContext(chain);
+  const folder = ctx.folder;
+
+  // Mark view for this user (members, staff, admins)
+  if (req.user && !req.parent) {
+    db.prepare(`
+      INSERT INTO folder_views (folder_id, user_id, viewed_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(folder_id, user_id) DO UPDATE SET viewed_at = excluded.viewed_at
+    `).run(folder.id, req.user.userid, Date.now());
+  }
+
+  // Subfolders
+  const subfolders = db.prepare(`
+    SELECT * FROM file_folders
+    WHERE parent_id = ?
+    ORDER BY name COLLATE NOCASE
+  `).all(folder.id);
+
+  // Files (raw)
+  const rawFiles = db.prepare(`
+    SELECT * FROM file_items
+    WHERE folder_id = ?
+    ORDER BY created_at DESC
+  `).all(folder.id);
+
+  const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  const canManage = !!(req.admin || req.staff);
+
+  const files = rawFiles.filter(f => {
+    if (canManage) return true;
+    return canUserSeeFileItem(userRow, f);
+  });
+
+  // Roster + views
+  let roster = [];
+  if (ctx.section) {
+    const rosterRows = db.prepare(`
+      SELECT id, firstname, lastname, section, instrument,
+             contractedCorps, contractedIndependent
+      FROM users
+      WHERE LOWER(section) = LOWER(?)
+        AND (parent IS NULL OR parent = 0)
+    `).all(ctx.section);
+
+    const viewedRows = db.prepare(`
+      SELECT user_id FROM folder_views WHERE folder_id = ?
+    `).all(folder.id);
+    const viewedSet = new Set(viewedRows.map(r => r.user_id));
+
+    roster = rosterRows.map(r => ({
+      id: r.id,
+      name: `${r.firstname} ${r.lastname}`,
+      instrument: r.instrument,
+      contractedCorps: !!r.contractedCorps,
+      contractedIndependent: !!r.contractedIndependent,
+      hasViewed: viewedSet.has(r.id)
+    }));
+  }
+
+  const breadcrumbs = [
+    { label: "Files Home", href: "/files" },
+    {
+      label: ctx.scope === "corps" ? "Corps" : "Indoor",
+      href: `/files/${ctx.scope}/${ctx.year}`
+    },
+    // year & below from chain
+    ...chain.map(c => ({
+      label: c.name,
+      href: c.id === folder.id ? null : `/files/folder/${c.id}`
+    }))
+  ];
+
+  res.render("files-folder", {
+    user: req.user,
+    canManage,
+    breadcrumbs,
+    folder,
+    subfolders,
+    files,
+    roster,
+    scope: ctx.scope,
+    year: ctx.year,
+    section: ctx.section
+  });
+});
+
+// Create a new subfolder under a section or existing folder
+app.post("/files/folder/:id/new-folder", mustBeStaffOrAdmin, (req, res) => {
+  const parentId = parseInt(req.params.id, 10);
+  const name = String(req.body.name || "").trim();
+  if (!name) {
+    req.session.flashMessage = "Folder name is required.";
+    return res.redirect("back");
+  }
+
+  const chain = getFolderWithAncestors(parentId);
+  if (!chain) {
+    req.session.flashMessage = "Parent folder not found.";
+    return res.redirect("back");
+  }
+
+  const ctx = deriveFolderContext(chain);
+  const parent = ctx.folder;
+  const now = Date.now();
+
+  db.prepare(`
+    INSERT INTO file_folders (parent_id, scope, year, section, name, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(parent.id, ctx.scope, ctx.year, ctx.section, name, now, now);
+
+  // Any content change resets views for this folder
+  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(parent.id);
+
+  res.redirect(`/files/folder/${parent.id}`);
+});
+
+// Upload multiple files into a folder
+app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("files", 20), async (req, res) => {
+  const folderId = parseInt(req.params.id, 10);
+  const chain = getFolderWithAncestors(folderId);
+  if (!chain) {
+    req.session.flashMessage = "Folder not found.";
+    return res.redirect("back");
+  }
+
+  const ctx = deriveFolderContext(chain);
+  const folder = ctx.folder;
+
+  const audience = String(req.body.audience || "corps").toLowerCase();
+  const { allow_corps, allow_independent, allow_noncontracted } = buildVisibilityFlags(audience);
+
+  // Titles can be provided as one-per-line
+  const titlesText = String(req.body.titlesText || "").split("\n").map(s => s.trim()).filter(Boolean);
+  const now = Date.now();
+
+  if (!req.files || !req.files.length) {
+    req.session.flashMessage = "You must select at least one file to upload.";
+    return res.redirect("back");
+  }
+
+  const insertFile = db.prepare(`
+    INSERT INTO file_items (
+      folder_id, uploader_id, title, original_name, stored_path,
+      mime_type, size,
+      allow_corps, allow_independent, allow_noncontracted,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  req.files.forEach((file, idx) => {
+    const displayTitle = titlesText[idx] || file.originalname;
+    const storedPath = "/uploads/files/" + path.basename(file.path);
+
+    insertFile.run(
+      folder.id,
+      req.user.userid,
+      displayTitle,
+      file.originalname,
+      storedPath,
+      file.mimetype,
+      file.size,
+      allow_corps,
+      allow_independent,
+      allow_noncontracted,
+      now
+    );
+  });
+
+  // Reset views for this folder (new stuff to see)
+  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(folder.id);
+
+  // Email appropriate members based on audience + section
+  try {
+    if (ctx.section) {
+      let where = "LOWER(section) = LOWER(?) AND (parent IS NULL OR parent = 0)";
+      const params = [ctx.section];
+
+      if (audience === "corps") {
+        where += " AND contractedCorps = 1";
+      } else if (audience === "independent") {
+        where += " AND contractedIndependent = 1";
+      } else if (audience === "both") {
+        where += " AND (contractedCorps = 1 OR contractedIndependent = 1)";
+      } else if (audience === "everyone") {
+        // no contract filter
+      }
+
+      const rows = db.prepare(`
+        SELECT firstname, lastname, email, contractedCorps, contractedIndependent
+        FROM users
+        WHERE ${where}
+      `).all(...params);
+
+      const emails = rows.map(r => r.email).filter(Boolean);
+      if (emails.length) {
+        const scopeLabel = ctx.scope === "corps" ? "Corps" : "Independent";
+        const subject = `New files uploaded — ${scopeLabel} ${ctx.section} (${ctx.year})`;
+
+        const folderPath = breadcrumbs => breadcrumbs.map(b => b.label).join(" / ");
+
+        // Build breadcrumbs again for text
+        const chain2 = getFolderWithAncestors(folder.id);
+        const ctx2 = deriveFolderContext(chain2);
+        const crumbs = [
+          { label: ctx2.scope === "corps" ? "Corps" : "Indoor" },
+          { label: String(ctx2.year) },
+          ...(chain2.map(c => ({ label: c.name })))
+        ];
+        const pathText = `https://boisegems.org/files/folder/${folderId}`
+
+        const html = `
+          <p>Hello!</p>
+          <p>New files have been uploaded for <strong>${scopeLabel} ${ctx.section}</strong> in the Boise Gems member portal.</p>
+          <p>Folder path: <strong>${pathText}</strong></p>
+          <p>Please log in to the member portal to view the latest music/materials.</p>
+        `;
+
+        await sendEmail(emails.join(","), subject, html);
+      }
+    }
+  } catch (err) {
+    console.error("Error sending file upload notification:", err);
+  }
+
+  res.redirect(`/files/folder/${folder.id}`);
+});
+
+// Delete a file
+app.post("/files/item/:id/delete", mustBeStaffOrAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = db.prepare("SELECT * FROM file_items WHERE id = ?").get(id);
+  const folderId = row.folder_id;
+  if (!row) {
+    req.session.flashMessage = "File not found.";
+    return res.redirect(`/files/folder/${folderId}`);
+  }
+
+  // delete file from disk if present
+  try {
+    const absPath = path.join(__dirname, "public", row.stored_path.replace(/^\//, ""));
+    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+  } catch (err) {
+    console.error("Error deleting file from disk:", err);
+  }
+
+  db.prepare("DELETE FROM file_items WHERE id = ?").run(id);
+
+  // reset views on that folder
+  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(row.folder_id);
+
+  return res.redirect(`/files/folder/${folderId}`);
+});
+
+// Year view — show sections under Corps/Indoor for 2026
+app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
+  const scope = (req.params.scope || "").toLowerCase();
+  const year = parseInt(req.params.year, 10) || 2026;
+
+  if (!["corps", "indoor"].includes(scope)) {
+    return res.status(404).render("message", { message: "Unknown file group." });
+  }
+
+  const yearFolder = db.prepare(`
+    SELECT * FROM file_folders
+    WHERE parent_id IS NULL
+      AND scope = ?
+      AND year = ?
+      AND name = ?
+    LIMIT 1
+  `).get(scope, year, String(year));
+
+  if (!yearFolder) {
+    return res.status(404).render("message", { message: "No folders for that season yet." });
+  }
+
+  const sections = db.prepare(`
+    SELECT * FROM file_folders
+    WHERE parent_id = ?
+    ORDER BY section COLLATE NOCASE
+  `).all(yearFolder.id);
+
+  res.render("files-year", {
+    user: req.user,
+    scope,
+    year,
+    yearFolder,
+    sections
+  });
 });
 
 // PUBLIC: audition materials

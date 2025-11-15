@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Music & Files | Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="max-width: 960px; margin: 16px auto;">
+    <h1>Music & Files</h1>
+    <p>Select which ensemble’s files you’d like to view.</p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 16px;">
+      <a href="/files/corps/2026" style="text-decoration: none;">
+        <div style="padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12);">
+          <h2 style="margin-top: 0;">Drum &amp; Bugle Corps</h2>
+          <p>2026 season folders for brass, drumline, front ensemble, and guard.</p>
+        </div>
+      </a>
+
+      <a href="/files/indoor/2026" style="text-decoration: none;">
+        <div style="padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12);">
+          <h2 style="margin-top: 0;">Boise Gems Independent</h2>
+          <p>2026 season folders for indoor drumline and front ensemble.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

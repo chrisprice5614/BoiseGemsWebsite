@@ -5121,6 +5121,7 @@ app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
 
     roster = rosterRows.map(r => ({
       id: r.id,
+      img: r.img,
       name: `${r.firstname} ${r.lastname}`,
       instrument: r.instrument,
       contractedCorps: !!r.contractedCorps,

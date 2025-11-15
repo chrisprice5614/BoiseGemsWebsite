@@ -102,9 +102,12 @@
                 <div>   
                     <div class="image-wrapper">
                          <a href="/update-profile-photo">
-                        <% const srcImage = member.img == null ? "/img/ui/gem.png" : member.img %>
+                            <% const srcImage = member.img == null ? "/img/ui/gem.png" : member.img %>
                             <img src="<%= srcImage %>" alt="Member photo for <%= user.firstname %> <%= user.lastname %>">
                         </a>
+                        <% if(member.img == null) { %>
+                            Click image to change profile photo.
+                        <% } %>
                     </div>
                 </div>
                 <div>

@@ -5107,7 +5107,7 @@ app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
   let roster = [];
   if (ctx.section) {
     const rosterRows = db.prepare(`
-      SELECT id, firstname, lastname, section, instrument,
+      SELECT id, firstname, lastname, section, instrument, img,
              contractedCorps, contractedIndependent
       FROM users
       WHERE LOWER(section) = LOWER(?)

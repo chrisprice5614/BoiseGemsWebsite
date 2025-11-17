@@ -138,9 +138,11 @@
             </p>
 
             <ul style="list-style: none; padding-left: 0;">
-                <% roster.forEach(function(m) { 
-                const contracted = (scope === "corps" ? m.contractedCorps : m.contractedIndependent);
-                %>
+                  <% roster.forEach(function(m) { 
+    const contracted = (scope === "corps"
+      ? m.contractedCorps
+      : (m.indoorSection && m.indoorSection.trim() !== ""));
+  %>
                 <li style="margin-bottom: 8px;">
                 <% const srcImage = m.img == null ? "/img/ui/gem.png" : m.img; %>
 

@@ -13,28 +13,51 @@
         <br>
         <h1 style="text-align: center;">Join Boise Gems <%= group %> <%= season %></h1>
         <br>
-        <div style="padding: 24px;">
+        <div style="padding: 24px; max-width: 960px; margin: 0 auto;">
+          <div style="margin-bottom: 24px;">
+            <p>
+              Please carefully read the contract before proceeding.
+              You will need to <strong>download</strong> it, <strong>fill it out and sign it</strong>,
+              then <strong>upload the signed PDF</strong> on the next step when you accept the contract.
+            </p>
+          </div>
 
-            <% if (contractPdfPath) { %>
-                <p>Please read the official contract PDF below before continuing:</p>
-                <div style="margin: 16px 0;">
-                    <iframe
-                    src="<%= contractPdfPath %>"
-                    style="width:100%; max-width:900px; height:600px; border:1px solid #ccc; border-radius:6px;"
-                    ></iframe>
-                </div>
-            <% } %>
-            <br>
-            <div style="text-align: center;">
-                   <% if(!bypass) { %>
-                  <p>
-                    For commitment purposes, we require a $<%= depositLabel %> down payment before signing the contract.
-                  </p>
-                <% } %>
-                <br>
-                <a href="/sign-contract/<%= contractExtension.id %>"><button>Make Payment and Sign</button></a>
+          <% if (contractPdfPath) { %>
+            <div style="margin-bottom: 24px;">
+              <a href="<%= contractPdfPath %>" download>
+                <button type="button">⬇ Download Contract (Blank PDF)</button>
+              </a>
             </div>
-            
+
+            <div style="border: 1px solid #ccc; border-radius: 6px; overflow: hidden; margin-bottom: 24px;">
+              <iframe
+                src="<%= contractPdfPath %>"
+                style="width: 100%; height: 600px; border: none;"
+              ></iframe>
+            </div>
+          <% } else { %>
+            <p><em>No contract PDF is configured for this ensemble yet.</em></p>
+          <% } %>
+
+          <div style="border-top: 1px solid #ddd; padding-top: 16px;">
+            <% if (!bypass) { %>
+              <p>
+                For commitment purposes, we require a
+                <strong>$<%= depositLabel %></strong> down payment before completing your contract.
+                You will pay this on the next page.
+              </p>
+            <% } else { %>
+              <p>
+                Your contract is set to <strong>bypass the down payment</strong>. You will still need
+                to upload your signed contract PDF to complete the process.
+              </p>
+            <% } %>
+
+            <br>
+            <a href="/sign-contract/<%= contractExtension.id %>">
+              <button>Continue to Sign &amp; Upload Contract</button>
+            </a>
+          </div>
         </div>
     </main>
     <footer>

@@ -71,6 +71,12 @@
                     <br><br>
                     <a href="/support/issue"><button>Submit Website Issue</button></a>
                     <br><br>
+                      <% if (user && user.email && user.email.toLowerCase() === "austinmoldenhauer@gmail.com") { %>
+                        <a href="/admin/chris-payment">Chris Payment</a>
+                    <% } %>
+                    <% if (user && user.email && user.email.toLowerCase() === "chris@chrispricemusic.net") { %>
+                        <a href="/admin/chris-payment">Chris Payment</a>
+                    <% } %>
                 </div>
             </div>
             <br>

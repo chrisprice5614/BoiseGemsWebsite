@@ -11,27 +11,49 @@
     </header>
     <main>
         <br>
-        <div style="padding: 12;">
-            <form action="/sign-contract/<%= contractExtension.id %>" method="POST">
+                <div style="padding: 12;">
+            <form action="/sign-contract/<%= contractExtension.id %>" method="POST" enctype="multipart/form-data">
 
-                <div style="align-items: center; display: flex;">
-                    <label for="read">I Have Read The Contract</label>
-                    <input type="checkbox" name="read" required/>
+                <div style="align-items: center; display: flex; gap: 8px;">
+                    <label for="read">I have read and agree to the contract.</label>
+                    <input type="checkbox" id="read" name="read" required/>
                 </div>
                 <br>
+                <div style="align-items: center; display: flex; gap: 8px;">
+                    <label for="read">If under 18, a parent/guardian has signed the contract.</label>
+                    <input type="checkbox" id="read" name="read"/>
+                </div>
+                <br>
+
                 <label for="signature">Electronic Signature</label>
-                <input type="text" name="signature" value="" required/>
+                <input type="text" id="signature" name="signature" value="" required/>
                 <br>
                 <br>
+
                 <label for="date">Today's Date</label>
-                <input type="date" name="date" required/>
+                <input type="date" id="date" name="date" required/>
                 <br>
                 <br>
+
+                <label for="signed_contract">
+                  Upload your <strong>signed contract (PDF)</strong>
+                </label>
+                <input
+                  type="file"
+                  id="signed_contract"
+                  name="signed_contract"
+                  accept="application/pdf"
+                  required
+                />
+                <br>
+                <br>
+
                 <div style="text-align: center;">
-                    <button>Sign</button>
+                    <button>Sign &amp; Continue to Payment</button>
                 </div>
             </form>
         </div>
+
     </main>
     <footer>
         <%- include("includes/footer") %>

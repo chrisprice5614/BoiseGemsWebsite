@@ -18,6 +18,61 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { verify } = require("crypto")
 
 
+const CONTRACT_EXTENSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function ensureActiveContractExtension(req, res, next) {
+  const id = Number(req.params.id);
+  if (!id) return res.redirect("/");
+
+  const ext = db
+    .prepare("SELECT * FROM contractExtension WHERE id = ?")
+    .get(id);
+
+  // No extension row
+  if (!ext) return res.redirect("/");
+
+  // Wrong user
+  if (!req.user || ext.user_id !== req.user.userid) {
+    return res.redirect("/");
+  }
+
+  const createdAt = ext.created_at || 0;
+  const ageMs = Date.now() - createdAt;
+
+  if (!createdAt || ageMs > CONTRACT_EXTENSION_TTL_MS) {
+    // Extension expired → delete it and tell the user
+    db.prepare("DELETE FROM contractExtension WHERE id = ?").run(id);
+    req.session.flashMessage = "This contract extension has expired. Please contact staff to request a new contract.";
+    return res.redirect("/member-portal");
+  }
+
+  // Attach to request so handlers don't have to re-query
+  req.contractExtension = ext;
+  next();
+}
+
+// Very lightweight "does this PDF have form fields?" check.
+// Not perfect, but good enough for typical AcroForm PDFs.
+function pdfHasFormFields(fsPath) {
+  try {
+    const buf = fs.readFileSync(fsPath);
+    // Use latin1 so we don't mangle bytes
+    const text = buf.toString("latin1");
+    // Heuristic: most AcroForm PDFs have these markers
+    if (text.includes("/AcroForm") || text.includes("/NeedAppearances")) {
+      return true;
+    }
+    // some forms don't include /AcroForm but have /T (field name) entries
+    const fieldHits = (text.match(/\/T\s*\(/g) || []).length;
+    return fieldHits > 0;
+  } catch (err) {
+    console.error("pdfHasFormFields error:", err);
+    return false;
+  }
+}
+
+
+
 const MasterEmail = "theboisegems@gmail.com"
 const online = true;
 
@@ -513,6 +568,11 @@ const createTables = db.transaction(() => {
         `
     ).run()
 
+    const cmCols = db.prepare("PRAGMA table_info(contractedMembers)").all().map(c => c.name);
+    if (!cmCols.includes("signedContractPath")) {
+      db.prepare("ALTER TABLE contractedMembers ADD COLUMN signedContractPath TEXT").run();
+    }
+
     db.prepare(
         `
         CREATE TABLE IF NOT EXISTS users (
@@ -753,11 +813,89 @@ const createTables = db.transaction(() => {
       )
     `).run();
 
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS chrisPayment (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        label TEXT NOT NULL UNIQUE,
+        total_owed INTEGER NOT NULL DEFAULT 0
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS chrisPaymentHistory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        type TEXT NOT NULL,    -- 'credit' or 'payment'
+        note TEXT,
+        source TEXT
+      )
+    `).run();
+
+    // Ensure the singleton row exists
+    const existingChris = db.prepare("SELECT id FROM chrisPayment WHERE id = 1").get();
+    if (!existingChris) {
+      db.prepare("INSERT INTO chrisPayment (id, label, total_owed) VALUES (1, 'ChrisPayment', 0)").run();
+    }
+
+      const rsvpCols = db.prepare("PRAGMA table_info(rsvp)").all().map(c => c.name);
+if (!rsvpCols.includes("checked_in")) {
+  db.prepare(`ALTER TABLE rsvp ADD COLUMN checked_in INTEGER DEFAULT 0`).run();
+}
+
+const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+
+if (!userCols.includes("indoorInstrument")) {
+  db.prepare(`ALTER TABLE users ADD COLUMN indoorInstrument TEXT`).run();
+}
+if (!userCols.includes("indoorSection")) {
+  db.prepare(`ALTER TABLE users ADD COLUMN indoorSection TEXT`).run();
+}
+
+const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c => c.name);
+    if (!ppCols.includes("contract_file_path")) {
+      db.prepare("ALTER TABLE potential_payment ADD COLUMN contract_file_path TEXT").run();
+    }
 
 
+    const contractExtCols = db
+  .prepare("PRAGMA table_info(contractExtension)")
+  .all()
+  .map(c => c.name);
+
+if (!contractExtCols.includes("created_at")) {
+  db.prepare("ALTER TABLE contractExtension ADD COLUMN created_at INTEGER").run();
+  // Initialize existing rows to "now" so they expire 30 days from first time this runs
+  db.prepare("UPDATE contractExtension SET created_at = ? WHERE created_at IS NULL").run(Date.now());
+}
 })
 
 createTables();
+
+function addChrisShare(baseAmountCents, source) {
+  ////ADD THIS TO EVERY TRANSACTION!!!
+  if (!baseAmountCents || baseAmountCents <= 0) return;
+
+  // Chris gets 3% of the base amount (half of the 6% fee)
+  const chrisCut = Math.round(baseAmountCents * 0.03);
+  if (!chrisCut) return;
+
+  db.prepare(`
+    UPDATE chrisPayment
+    SET total_owed = total_owed + ?
+    WHERE id = 1
+  `).run(chrisCut);
+
+  db.prepare(`
+    INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
+    VALUES (?, ?, 'credit', ?, ?)
+  `).run(
+    Date.now(),
+    chrisCut,
+    `3% share from ${source || "transaction"}`,
+    source || ""
+  );
+}
 
 function ensureDefaultFolders() {
   const FILE_YEAR = 2026;
@@ -974,6 +1112,19 @@ app.use(session({
   resave: false,
   saveUninitialized: true
 }));
+
+function mustBeChrisPaymentViewer(req, res, next) {
+  if (!req.user) return res.redirect("/login");
+
+  const email = (req.user.email || "").toLowerCase();
+  if (
+    email === "austinmoldenhauer@gmail.com" ||
+    email === "chris@chrispricemusic.net"
+  ) {
+    return next();
+  }
+  return res.redirect("/");
+}
 
 
 function generateCode(length = 4){
@@ -1581,6 +1732,31 @@ app.get("/member-portal", mustBeMember, (req,res) => {
   return res.render("member-portal", { member, contracts, leftoverForms, allergy });
 });
 
+app.post("/member-portal/indoor", mustBeMember, (req, res) => {
+  const rawSection = String(req.body.indoorSection || "").trim();
+  const rawInstrument = String(req.body.indoorInstrument || "").trim();
+
+  let indoorSection = null;
+  let indoorInstrument = null;
+
+  // If they pick no section, treat as "not doing Indoor"
+  if (rawSection === "" || rawSection === "none") {
+    indoorSection = null;
+    indoorInstrument = null;
+  } else if (rawSection === "Drumline" || rawSection === "Front Ensemble") {
+    indoorSection = rawSection;
+    indoorInstrument = rawInstrument || null; // allow blank instrument text, but saved if provided
+  }
+
+  db.prepare("UPDATE users SET indoorSection = ?, indoorInstrument = ? WHERE id = ?")
+    .run(indoorSection, indoorInstrument, req.user.userid);
+
+  req.session.flashMessage = "Boise Gems Indoor preference updated.";
+  return res.redirect("/member-portal");
+});
+
+
+
 
 app.get("/member-forms", mustBeMember, (req,res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
@@ -1624,22 +1800,36 @@ app.get("/member-forms-parent/:id", mustBeParent, (req,res) => {
 });
 
 
-app.get("/upload-form-parent/:id/:child", mustBeParent, (req,res) => {
-
-
-  const getParentIdStatement = db.prepare("SELECT parentId FROM users WHERE id = ?").get(req.params.child)
+app.get("/upload-form-parent/:id/:child", mustBeParent, (req, res) => {
+  const getParentIdStatement = db
+    .prepare("SELECT parentId FROM users WHERE id = ?")
+    .get(req.params.child);
   const isParent = getParentIdStatement.parentId == req.user.userid;
 
-  if(!isParent)
-    return res.redirect("/")
+  if (!isParent) return res.redirect("/");
 
+  const thisForm = db
+    .prepare("SELECT * FROM forms WHERE id = ?")
+    .get(req.params.id);
 
-  const getRequiredForm = db.prepare("SELECT * FROM forms WHERE id = ?")
-  const thisForm = getRequiredForm.get(req.params.id)
+  let hasFillablePdf = false;
+  if (thisForm && thisForm.document_path && thisForm.document_path.toLowerCase().endsWith(".pdf")) {
+    try {
+      const rel = thisForm.document_path.replace(/^\/+/, "");
+      const abs = path.join(__dirname, "public", rel);
+      hasFillablePdf = pdfHasFormFields(abs);
+    } catch (err) {
+      console.error("Failed to inspect form PDF (parent):", err);
+    }
+  }
 
+  return res.render("upload-form", {
+    thisForm,
+    parent: req.params.child,
+    hasFillablePdf,
+  });
+});
 
-  return res.render("upload-form", {thisForm, parent: req.params.child})
-})
 
 app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single("document_path"), (req, res) => {
 
@@ -1710,11 +1900,23 @@ app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single(
   return res.redirect(`/member-forms-parent/${userId}`);
 });
 
-app.get("/upload-form/:id", mustBeMember, (req,res) => {
-  // Correct check: same document_id + same user_id
-    const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
-  return res.render("upload-form", { thisForm });
+app.get("/upload-form/:id", mustBeMember, (req, res) => {
+  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
+
+  let hasFillablePdf = false;
+  if (thisForm && thisForm.document_path && thisForm.document_path.toLowerCase().endsWith(".pdf")) {
+    try {
+      const rel = thisForm.document_path.replace(/^\/+/, "");
+      const abs = path.join(__dirname, "public", rel);
+      hasFillablePdf = pdfHasFormFields(abs);
+    } catch (err) {
+      console.error("Failed to inspect form PDF:", err);
+    }
+  }
+
+  return res.render("upload-form", { thisForm, hasFillablePdf });
 });
+
 
 
 app.get("/secure-pdf/:filename", mustBeAdmin, (req, res) => {
@@ -2172,7 +2374,7 @@ app.get("/extend-contract/:id", mustBeStaff, (req,res) => {
   return res.render("extend-contract",{thisUser})
 })
 
-app.get("/accept-contract/:id", mustBeLoggedIn, (req, res) => {
+app.get("/accept-contract/:id", mustBeLoggedIn, ensureActiveContractExtension, (req, res) => {
   const getContractStatement = db.prepare(
     "SELECT * FROM contractExtension WHERE id = ?"
   );
@@ -2218,6 +2420,7 @@ app.get("/accept-contract/:id", mustBeLoggedIn, (req, res) => {
 });
 
 
+
 app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
   const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
   const contractExtension = getContractStatement.get(req.params.id);
@@ -2240,84 +2443,124 @@ app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
   return res.render("sign-contract",{group, season: CURRENTSEASON, contractExtension})
 })
 
-app.post("/sign-contract/:id", mustBeLoggedIn, async (req, res) => {
-  const getContractStatement = db.prepare(
-    "SELECT * FROM contractExtension WHERE id = ?"
-  );
-  const contractExtension = getContractStatement.get(req.params.id);
+app.post(
+  "/sign-contract/:id",
+  mustBeLoggedIn,
+  pdfUploadSecure.single("signed_contract"),
+  async (req, res) => {
+    const getContractStatement = db.prepare(
+      "SELECT * FROM contractExtension WHERE id = ?"
+    );
+    const contractExtension = getContractStatement.get(req.params.id);
 
-  if (!contractExtension || contractExtension.user_id !== req.user.userid) {
-    return res.redirect("/");
-  }
-
-  // Determine ensemble type
-  const ensemble = contractExtension.season.includes("corps") ? "corps" : "independent";
-
-  const getTuitionStatement = db.prepare(
-    "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
-  );
-  const tuition = getTuitionStatement.get(ensemble);
-  if (!tuition) {
-    return res.redirect("/");
-  }
-
-  // If bypass fee is true, skip Stripe
-  if (contractExtension.bypass_fee) {
-    // Set user contracted flags
-    if (ensemble === "corps") {
-      db.prepare("UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?")
-        .run(tuition.amount, req.user.userid);
-    } else {
-      db.prepare("UPDATE users SET contractedIndependent = 1, owed = COALESCE(owed,0) + ? WHERE id = ?")
-        .run(tuition.amount, req.user.userid);
+    if (!contractExtension || contractExtension.user_id !== req.user.userid) {
+      return res.redirect("/");
     }
 
-    // Delete contractExtension entry
-    db.prepare("DELETE FROM contractExtension WHERE id = ?").run(req.params.id);
+    // Ensure a signed contract PDF was uploaded
+    if (!req.file) {
+      req.session.flashMessage = "Please upload your signed contract PDF.";
+      return res.redirect(`/sign-contract/${contractExtension.id}`);
+    }
 
-    req.session.flashMessage = "Welcome to the corps!";
-    return res.redirect("/member-portal");
-  }
+    // File is stored under ./private/pdf/<filename>
+    const contractFilePath = path.join("private", "pdf", req.file.filename);
 
-  // Stripe checkout flow for $50 down payment + 5% processing fee
-  const downPayment = tuition.deposit_amount || 5000; // cents
-  const processingFee = Math.ceil(downPayment * 0.06);
-  const totalAmount = downPayment + processingFee;
+    // Determine ensemble type
+    const ensemble = contractExtension.season.includes("corps")
+      ? "corps"
+      : "independent";
 
-  // Save potential payment
-  const insertPotential = db.prepare(
-    "INSERT INTO potential_payment (user_id, contract_id, amount, created_at) VALUES (?, ?, ?, ?)"
-  );
-  const result = insertPotential.run(req.user.userid, contractExtension.id, totalAmount, Date.now());
-  const potentialPaymentId = result.lastInsertRowid;
+    const getTuitionStatement = db.prepare(
+      "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
+    );
+    const tuition = getTuitionStatement.get(ensemble);
+    if (!tuition) {
+      return res.redirect("/");
+    }
 
-  // Stripe Checkout Session
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: `Contract down payment for ${ensemble} ensemble`,
+    // If bypass fee is true, skip Stripe but still mark contracted + store contract file
+    if (contractExtension.bypass_fee) {
+      if (ensemble === "corps") {
+        db.prepare(
+          "UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
+        ).run(tuition.amount, req.user.userid);
+      } else {
+        db.prepare(
+          "UPDATE users SET contractedIndependent = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
+        ).run(tuition.amount, req.user.userid);
+      }
+
+      // Insert into contractedMembers immediately
+      db.prepare(
+        `
+        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath)
+        VALUES (?, ?, ?, ?, ?)
+        `
+      ).run(
+        contractExtension.season,
+        ensemble,
+        Date.now(),
+        req.user.userid,
+        contractFilePath
+      );
+
+      // Remove temporary contractExtension entry
+      db.prepare("DELETE FROM contractExtension WHERE id = ?").run(
+        req.params.id
+      );
+
+      req.session.flashMessage = "Welcome to the corps!";
+      return res.redirect("/member-portal");
+    }
+
+    // Stripe checkout flow for down payment (from DB) + ~6% processing fee
+    const downPayment = tuition.deposit_amount || 5000; // cents, from DB
+    const processingFee = Math.ceil(downPayment * 0.06);
+    const totalAmount = downPayment + processingFee;
+
+    // Save potential payment INCLUDING contract file path
+    const insertPotential = db.prepare(
+      "INSERT INTO potential_payment (user_id, contract_id, amount, contract_file_path, created_at) VALUES (?, ?, ?, ?, ?)"
+    );
+    const result = insertPotential.run(
+      req.user.userid,
+      contractExtension.id,
+      totalAmount,
+      contractFilePath,
+      Date.now()
+    );
+    const potentialPaymentId = result.lastInsertRowid;
+
+    // Stripe Checkout Session
+    try {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: `Contract down payment for ${ensemble} ensemble`,
+              },
+              unit_amount: totalAmount,
             },
-            unit_amount: totalAmount,
+            quantity: 1,
           },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: `${process.env.BASEURL}/sign-contract/success/${potentialPaymentId}`,
-      cancel_url: `${process.env.BASEURL}/sign-contract/${contractExtension.id}`,
-    });
+        ],
+        mode: "payment",
+        success_url: `${process.env.BASEURL}/sign-contract/success/${potentialPaymentId}`,
+        cancel_url: `${process.env.BASEURL}/sign-contract/${contractExtension.id}`,
+      });
 
-    res.redirect(303, session.url);
-  } catch (err) {
-    console.error("Stripe session error:", err);
-    res.redirect(`/sign-contract/${contractExtension.id}`);
+      res.redirect(303, session.url);
+    } catch (err) {
+      console.error("Stripe session error:", err);
+      res.redirect(`/sign-contract/${contractExtension.id}`);
+    }
   }
-});
+);
+
 
 app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   // Fetch the potential payment
@@ -2340,10 +2583,14 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     return res.redirect("/");
   }
 
-  const ensemble = contractExtension.season.includes("corps") ? "corps" : "independent";
+  const ensemble = contractExtension.season.includes("corps")
+    ? "corps"
+    : "independent";
 
-  // Fetch tuition fees for the ensemble
-  const getTuition = db.prepare("SELECT amount FROM tuitionFees WHERE ensemble = ?");
+  // Fetch tuition fees AND deposit for the ensemble
+  const getTuition = db.prepare(
+    "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
+  );
   const tuition = getTuition.get(ensemble);
   if (!tuition) return res.redirect("/");
 
@@ -2366,8 +2613,15 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   );
   updateUser.run(newOwed, user.id);
 
-  // Deduct down payment (5000 pennies)
-  const remainingOwed = newOwed - 5000;
+  // Deduct down payment based on DB deposit_amount (not hard-coded 5000)
+  const downPayment = tuition.deposit_amount || 5000;
+  const remainingOwed = newOwed - downPayment;
+
+  addChrisShare(
+    downPayment,
+    `Contract down payment for ${ensemble} (user ${user.id})`
+  );
+
   db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(remainingOwed, user.id);
 
   // Insert into paymentHistory
@@ -2375,35 +2629,51 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
   );
 
+  const downLabel = (downPayment / 100).toFixed(2);
+  const feeCents = (potential.amount || 0) - downPayment;
+  const feeLabel =
+    feeCents > 0 ? (feeCents / 100).toFixed(2) : "0.00";
+
   const paymentTitle = `Contract down payment for ${ensemble} ensemble`;
-  const paymentDesc = `User ${user.firstname} ${user.lastname} paid $50 (plus 5% fee) down payment for ${ensemble} contract.`;
-  
-  addPayment.run(paymentTitle, paymentDesc, potential.amount, "Stripe", Date.now(), user.id);
+  const paymentDesc = `User ${user.firstname} ${user.lastname} paid $${downLabel} (plus about $${feeLabel} processing fee) down payment for ${ensemble} contract.`;
+
+  addPayment.run(
+    paymentTitle,
+    paymentDesc,
+    potential.amount,
+    "Stripe",
+    Date.now(),
+    user.id
+  );
+
+  // Insert contractedMembers row (with stored contract file path)
+  db.prepare(
+    `
+    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath)
+    VALUES (?, ?, ?, ?, ?)
+    `
+  ).run(
+    contractExtension.season,
+    ensemble,
+    Date.now(),
+    user.id,
+    potential.contract_file_path || null
+  );
 
   // Delete potential payment to prevent reuse
   db.prepare("DELETE FROM potential_payment WHERE id = ?").run(potential.id);
 
   // Delete contractExtension (they are now contracted)
-  db.prepare("DELETE FROM contractExtension WHERE id = ?").run(contractExtension.id);
+  db.prepare("DELETE FROM contractExtension WHERE id = ?").run(
+    contractExtension.id
+  );
 
-  // Optionally, send email receipt
-  const paidString = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD"
-  }).format(potential.amount / 100);
+  // (You can keep your existing email receipt or flash message code here.)
 
-  const emailBody = `
-    <h1>Contract Down Payment Received</h1>
-    <p>Thank you ${user.firstname} ${user.lastname} for paying the $50 down payment (plus 5% processing fee) for your ${ensemble} ensemble contract.</p>
-    <p>Amount paid: ${paidString}</p>
-    <p>Date: ${new Date().toLocaleDateString("en-US", {year:"numeric", month:"long", day:"numeric"})}</p>
-  `;
-
-  sendEmail(user.email, "Contract Down Payment Received", emailBody);
-
-  req.session.flashMessage = "Contract down payment successful! Welcome to the corps!";
-  return res.redirect("/member-portal");
+  req.session.flashMessage = "Your down payment has been received. Welcome to Boise Gems!";
+  res.redirect("/member-portal");
 });
+
 
 
 
@@ -2447,8 +2717,8 @@ app.post("/extend-contract/:id", mustBeStaff, (req,res) => {
     }
   })
 
-  const addContractExtensionStatement = db.prepare("INSERT INTO contractExtension (user_id , due_date , bypass_fee , season , extender) VALUES (? , ? , ? , ? , ?)")
-  addContractExtensionStatement.run(thisUser.id, Date.now() + 30 * 24 * 60 * 60 * 1000, bypass, seasonString, req.user.userid)
+  const addContractExtensionStatement = db.prepare("INSERT INTO contractExtension (user_id , due_date , bypass_fee, created_at , season , extender) VALUES (? , ? , ? , ? , ?)")
+  addContractExtensionStatement.run(thisUser.id, Date.now() + 30 * 24 * 60 * 60 * 1000, bypass, Date.now(), seasonString, req.user.userid)
 
   let welcomeMessage = "The Boise Gems Drum & Bugle Corps"
 
@@ -2698,7 +2968,7 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
   const users = db.prepare(listSql).all(...params, limit, offSet);
 
   // Count for pagination
-  const countSql = `
+    const countSql = `
     SELECT COUNT(*) AS total
     FROM users
     ${whereSql}
@@ -2710,14 +2980,23 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
   const getRequiredForms = db.prepare("SELECT * FROM forms WHERE expire_date > ?");
   const forms = getRequiredForms.all(Date.now()); // fixed minor bug from Date().now
 
-  // Compute allForms per user (by the new rules)
+  // Pre-prepare contracts query
+  const getContractsForUser = db.prepare(
+    "SELECT id, season, ensemble, contracted_date, signedContractPath FROM contractedMembers WHERE user_id = ? ORDER BY contracted_date DESC"
+  );
+
+  // Compute allForms per user, and attach contracts
   users.forEach(thisUser => {
     const required = getRequiredFormsForUser(thisUser.id);
-    const uploaded = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(thisUser.id);
+    const uploaded = db
+      .prepare("SELECT document_id FROM formUploads WHERE user_id = ?")
+      .all(thisUser.id);
     const missing = markUploadsAndCount(required, uploaded);
     thisUser.allForms = missing === 0 ? 1 : 0;
-  });
 
+    // Attach contracts (if any)
+    thisUser.contracts = getContractsForUser.all(thisUser.id);
+  });
 
   res.render("edit-users", {
     users,
@@ -2729,6 +3008,38 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
     totalPages
   });
 });
+
+app.get("/admin/contracts/:userId/:contractId", mustBeAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const contractId = Number(req.params.contractId);
+
+  const row = db.prepare(
+    `
+    SELECT cm.*, u.firstname, u.lastname
+    FROM contractedMembers cm
+    JOIN users u ON cm.user_id = u.id
+    WHERE cm.id = ? AND cm.user_id = ?
+    `
+  ).get(contractId, userId);
+
+  if (!row || !row.signedContractPath) {
+    return res.status(404).send("Contract not found.");
+  }
+
+  const filePath = path.join(__dirname, row.signedContractPath);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send("Contract file missing.");
+  }
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="contract-${row.lastname}-${row.firstname}.pdf"`
+  );
+
+  fs.createReadStream(filePath).pipe(res);
+});
+
 
 
 app.get("/send-message/:id", mustBeAdmin, (req,res) => {
@@ -3458,6 +3769,8 @@ app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
     currency: "USD",
   }).format(paid / 100);
 
+  addChrisShare(paid, `Parent ${req.user.firstname} ${req.user.lastname} paid for their child, ${child.firstname} ${child.lastname} with an amount of ${paidString}.`);
+
   const addPaymentStatement = db.prepare(
     "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
   );
@@ -3595,6 +3908,9 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
     style: "currency",
     currency: "USD",
   }).format(paid / 100);
+
+    addChrisShare(paid, `${user.firstname} ${user.lastname} made a payment of ${paidString} towards their tuition/fees.`);
+
 
   const addPaymentStatement = db.prepare(
     "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
@@ -3742,6 +4058,71 @@ app.post("/donate", async (req, res) => {
   }
 });
 
+app.get("/admin/chris-payment", mustBeChrisPaymentViewer, (req, res) => {
+  const summary = db
+    .prepare("SELECT total_owed FROM chrisPayment WHERE id = 1")
+    .get() || { total_owed: 0 };
+
+  const history = db
+    .prepare("SELECT * FROM chrisPaymentHistory ORDER BY created_at DESC")
+    .all();
+
+  const email = (req.user.email || "").toLowerCase();
+  const canRecordPayment = email === "chris@chrispricemusic.net";
+
+  res.render("admin-chris-payment", {
+    totalOwedCents: summary.total_owed || 0,
+    history,
+    canRecordPayment,
+  });
+});
+
+app.post("/admin/chris-payment/pay", mustBeChrisPaymentViewer, (req, res) => {
+  const email = (req.user.email || "").toLowerCase();
+  if (email !== "chris@chrispricemusic.net") {
+    // Only Chris can record payments
+    return res.redirect("/");
+  }
+
+  let amountDollars = parseFloat(req.body.amount || "0");
+  if (!isFinite(amountDollars) || amountDollars <= 0) {
+    req.session.flashMessage = "Enter a valid payment amount.";
+    return res.redirect("/admin/chris-payment");
+  }
+
+  const amountCents = Math.round(amountDollars * 100);
+  const note = (req.body.note || "").trim();
+
+  const row =
+    db.prepare("SELECT total_owed FROM chrisPayment WHERE id = 1").get() ||
+    { total_owed: 0 };
+
+  const current = row.total_owed || 0;
+  const newTotal = Math.max(0, current - amountCents);
+
+  // Log history
+  db.prepare(`
+    INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
+    VALUES (?, ?, 'payment', ?, ?)
+  `).run(
+    Date.now(),
+    amountCents,
+    note || "Payment made",
+    "manual payment"
+  );
+
+  // Update total
+  db.prepare(`
+    UPDATE chrisPayment
+    SET total_owed = ?
+    WHERE id = 1
+  `).run(newTotal);
+
+  req.session.flashMessage = "Payment recorded.";
+  res.redirect("/admin/chris-payment");
+});
+
+
 // GET /donate/success/:potentialId - finalize donation after successful checkout
 app.get("/donate/success/:potentialId", async (req, res) => {
   try {
@@ -3789,6 +4170,8 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     );
     // user_id NULL because donor may not be a member
     insertHistory.run(title, description, potential.total_charge, "Stripe", Date.now(), null);
+
+    addChrisShare(potential.total_charge, `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "—"}`);
 
     // delete potential_donation row (prevent reuse)
     const deletePotential = db.prepare("DELETE FROM potential_donation WHERE id = ?");
@@ -4266,6 +4649,8 @@ app.get("/event/:slug/rsvp/success/:potentialId", mustBeLoggedIn, (req, res) => 
     return res.redirect(`/event/${event.slug}`);
   }
 
+  addChrisShare(potential.total_charge, `$${potential.totalCharge/100} RSVP for ${event.title} by userID ${req.user.userid}`);
+
   // Guard: if already RSVP'd (e.g., user hits back/refresh)
   const existing = db.prepare("SELECT * FROM rsvp WHERE user_id = ? AND event_id = ?").get(req.user.userid, event.id);
   if (!existing) {
@@ -4572,109 +4957,309 @@ app.post(
 );
 
 app.get("/admin-rsvps", mustBeAdmin, (req, res) => {
-  // Get all events with their RSVPs and users
-  const rows = db.prepare(`
-    SELECT
-      e.id            AS event_id,
-      e.title         AS event_title,
-      e.datetime      AS event_datetime,
-      e.location      AS event_location,
-      r.id            AS rsvp_id,
-      r.paid          AS rsvp_paid,
-      u.id            AS user_id,
-      u.firstname,
-      u.lastname,
-      u.section,
-      u.instrument,
-      u.staff,
-      u.admin
-    FROM events e
-    LEFT JOIN rsvp r ON r.event_id = e.id
-    LEFT JOIN users u ON u.id = r.user_id
-    ORDER BY e.datetime DESC, u.lastname, u.firstname
+  const eventId = req.query.eventId ? Number(req.query.eventId) : null;
+  const searchQuery = (req.query.q || "").trim();
+
+  // For the event dropdown
+  const allEvents = db.prepare(`
+    SELECT id, title, datetime, location, slug
+    FROM events
+    ORDER BY datetime DESC
   `).all();
 
-  // group by event
-  const eventsMap = new Map();
-  const userIds = new Set();
+  let events = [];
+  let formsStatus = {};
+  let childrenByParent = {};
+  let searchResults = [];
 
-  for (const row of rows) {
-    if (!eventsMap.has(row.event_id)) {
-      eventsMap.set(row.event_id, {
-        id: row.event_id,
-        title: row.event_title,
-        datetime: row.event_datetime,
-        location: row.event_location,
-        rsvps: [],
-      });
-    }
-    const evt = eventsMap.get(row.event_id);
-    if (row.rsvp_id) {
-      evt.rsvps.push({
-        rsvp_id: row.rsvp_id,
-        paid: row.rsvp_paid,
-        user_id: row.user_id,
-        firstname: row.firstname,
-        lastname: row.lastname,
-        section: row.section,
-        instrument: row.instrument,
-        staff: row.staff,
-        admin: row.admin,
-      });
-      if (row.user_id) userIds.add(row.user_id);
-    }
-  }
+  if (eventId) {
+    // Get RSVPs + users for the selected event only
+    const rows = db.prepare(`
+      SELECT
+        e.id            AS event_id,
+        e.title         AS event_title,
+        e.slug          AS event_slug,
+        e.datetime      AS event_datetime,
+        e.location      AS event_location,
+        r.id            AS rsvp_id,
+        r.paid          AS rsvp_paid,
+        r.checked_in    AS rsvp_checked,
+        u.id            AS user_id,
+        u.firstname,
+        u.lastname,
+        u.section,
+        u.instrument,
+        u.staff,
+        u.admin,
+        u.parentId
+      FROM events e
+      LEFT JOIN rsvp r ON r.event_id = e.id
+      LEFT JOIN users u ON u.id = r.user_id
+      WHERE e.id = ?
+      ORDER BY e.datetime DESC, u.lastname, u.firstname
+    `).all(eventId);
 
-  // compute "remaining performer forms" for each user
-  const formsStatus = {};
-  for (const uid of userIds) {
-    const required = getRequiredFormsForUser(uid);
-    const uploads = db
-      .prepare("SELECT * FROM formUploads WHERE user_id = ?")
-      .all(uid);
-    const leftover = markUploadsAndCount(required, uploads);
-    formsStatus[uid] = {
-      requiredCount: required.length,
-      missingCount: leftover,
-    };
-  }
+    const eventsMap = new Map();
+    const userIds = new Set();
+    const rsvpByUser = {};
 
-  const parentIds = [...userIds];
-  const childrenByParent = {};
-
-  if (parentIds.length) {
-    const placeholders = parentIds.map(() => "?").join(",");
-    const childRows = db
-      .prepare(
-        `
-        SELECT id, firstname, lastname, parentId
-        FROM users
-        WHERE parentId IN (${placeholders})
-        ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
-        `
-      )
-      .all(...parentIds);
-
-    for (const child of childRows) {
-      if (!childrenByParent[child.parentId]) {
-        childrenByParent[child.parentId] = [];
+    for (const row of rows) {
+      if (!eventsMap.has(row.event_id)) {
+        eventsMap.set(row.event_id, {
+          id: row.event_id,
+          title: row.event_title,
+          slug: row.event_slug,
+          datetime: row.event_datetime,
+          location: row.event_location,
+          rsvps: [],
+        });
       }
-      childrenByParent[child.parentId].push({
-        id: child.id,
-        firstname: child.firstname,
-        lastname: child.lastname,
+
+      if (row.user_id) {
+        userIds.add(row.user_id);
+
+        const evt = eventsMap.get(row.event_id);
+        evt.rsvps.push({
+          rsvp_id: row.rsvp_id,
+          paid: !!row.rsvp_paid,
+          checked_in: !!row.rsvp_checked,
+          user_id: row.user_id,
+          firstname: row.firstname,
+          lastname: row.lastname,
+          section: row.section,
+          instrument: row.instrument,
+          staff: row.staff,
+          admin: row.admin,
+          parentId: row.parentId,
+        });
+
+        rsvpByUser[row.user_id] = {
+          id: row.rsvp_id,
+          paid: !!row.rsvp_paid,
+          checked_in: !!row.rsvp_checked,
+        };
+      }
+    }
+
+    // Forms status per user (initially just for RSVP users)
+    formsStatus = {};
+    for (const uid of userIds) {
+      const required = getRequiredFormsForUser(uid);
+      const uploads = db
+        .prepare("SELECT * FROM formUploads WHERE user_id = ?")
+        .all(uid);
+      const leftover = markUploadsAndCount(required, uploads);
+      formsStatus[uid] = {
+        requiredCount: required.length,
+        missingCount: leftover,
+      };
+    }
+
+    // Children display under parents (for RSVP list)
+    const parentIds = [...userIds].filter(Boolean);
+    const childrenBy = {};
+
+    if (parentIds.length) {
+      const placeholders = parentIds.map(() => "?").join(",");
+      const childRows = db
+        .prepare(
+          `
+          SELECT id, firstname, lastname, parentId
+          FROM users
+          WHERE parentId IN (${placeholders})
+          ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+          `
+        )
+        .all(...parentIds);
+
+      for (const child of childRows) {
+        if (!childrenBy[child.parentId]) {
+          childrenBy[child.parentId] = [];
+        }
+        childrenBy[child.parentId].push({
+          id: child.id,
+          firstname: child.firstname,
+          lastname: child.lastname,
+        });
+      }
+    }
+
+    childrenByParent = childrenBy;
+    events = Array.from(eventsMap.values());
+
+    // === Search across ALL members for quick check-in ===
+    if (searchQuery) {
+      const like = `%${searchQuery}%`;
+
+      const users = db
+        .prepare(
+          `
+          SELECT
+            id,
+            firstname,
+            lastname,
+            section,
+            instrument,
+            staff,
+            admin,
+            parentId,
+            email
+          FROM users
+          WHERE (parent IS NULL OR parent = 0)
+            AND (
+              firstname LIKE ? OR
+              lastname LIKE ? OR
+              email LIKE ?
+            )
+          ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+          `
+        )
+        .all(like, like, like);
+
+      // Extend formsStatus to cover these users too
+      const extraIds = [];
+      for (const u of users) {
+        if (!formsStatus[u.id]) {
+          extraIds.push(u.id);
+        }
+      }
+      for (const uid of extraIds) {
+        const required = getRequiredFormsForUser(uid);
+        const uploads = db
+          .prepare("SELECT * FROM formUploads WHERE user_id = ?")
+          .all(uid);
+        const leftover = markUploadsAndCount(required, uploads);
+        formsStatus[uid] = {
+          requiredCount: required.length,
+          missingCount: leftover,
+        };
+      }
+
+      // Build searchResults with rsvp info if it exists
+      searchResults = users.map((u) => {
+        let rsvp = rsvpByUser[u.id];
+        if (!rsvp) {
+          const existing = db
+            .prepare(
+              "SELECT id, paid, checked_in FROM rsvp WHERE event_id = ? AND user_id = ?"
+            )
+            .get(eventId, u.id);
+          if (existing) {
+            rsvp = {
+              id: existing.id,
+              paid: !!existing.paid,
+              checked_in: !!existing.checked_in,
+            };
+            rsvpByUser[u.id] = rsvp;
+          }
+        }
+
+        return {
+          user: u,
+          paid: rsvp ? !!rsvp.paid : false,
+          checked_in: rsvp ? !!rsvp.checked_in : false,
+        };
       });
     }
   }
-
-  const events = Array.from(eventsMap.values());
 
   res.render("admin-rsvps", {
+    allEvents,
     events,
+    selectedEventId: eventId,
     formsStatus,
     childrenByParent,
+    searchResults,
+    searchQuery,
   });
 });
+
+
+app.post("/admin-rsvps/:eventId/checkin/:userId", mustBeAdmin, (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const userId = Number(req.params.userId);
+  const markPaid = req.body.markPaid === "1";
+
+  const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId);
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+
+  if (!event || !user) {
+    req.session.flashMessage = "Event or user not found.";
+    return res.redirect(`/admin-rsvps?eventId=${eventId}`);
+  }
+
+  // Ensure RSVP row exists
+  let rsvp = db
+    .prepare("SELECT * FROM rsvp WHERE event_id = ? AND user_id = ?")
+    .get(eventId, userId);
+
+  if (!rsvp) {
+    db.prepare(
+      "INSERT INTO rsvp (user_id, event_id, paid, checked_in) VALUES (?, ?, ?, ?)"
+    ).run(userId, eventId, markPaid ? 1 : 0, 1);
+  } else {
+    db.prepare(
+      "UPDATE rsvp SET checked_in = 1, paid = CASE WHEN ? THEN 1 ELSE paid END WHERE id = ?"
+    ).run(markPaid ? 1 : 0, rsvp.id);
+  }
+
+  // If we marked as paid, also write a paymentHistory row
+  if (markPaid) {
+    const amountCents = (event.cost || 0) * 100;
+    const title = `Event RSVP (cash): ${event.title}`;
+    const desc = `RSVP fee collected in cash for event on ${new Date(
+      event.datetime
+    ).toLocaleString("en-US")}.`;
+
+    db.prepare(`
+      INSERT INTO paymentHistory (title, description, amount, method, date, user_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(title, desc, amountCents, "Cash", Date.now(), userId);
+  }
+
+  req.session.flashMessage = "Check-in recorded.";
+  return res.redirect(`/admin-rsvps?eventId=${eventId}`);
+});
+
+app.post("/admin-rsvps/:eventId/email/:userId", mustBeAdmin, async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const userId = Number(req.params.userId);
+
+  const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId);
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+
+  if (!event || !user || !user.email) {
+    req.session.flashMessage = "Cannot send email: missing event, user, or email.";
+    return res.redirect(`/admin-rsvps?eventId=${eventId}`);
+  }
+
+  const baseUrl = process.env.BASEURL || "https://boisegems.org";
+  const eventUrl = `${baseUrl}/event/${event.slug}`;
+
+  const subject = `Payment needed for ${event.title}`;
+  const html = `
+    <p>Hi ${user.firstname},</p>
+    <p>This is a reminder that your RSVP payment for the event
+    <strong>${event.title}</strong> on
+    <strong>${new Date(event.datetime).toLocaleString("en-US")}</strong>
+    has not yet been completed.</p>
+    <p>You can finish your RSVP and payment here:</p>
+    <p><a href="${eventUrl}">${eventUrl}</a></p>
+    <p>If you believe you've already paid, you can ignore this email or contact us so we can double-check.</p>
+    <p>– Boise Gems</p>
+  `;
+
+  try {
+    await sendEmail(user.email, subject, html);
+    req.session.flashMessage = "Payment reminder email sent.";
+  } catch (err) {
+    console.error("RSVP reminder email error:", err);
+    req.session.flashMessage = "Failed to send reminder email.";
+  }
+
+  return res.redirect(`/admin-rsvps?eventId=${eventId}`);
+});
+
 
 app.get("/admin-forms", mustBeAdmin, (req, res) => {
   const membership = String(req.query.membership || "all").toLowerCase(); // all|corps|independent
@@ -4994,15 +5579,27 @@ function deriveFolderContext(chain) {
 function getSectionRoster(section, scope) {
   if (!section) return [];
   const rows = db.prepare(`
-    SELECT id, firstname, lastname, section, instrument, contractedCorps, contractedIndependent, img
+    SELECT
+      id,
+      firstname,
+      lastname,
+      section,
+      instrument,
+      contractedCorps,
+      contractedIndependent,
+      img,
+      indoorSection,
+      indoorInstrument
     FROM users
     WHERE LOWER(section) = LOWER(?)
       AND (parent IS NULL OR parent = 0)
   `).all(section);
 
-  const viewsByUser = {}; // filled per folder later
+  const viewsByUser = {};
   return rows;
 }
+
+
 
 function buildVisibilityFlags(audience) {
   // audience: 'corps', 'independent', 'both', 'everyone'

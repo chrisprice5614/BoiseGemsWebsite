@@ -194,6 +194,31 @@
               </div>
             </div>
 
+             <% if (thisUser.contracts && thisUser.contracts.length) { %>
+              <div class="triple-to-single triple-to-single-mod">
+                <div>
+                  <p><b>Contracts on file:</b></p>
+                  <ul style="margin: 4px 0 0 1em; padding: 0;">
+                    <% thisUser.contracts.forEach(function(c) { %>
+                      <li>
+                        Season <%= c.season %> — <%= c.ensemble %>
+                        <% if (c.signedContractPath) { %>
+                          —
+                          <a href="/admin/contracts/<%= thisUser.id %>/<%= c.id %>" target="_blank" rel="noopener noreferrer">
+                            View signed contract
+                          </a>
+                        <% } else { %>
+                          — (no file uploaded)
+                        <% } %>
+                      </li>
+                    <% }); %>
+                  </ul>
+                </div>
+                <div></div>
+                <div></div>
+              </div>
+            <% } %>
+
             <div class="triple-to-single triple-to-single-mod">
               <div>
                 <p><b>All Forms Uploaded?: </b><%= thisUser.allForms ? "✅" : "❌" %></p>

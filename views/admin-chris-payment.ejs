@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Chris Payment — Boise Gems</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="max-width: 900px; margin: 16px auto; padding: 16px;">
+    <h1>Chris Payment</h1>
+
+    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+      <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border:1px solid #ffcccc;">
+        <%= flashMessage %>
+      </p>
+    <% } %>
+
+    <section style="margin-bottom: 24px;">
+      <h2>Current Total Owed</h2>
+      <p style="font-size: 1.4rem; font-weight: bold;">
+        $<%= (totalOwedCents / 100).toFixed(2) %>
+      </p>
+    </section>
+
+    <section style="margin-bottom: 24px;">
+      <h2>Pay Chris</h2>
+      <p>Venmo: <strong>chrisprice5614</strong></p>
+      <p>PayPal: <strong>chrisprice5614@gmail.com</strong></p>
+    </section>
+
+    <% if (canRecordPayment) { %>
+      <section style="margin-bottom: 32px; border: 1px solid #ddd; padding: 12px; border-radius: 8px;">
+        <h3>Record "Payment Made"</h3>
+        <form action="/admin/chris-payment/pay" method="POST">
+          <label for="amount">Amount paid (USD)</label><br/>
+          <input
+            type="number"
+            id="amount"
+            name="amount"
+            step="0.01"
+            min="0"
+            required
+            style="max-width: 200px;"
+          />
+          <br/><br/>
+
+          <label for="note">Note (optional)</label><br/>
+          <textarea
+            id="note"
+            name="note"
+            rows="3"
+            style="width:100%; max-width: 400px;"
+            placeholder="e.g. Venmo transfer on 2025-11-16"
+          ></textarea>
+          <br/><br/>
+
+          <button type="submit">Payment Made</button>
+        </form>
+      </section>
+    <% } %>
+
+    <section>
+      <h2>History</h2>
+
+      <% if (!history || !history.length) { %>
+        <p>No Chris Payment history yet.</p>
+      <% } else { %>
+        <div style="overflow-x:auto;">
+          <table style="border-collapse: collapse; width: 100%; min-width: 600px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:4px;">Date</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:4px;">Type</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:4px;">Amount</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:4px;">Note</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:4px;">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% history.forEach(function(h) { %>
+                <tr>
+                  <td style="padding:4px;">
+                    <%= new Date(h.created_at).toLocaleString("en-US") %>
+                  </td>
+                  <td style="padding:4px;">
+                    <%= h.type === "credit" ? "Credit (3%)" : "Payment" %>
+                  </td>
+                  <td style="padding:4px;">
+                    <% const sign = h.type === "payment" ? "-" : "+"; %>
+                    <%= sign %>$<%= (h.amount / 100).toFixed(2) %>
+                  </td>
+                  <td style="padding:4px; max-width: 280px; white-space: pre-wrap;">
+                    <%= h.note || "" %>
+                  </td>
+                  <td style="padding:4px;">
+                    <%= h.source || "" %>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

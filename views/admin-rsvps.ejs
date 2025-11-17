@@ -10,73 +10,219 @@
 <header><%- include("includes/header") %></header>
 <main>
   <div style="margin:12px;">
-    <h1>RSVPs by Event</h1>
-    <% if (!events.length) { %>
-      <p>No events found.</p>
+    <h1>RSVPs & Event Check-In</h1>
+
+    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+      <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border:1px solid #ffcccc;">
+        <%= flashMessage %>
+      </p>
     <% } %>
 
-    <% events.forEach(function(evt){ %>
-      <section style="margin-bottom:24px;">
+    <% if (!allEvents.length) { %>
+      <p>No events found.</p>
+    <% } else { %>
+      <form method="GET" action="/admin-rsvps" style="margin-bottom: 16px;">
+        <label for="eventId"><strong>Select an event:</strong></label>
+        <select name="eventId" id="eventId">
+          <option value="">-- choose an event --</option>
+          <% allEvents.forEach(function(e){ %>
+            <option value="<%= e.id %>" <%= selectedEventId == e.id ? "selected" : "" %>>
+              <%= new Date(e.datetime).toLocaleString("en-US") %> — <%= e.title %>
+            </option>
+          <% }); %>
+        </select>
+        <button type="submit">View</button>
+      </form>
+    <% } %>
+
+    <% if (events && events.length) { 
+         const evt = events[0];
+    %>
+      <section style="margin-top: 24px;">
         <h2><%= evt.title %></h2>
         <p>
-          <b>Date:</b>
-          <%= evt.datetime ? new Date(evt.datetime).toLocaleString("en-US") : "TBA" %><br>
-          <b>Location:</b> <%= evt.location || "TBA" %>
+          <strong>When:</strong> <%= new Date(evt.datetime).toLocaleString("en-US") %><br/>
+          <strong>Where:</strong> <%= evt.location || "TBA" %>
         </p>
 
+        <!-- Quick search for ANY member to check in -->
+        <form method="GET" action="/admin-rsvps" style="margin: 16px 0;">
+          <input type="hidden" name="eventId" value="<%= selectedEventId %>"/>
+          <label for="q"><strong>Quick check-in search (name or email):</strong></label><br/>
+          <input
+            id="q"
+            type="text"
+            name="q"
+            value="<%= searchQuery || "" %>"
+            placeholder="Type a member's name or email"
+            style="min-width: 260px; max-width: 360px;"
+          />
+          <button type="submit">Search</button>
+        </form>
+
+        <h3>Existing RSVPs</h3>
         <% if (!evt.rsvps.length) { %>
-          <p><i>No RSVPs yet.</i></p>
+          <p>No RSVPs yet for this event.</p>
         <% } else { %>
-          <table style="width:100%; border-collapse:collapse;">
-            <thead>
-            <tr>
-              <th style="text-align:left; border-bottom:1px solid #ccc;">Name</th>
-              <th style="text-align:left; border-bottom:1px solid #ccc;">Section</th>
-              <th style="text-align:left; border-bottom:1px solid #ccc;">Instrument</th>
-              <th style="text-align:left; border-bottom:1px solid #ccc;">Role</th>
-              <th style="text-align:left; border-bottom:1px solid #ccc;">Paid</th>
-              <th style="text-align:left; border-bottom:1px solid #ccc;">Performer Forms</th>
-            </tr>
-            </thead>
-            <tbody>
-            <% evt.rsvps.forEach(function(r){ 
-                 const status = formsStatus[r.user_id] || { requiredCount: 0, missingCount: 0 };
-                 const finished = status.requiredCount > 0 && status.missingCount === 0;
-                 const role =
-                   r.admin ? "Admin" : (r.staff ? "Staff" : "Performer");
-            %>
-              <tr>
-                 <td>
-                   <%= r.firstname %> <%= r.lastname %>
-                   <% if (typeof childrenByParent !== "undefined" && childrenByParent[r.user_id] && childrenByParent[r.user_id].length) { %>
-                     <ul class="rsvp-children" style="margin:4px 0 0 0; padding-left:1.2em; font-size:0.9em;">
-                       <% childrenByParent[r.user_id].forEach(function(child){ %>
-                         <li>Child: <%= child.firstname %> <%= child.lastname %></li>
-                       <% }); %>
-                     </ul>
-                   <% } %>
-                 </td>
-                 <td><%= r.section || "" %></td>
-                 <td><%= r.instrument || "" %></td>
-                 <td><%= role %></td>
-                 <td><%= r.paid ? "Yes" : "No" %></td>
-                 <td>
-                <td>
-                  <% if (!status.requiredCount) { %>
-                    n/a
-                  <% } else if (finished) { %>
-                    ✅ <%= status.requiredCount %> / <%= status.requiredCount %>
-                  <% } else { %>
-                    ❌ <%= status.requiredCount - status.missingCount %> / <%= status.requiredCount %>
-                  <% } %>
-                </td>
-              </tr>
-            <% }); %>
-            </tbody>
-          </table>
+          <div style="overflow-x:auto;">
+            <table style="border-collapse: collapse; width:100%; min-width:650px;">
+              <thead>
+                <tr>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Name</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Section</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Instrument</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Role</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Paid</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Performer Forms</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Check-In</th>
+                  <th style="text-align:left; border-bottom:1px solid #ccc;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+              <% evt.rsvps.forEach(function(r){ 
+                   const status = formsStatus[r.user_id] || { requiredCount: 0, missingCount: 0 };
+                   const finished = status.requiredCount > 0 && status.missingCount === 0;
+                   const role =
+                     r.admin ? "Admin" : (r.staff ? "Staff" : "Performer");
+              %>
+                <tr>
+                  <td>
+                    <%= r.firstname %> <%= r.lastname %>
+                    <% if (typeof childrenByParent !== "undefined" && childrenByParent && childrenByParent[r.user_id] && childrenByParent[r.user_id].length) { %>
+                      <ul class="rsvp-children" style="margin:4px 0 0 0; padding-left:1.2em; font-size:0.9em;">
+                        <% childrenByParent[r.user_id].forEach(function(child){ %>
+                          <li>Child: <%= child.firstname %> <%= child.lastname %></li>
+                        <% }); %>
+                      </ul>
+                    <% } %>
+                  </td>
+                  <td><%= r.section || "" %></td>
+                  <td><%= r.instrument || "" %></td>
+                  <td><%= role %></td>
+                  <td><%= r.paid ? "Yes" : "No" %></td>
+                  <td>
+                    <% if (!status.requiredCount) { %>
+                      n/a
+                    <% } else if (finished) { %>
+                      ✅ <%= status.requiredCount %> / <%= status.requiredCount %>
+                    <% } else { %>
+                      ❌ <%= status.requiredCount - status.missingCount %> / <%= status.requiredCount %>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (r.checked_in) { %>
+                      ✅ Checked in
+                    <% } else { %>
+                      Not checked in
+                    <% } %>
+                  </td>
+                  <td>
+                    <form action="/admin-rsvps/<%= evt.id %>/checkin/<%= r.user_id %>" method="POST" style="display:inline;">
+                      <input type="hidden" name="markPaid" value="0" />
+                      <button type="submit" style="margin-bottom:4px;">Check-in only</button>
+                    </form>
+                    <% if (!r.paid) { %>
+                      <form action="/admin-rsvps/<%= evt.id %>/checkin/<%= r.user_id %>" method="POST" style="display:inline;">
+                        <input type="hidden" name="markPaid" value="1" />
+                        <button type="submit" style="margin-bottom:4px;">Check-in + Cash Paid</button>
+                      </form>
+                      <form action="/admin-rsvps/<%= evt.id %>/email/<%= r.user_id %>" method="POST" style="display:inline;">
+                        <button type="submit">Send payment email</button>
+                      </form>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+
+        <% if (searchQuery && searchResults && searchResults.length) { %>
+          <section style="margin-top: 32px;">
+            <h3>
+              Search results for "<%= searchQuery %>"
+            </h3>
+            <p style="font-size:0.9rem; color:#555;">
+              These are members in the system, even if they never RSVP’d online.
+            </p>
+
+            <div style="overflow-x:auto;">
+              <table style="border-collapse: collapse; width:100%; min-width:650px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Name</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Section</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Instrument</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Role</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Paid</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Performer Forms</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Check-In</th>
+                    <th style="text-align:left; border-bottom:1px solid #ccc;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                <% searchResults.forEach(function(row){ 
+                     const u = row.user;
+                     const rPaid = row.paid;
+                     const rChecked = row.checked_in;
+                     const status = formsStatus[u.id] || { requiredCount: 0, missingCount: 0 };
+                     const finished = status.requiredCount > 0 && status.missingCount === 0;
+                     const role =
+                       u.admin ? "Admin" : (u.staff ? "Staff" : "Performer");
+                %>
+                  <tr>
+                    <td><%= u.firstname %> <%= u.lastname %></td>
+                    <td><%= u.section || "" %></td>
+                    <td><%= u.instrument || "" %></td>
+                    <td><%= role %></td>
+                    <td><%= rPaid ? "Yes" : "No" %></td>
+                    <td>
+                      <% if (!status.requiredCount) { %>
+                        n/a
+                      <% } else if (finished) { %>
+                        ✅ <%= status.requiredCount %> / <%= status.requiredCount %>
+                      <% } else { %>
+                        ❌ <%= status.requiredCount - status.missingCount %> / <%= status.requiredCount %>
+                      <% } %>
+                    </td>
+                    <td>
+                      <% if (rChecked) { %>
+                        ✅ Checked in
+                      <% } else { %>
+                        Not checked in
+                      <% } %>
+                    </td>
+                    <td>
+                      <form action="/admin-rsvps/<%= evt.id %>/checkin/<%= u.id %>" method="POST" style="display:inline;">
+                        <input type="hidden" name="markPaid" value="0" />
+                        <button type="submit" style="margin-bottom:4px;">Check-in only</button>
+                      </form>
+
+                      <% if (!rPaid) { %>
+                        <form action="/admin-rsvps/<%= evt.id %>/checkin/<%= u.id %>" method="POST" style="display:inline;">
+                          <input type="hidden" name="markPaid" value="1" />
+                          <button type="submit" style="margin-bottom:4px;">Check-in + Cash Paid</button>
+                        </form>
+
+                        <form action="/admin-rsvps/<%= evt.id %>/email/<%= u.id %>" method="POST" style="display:inline;">
+                          <button type="submit">Send payment email</button>
+                        </form>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        <% } else if (searchQuery && (!searchResults || !searchResults.length)) { %>
+          <p style="margin-top:16px; font-size:0.9rem; color:#555;">
+            No members found for "<%= searchQuery %>".
+          </p>
         <% } %>
       </section>
-    <% }); %>
+    <% } %>
   </div>
 </main>
 <footer><%- include("includes/footer") %></footer>

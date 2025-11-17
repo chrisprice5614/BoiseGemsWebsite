@@ -6000,16 +6000,17 @@ app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
 });
 
 app.get("/admin/callbacks", mustBeStaffOrAdmin, (req, res) => {
-  // Pull all non-parent users (students); adapt WHERE if you use a different flag
+  // TEMP: pull anyone with an email so we KNOW it works
   const members = db.prepare(`
     SELECT 
-  id, firstname, lastname, email, section, instrument, img
+      id, firstname, lastname, email, section, instrument, img
     FROM users
-    WHERE staff = 0 
-      AND admin = 0
-      AND (parent IS NULL OR parent = 0 OR parent = id)
+    WHERE email IS NOT NULL
+      AND TRIM(email) <> ''
     ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
   `).all();
+
+  console.log("Callbacks members count:", members.length);
 
   res.render("admin-callbacks", {
     user: req.user,

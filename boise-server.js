@@ -6003,11 +6003,25 @@ app.get("/admin/callbacks", mustBeStaffOrAdmin, (req, res) => {
   // Pull all non-parent users (students); adapt WHERE if you use a different flag
   const members = db.prepare(`
     SELECT 
-  id, firstname, lastname, email, section, instrument, img
+      id, firstname, lastname, email, section, instrument, img
     FROM users
-    WHERE staff = 0 
-      AND admin = 0
-      AND (parent IS NULL OR parent = 0 OR parent = id)
+    WHERE 
+      -- NOT admin
+      (admin IS NULL OR admin = 0)
+      
+      AND 
+      -- NOT staff
+      (staff IS NULL OR staff = 0)
+      
+      AND
+      -- NOT a parent account
+      (parent IS NULL OR parent = 0 OR parent = id)
+      
+      AND
+      -- Must have an email
+      email IS NOT NULL
+      AND TRIM(email) <> ''
+      
     ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
   `).all();
 

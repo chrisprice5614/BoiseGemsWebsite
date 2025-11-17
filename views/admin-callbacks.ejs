@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Callbacks | Boise Gems Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <%- include("includes/head") %>
+</head>
+<body>
+  <header>
+    <%- include("includes/header") %>
+  </header>
+
+  <main>
+    <div style="max-width: 1100px; margin: 16px auto;">
+      <p><a href="/admin">&larr; Back to Admin Dashboard</a></p>
+
+      <h1>Send Callbacks</h1>
+      <p>
+        Choose members to receive a callback email.  
+      </p>
+
+
+      <form id="cb-form" action="/admin/callbacks" method="post">
+        <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 16px;">
+          <div style="flex: 1 1 260px;">
+            <label for="cb-search"><strong>Search members:</strong></label><br />
+            <small>Search by name, email, or section.</small><br />
+            <input
+              id="cb-search"
+              type="text"
+              placeholder="Type to filter..."
+              style="width: 85%; padding: 6px; border-radius: 6px; border: 1px solid #ccc;"
+            />
+          </div>
+
+          
+        </div>
+
+        <div>
+            <strong>Selected:</strong> <span id="cb-selectedCount">0</span>
+          </div>
+
+        <div
+          style="
+            max-height: 420px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 8px;
+            background: #fff;
+          "
+        >
+          <% if (!members || !members.length) { %>
+            <p>No members found.</p>
+          <% } else { %>
+            <ul style="list-style: none; padding-left: 0; margin: 0;">
+              <% members.forEach(function(m) { %>
+                <li
+                  data-member-row="1"
+                  data-name="<%= ((m.firstname || '') + ' ' + (m.lastname || '')).toLowerCase() %>"
+                  data-email="<%= (m.email || '').toLowerCase() %>"
+                  data-section="<%= (m.section || '').toLowerCase() %>"
+                  style="padding: 6px 4px; border-bottom: 1px solid #eee;"
+                >
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input
+                      type="checkbox"
+                      class="cb-member"
+                      value="<%= m.id %>"
+                      style="margin: 0;"
+                    />
+                    <div>
+                      <div>
+                        <strong><%= m.firstname %> <%= m.lastname %></strong>
+                        <% if (m.section) { %>
+                          <small> — <%= m.section %></small>
+                        <% } %>
+                      </div>
+                      <div style="font-size: 0.85rem; color: #555;">
+                        <%= m.email || "No email on file" %>
+                        <% if (m.instrument) { %> · <%= m.instrument %><% } %>
+                      </div>
+                    </div>
+                  </label>
+                </li>
+              <% }); %>
+            </ul>
+          <% } %>
+        </div>
+
+        <input type="hidden" name="selectedIds" id="cb-selectedIds" />
+
+        <div style="margin-top: 16px;">
+          <label for="cb-message"><strong>Callback message:</strong></label><br />
+          <small>
+            This will be the body of the email. The subject is:
+            <em>"Congratulations! You Received a Callback!"</em>
+          </small><br />
+          <textarea
+            id="cb-message"
+            name="message"
+            rows="6"
+            style="width: 85%; margin-top: 6px; padding: 6px; border-radius: 6px; border: 1px solid #ccc;"
+            required
+          ></textarea>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <button
+            type="submit"
+            style="
+              padding: 8px 16px;
+              border-radius: 6px;
+              border: none;
+              background: #28a745;
+              color: #fff;
+              cursor: pointer;
+            "
+          >
+            Send Callback Emails
+          </button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    <%- include("includes/footer") %>
+  </footer>
+
+  <script>
+    (function () {
+      var searchInput = document.getElementById("cb-search");
+      var rows = Array.prototype.slice.call(
+        document.querySelectorAll("[data-member-row]")
+      );
+      var checkboxes = Array.prototype.slice.call(
+        document.querySelectorAll(".cb-member")
+      );
+      var selectedSet = new Set();
+      var selectedCountEl = document.getElementById("cb-selectedCount");
+      var hiddenSelected = document.getElementById("cb-selectedIds");
+      var form = document.getElementById("cb-form");
+
+      function updateCount() {
+        selectedCountEl.textContent = selectedSet.size;
+      }
+
+      // Keep selection even when searching
+      checkboxes.forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          var id = cb.value;
+          if (cb.checked) {
+            selectedSet.add(id);
+          } else {
+            selectedSet.delete(id);
+          }
+          updateCount();
+        });
+      });
+
+      // Client-side search by name/email/section
+      if (searchInput) {
+        searchInput.addEventListener("input", function () {
+          var term = (searchInput.value || "").trim().toLowerCase();
+          rows.forEach(function (row) {
+            if (!term) {
+              row.style.display = "";
+              return;
+            }
+            var haystack =
+              (row.getAttribute("data-name") || "") +
+              " " +
+              (row.getAttribute("data-email") || "") +
+              " " +
+              (row.getAttribute("data-section") || "");
+            haystack = haystack.toLowerCase();
+            row.style.display =
+              haystack.indexOf(term) !== -1 ? "" : "none";
+          });
+        });
+      }
+
+      if (form) {
+        form.addEventListener("submit", function (e) {
+          if (!selectedSet.size) {
+            alert("Select at least one member to send callbacks to.");
+            e.preventDefault();
+            return;
+          }
+          hiddenSelected.value = Array.from(selectedSet).join(",");
+        });
+      }
+
+      updateCount();
+    })();
+  </script>
+</body>
+</html>

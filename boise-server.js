@@ -5785,6 +5785,7 @@ app.post("/files/folder/:id/new-folder", mustBeStaffOrAdmin, (req, res) => {
 });
 
 // Upload multiple files into a folder
+// Upload multiple files into a folder
 app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("files", 20), async (req, res) => {
   const folderId = parseInt(req.params.id, 10);
   const chain = getFolderWithAncestors(folderId);
@@ -5800,7 +5801,10 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
   const { allow_corps, allow_independent, allow_noncontracted } = buildVisibilityFlags(audience);
 
   // Titles can be provided as one-per-line
-  const titlesText = String(req.body.titlesText || "").split("\n").map(s => s.trim()).filter(Boolean);
+  const titlesText = String(req.body.titlesText || "")
+    .split("\n")
+    .map(s => s.trim())
+    .filter(Boolean);
   const now = Date.now();
 
   if (!req.files || !req.files.length) {
@@ -5840,57 +5844,93 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
   // Reset views for this folder (new stuff to see)
   db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(folder.id);
 
-  // Email appropriate members based on audience + section
+  // ✅ No emails here anymore – just go back to the folder
+  res.redirect(`/files/folder/${folder.id}`);
+});
+
+app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
+  const folderId = parseInt(req.params.id, 10);
+  const chain = getFolderWithAncestors(folderId);
+  if (!chain) {
+    req.session.flashMessage = "Folder not found.";
+    return res.redirect("back");
+  }
+
+  const ctx = deriveFolderContext(chain);
+  const folder = ctx.folder;
+
+  // Default: notify everyone in this section (contracted or not)
+  const audience = String(req.body.audience || "everyone").toLowerCase();
+
+  if (!ctx.section) {
+    req.session.flashMessage = "This folder is not tied to a specific section.";
+    return res.redirect(`/files/folder/${folder.id}`);
+  }
+
   try {
-    if (ctx.section) {
-      let where = "LOWER(section) = LOWER(?) AND (parent IS NULL OR parent = 0)";
-      const params = [ctx.section];
+    // Build who we’re emailing
+    let where = "LOWER(section) = LOWER(?) AND (parent IS NULL OR parent = 0)";
+    const params = [ctx.section];
 
-      if (audience === "corps") {
-        where += " AND contractedCorps = 1";
-      } else if (audience === "independent") {
-        where += " AND contractedIndependent = 1";
-      } else if (audience === "both") {
-        where += " AND (contractedCorps = 1 OR contractedIndependent = 1)";
-      } else if (audience === "everyone") {
-        // no contract filter
-      }
-
-      const rows = db.prepare(`
-        SELECT firstname, lastname, email, contractedCorps, contractedIndependent
-        FROM users
-        WHERE ${where}
-      `).all(...params);
-
-      const emails = rows.map(r => r.email).filter(Boolean);
-      if (emails.length) {
-        const scopeLabel = ctx.scope === "corps" ? "Corps" : "Independent";
-        const subject = `New files uploaded — ${scopeLabel} ${ctx.section} (${ctx.year})`;
-
-        const folderPath = breadcrumbs => breadcrumbs.map(b => b.label).join(" / ");
-
-        // Build breadcrumbs again for text
-        const chain2 = getFolderWithAncestors(folder.id);
-        const ctx2 = deriveFolderContext(chain2);
-        const crumbs = [
-          { label: ctx2.scope === "corps" ? "Corps" : "Indoor" },
-          { label: String(ctx2.year) },
-          ...(chain2.map(c => ({ label: c.name })))
-        ];
-        const pathText = `https://boisegems.org/files/folder/${folderId}`
-
-        const html = `
-          <p>Hello!</p>
-          <p>New files have been uploaded for <strong>${scopeLabel} ${ctx.section}</strong> in the Boise Gems member portal.</p>
-          <p>Folder path: <strong>${pathText}</strong></p>
-          <p>Please log in to the member portal to view the latest music/materials.</p>
-        `;
-
-        await sendEmail(emails.join(","), subject, html);
-      }
+    if (audience === "corps") {
+      where += " AND contractedCorps = 1";
+    } else if (audience === "independent") {
+      where += " AND contractedIndependent = 1";
+    } else if (audience === "both") {
+      where += " AND (contractedCorps = 1 OR contractedIndependent = 1)";
+    } else if (audience === "everyone") {
+      // no contract filter
     }
+
+    const rows = db.prepare(`
+      SELECT firstname, lastname, email, contractedCorps, contractedIndependent
+      FROM users
+      WHERE ${where}
+    `).all(...params);
+
+    if (!rows.length) {
+      req.session.flashMessage = "No members found to notify for this section.";
+      return res.redirect(`/files/folder/${folder.id}`);
+    }
+
+    const scopeLabel = ctx.scope === "corps" ? "Corps" : "Independent";
+    const subject = `New files uploaded — ${scopeLabel} ${ctx.section} (${ctx.year})`;
+
+    // Build breadcrumb-style path for email text
+    const chain2 = getFolderWithAncestors(folder.id);
+    const ctx2 = deriveFolderContext(chain2);
+    const crumbs = [
+      { label: ctx2.scope === "corps" ? "Corps" : "Indoor" },
+      { label: String(ctx2.year) },
+      ...(chain2.map(c => ({ label: c.name })))
+    ];
+    const folderPathText = crumbs.map(b => b.label).join(" / ");
+    const pathUrl = `https://boisegems.org/files/folder/${folderId}`;
+
+    let sentCount = 0;
+
+    // ✅ Send separate emails (NOT joined together)
+    for (const r of rows) {
+      if (!r.email) continue;
+      const fullName = `${r.firstname || ""} ${r.lastname || ""}`.trim() || "there";
+
+      const html = `
+        <p>Hi ${fullName},</p>
+        <p>New files have been uploaded for <strong>${scopeLabel} ${ctx.section}</strong> in the Boise Gems member portal.</p>
+        <p><strong>Folder path (inside the portal):</strong> ${folderPathText}</p>
+        <p>You can go directly to the folder here:</p>
+        <p><a href="${pathUrl}">${pathUrl}</a></p>
+        <p>Please log in to the member portal to view the latest music and materials.</p>
+      `;
+
+      await sendEmail(r.email, subject, html);
+      sentCount++;
+    }
+
+    req.session.flashMessage = `Notification sent to ${sentCount} member${sentCount === 1 ? "" : "s"}.`;
   } catch (err) {
-    console.error("Error sending file upload notification:", err);
+    console.error("Error sending file folder notifications:", err);
+    req.session.flashMessage = "There was an error sending notifications. Check the server logs.";
   }
 
   res.redirect(`/files/folder/${folder.id}`);
@@ -5957,6 +5997,80 @@ app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
     yearFolder,
     sections
   });
+});
+
+app.get("/admin/callbacks", mustBeStaffOrAdmin, (req, res) => {
+  // Pull all non-parent users (students); adapt WHERE if you use a different flag
+  const members = db.prepare(`
+    SELECT id, firstname, lastname, email, section, instrument, img
+    FROM users
+    WHERE (parent IS NULL OR parent = 0) AND staff = 0 AND admin = 0
+    ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+  `).all();
+
+  res.render("admin-callbacks", {
+    user: req.user,
+    members
+  });
+});
+
+// Admin: send callback emails
+app.post("/admin/callbacks", mustBeStaffOrAdmin, async (req, res) => {
+  const rawIds = String(req.body.selectedIds || "")
+    .split(",")
+    .map(s => parseInt(s, 10))
+    .filter(Boolean);
+
+  const message = String(req.body.message || "").trim();
+
+  if (!rawIds.length) {
+    req.session.flashMessage = "Select at least one member to send callbacks to.";
+    return res.redirect("/admin/callbacks");
+  }
+
+  if (!message) {
+    req.session.flashMessage = "Callback message is required.";
+    return res.redirect("/admin/callbacks");
+  }
+
+  const placeholders = rawIds.map(() => "?").join(", ");
+  const rows = db.prepare(`
+    SELECT id, firstname, lastname, email
+    FROM users
+    WHERE id IN (${placeholders})
+  `).all(...rawIds);
+
+  const subject = "Congratulations! You Received a Callback!";
+  const messageHtml = message.replace(/\n/g, "<br/>");
+
+  let sentCount = 0;
+
+  try {
+    for (const r of rows) {
+      if (!r.email) continue;
+
+      const fullName =
+        `${r.firstname || ""} ${r.lastname || ""}`.trim() || "there";
+
+      const html = `
+        <p>Hi ${fullName},</p>
+        <p>${messageHtml}</p>
+        <p>— Boise Gems Staff</p>
+      `;
+
+      await sendEmail(r.email, subject, html);
+      sentCount++;
+    }
+
+    req.session.flashMessage =
+      `Callback email sent to ${sentCount} member${sentCount === 1 ? "" : "s"}.`;
+  } catch (err) {
+    console.error("Error sending callback emails:", err);
+    req.session.flashMessage =
+      "There was an error sending callbacks. Check the server logs.";
+  }
+
+  res.redirect("/admin/callbacks");
 });
 
 // PUBLIC: audition materials

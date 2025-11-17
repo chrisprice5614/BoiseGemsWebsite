@@ -6004,7 +6004,7 @@ app.get("/admin/callbacks", mustBeStaffOrAdmin, (req, res) => {
   const members = db.prepare(`
     SELECT id, firstname, lastname, email, section, instrument, img
     FROM users
-    WHERE (parent IS NULL OR parent = 0) AND staff = 0 AND admin = 0
+    WHERE parent = 0 AND staff = 0 AND admin = 0
     ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
   `).all();
 

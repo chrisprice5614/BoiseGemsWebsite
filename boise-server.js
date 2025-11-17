@@ -6002,9 +6002,12 @@ app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
 app.get("/admin/callbacks", mustBeStaffOrAdmin, (req, res) => {
   // Pull all non-parent users (students); adapt WHERE if you use a different flag
   const members = db.prepare(`
-    SELECT id, firstname, lastname, email, section, instrument, img
+    SELECT 
+  id, firstname, lastname, email, section, instrument, img
     FROM users
-    WHERE parent = 0 AND staff = 0 AND admin = 0
+    WHERE staff = 0 
+      AND admin = 0
+      AND (parent IS NULL OR parent = 0 OR parent = id)
     ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
   `).all();
 

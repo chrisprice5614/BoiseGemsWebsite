@@ -2717,7 +2717,7 @@ app.post("/extend-contract/:id", mustBeStaff, (req,res) => {
     }
   })
 
-  const addContractExtensionStatement = db.prepare("INSERT INTO contractExtension (user_id , due_date , bypass_fee, created_at , season , extender) VALUES (? , ? , ? , ? , ?)")
+  const addContractExtensionStatement = db.prepare("INSERT INTO contractExtension (user_id , due_date , bypass_fee, created_at , season , extender) VALUES (? , ? , ? , ? , ? , ?)")
   addContractExtensionStatement.run(thisUser.id, Date.now() + 30 * 24 * 60 * 60 * 1000, bypass, Date.now(), seasonString, req.user.userid)
 
   let welcomeMessage = "The Boise Gems Drum & Bugle Corps"

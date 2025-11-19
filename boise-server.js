@@ -858,16 +858,24 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
     }
 
 
-    const contractExtCols = db
-  .prepare("PRAGMA table_info(contractExtension)")
-  .all()
-  .map(c => c.name);
+      const contractExtCols = db
+    .prepare("PRAGMA table_info(contractExtension)")
+    .all()
+    .map((c) => c.name);
 
-if (!contractExtCols.includes("created_at")) {
-  db.prepare("ALTER TABLE contractExtension ADD COLUMN created_at INTEGER").run();
-  // Initialize existing rows to "now" so they expire 30 days from first time this runs
-  db.prepare("UPDATE contractExtension SET created_at = ? WHERE created_at IS NULL").run(Date.now());
-}
+  if (!contractExtCols.includes("created_at")) {
+    db.prepare(
+      "ALTER TABLE contractExtension ADD COLUMN created_at INTEGER"
+    ).run();
+  }
+
+  // NEW: child_id for “contract for child, signed by parent”
+  if (!contractExtCols.includes("child_id")) {
+    db.prepare(
+      "ALTER TABLE contractExtension ADD COLUMN child_id INTEGER"
+    ).run();
+  }
+
 })
 
 createTables();
@@ -2457,6 +2465,10 @@ app.post(
       return res.redirect("/");
     }
 
+    // Who is the actual member this contract is FOR?
+    const memberId = contractExtension.child_id || contractExtension.user_id;
+    const isMinorContract = !!contractExtension.child_id;
+
     // Ensure a signed contract PDF was uploaded
     if (!req.file) {
       req.session.flashMessage = "Please upload your signed contract PDF.";
@@ -2484,14 +2496,13 @@ app.post(
       if (ensemble === "corps") {
         db.prepare(
           "UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
-        ).run(tuition.amount, req.user.userid);
+        ).run(tuition.amount, memberId);
       } else {
         db.prepare(
           "UPDATE users SET contractedIndependent = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
-        ).run(tuition.amount, req.user.userid);
+        ).run(tuition.amount, memberId);
       }
 
-      // Insert into contractedMembers immediately
       db.prepare(
         `
         INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath)
@@ -2501,7 +2512,7 @@ app.post(
         contractExtension.season,
         ensemble,
         Date.now(),
-        req.user.userid,
+        memberId,
         contractFilePath
       );
 
@@ -2510,21 +2521,39 @@ app.post(
         req.params.id
       );
 
-      req.session.flashMessage = "Welcome to the corps!";
-      return res.redirect("/member-portal");
+      const redirectTarget = isMinorContract ? "/parent-portal" : "/member-portal";
+      req.session.flashMessage = "Welcome to Boise Gems!";
+      return res.redirect(redirectTarget);
     }
 
     // Stripe checkout flow for down payment (from DB) + ~6% processing fee
-    const downPayment = tuition.deposit_amount || 5000; // cents, from DB
+    let downPayment = Number(tuition.deposit_amount || 0); // cents, from DB
+
+    // If no deposit set, fall back to full tuition amount
+    if (!downPayment || downPayment <= 0) {
+      downPayment = Number(tuition.amount || 0);
+    }
+
     const processingFee = Math.ceil(downPayment * 0.06);
     const totalAmount = downPayment + processingFee;
 
     // Save potential payment INCLUDING contract file path
     const insertPotential = db.prepare(
-      "INSERT INTO potential_payment (user_id, contract_id, amount, contract_file_path, created_at) VALUES (?, ?, ?, ?, ?)"
+      `
+      INSERT INTO potential_payment
+        (child_id, parent_id, user_id, contract_id, amount, contract_file_path, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
     );
+
+    // For minors, user_id = parent (payer), child_id = member
+    const childId = isMinorContract ? memberId : null;
+    const parentId = isMinorContract ? req.user.userid : null;
+
     const result = insertPotential.run(
-      req.user.userid,
+      childId,
+      parentId,
+      req.user.userid,           // payer
       contractExtension.id,
       totalAmount,
       contractFilePath,
@@ -2532,16 +2561,17 @@ app.post(
     );
     const potentialPaymentId = result.lastInsertRowid;
 
-    // Stripe Checkout Session
+    // Stripe Checkout Session (unchanged below, just ensure it uses totalAmount)
     try {
-      const session = await stripe.checkout.sessions.create({
+      const sessionObj = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [
           {
             price_data: {
               currency: "usd",
               product_data: {
-                name: `Contract down payment for ${ensemble} ensemble`,
+                name: `Contract down payment (${ensemble})`,
+                description: `Down payment plus processing fee for Boise Gems ${ensemble} contract.`,
               },
               unit_amount: totalAmount,
             },
@@ -2553,13 +2583,16 @@ app.post(
         cancel_url: `${process.env.BASEURL}/sign-contract/${contractExtension.id}`,
       });
 
-      res.redirect(303, session.url);
+      return res.redirect(303, sessionObj.url);
     } catch (err) {
       console.error("Stripe session error:", err);
-      res.redirect(`/sign-contract/${contractExtension.id}`);
+      req.session.flashMessage =
+        "There was an error starting the payment. Please try again, or contact staff.";
+      return res.redirect(`/sign-contract/${contractExtension.id}`);
     }
   }
 );
+
 
 
 app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
@@ -2587,6 +2620,10 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     ? "corps"
     : "independent";
 
+  // Who is the member this contract is actually FOR?
+  const memberId = contractExtension.child_id || contractExtension.user_id;
+  const isMinorContract = !!contractExtension.child_id;
+
   // Fetch tuition fees AND deposit for the ensemble
   const getTuition = db.prepare(
     "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
@@ -2594,10 +2631,9 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   const tuition = getTuition.get(ensemble);
   if (!tuition) return res.redirect("/");
 
-  // Update user: set contracted flag and owed tuition
+  // Update member: set contracted flag and owed tuition
   const getUser = db.prepare("SELECT * FROM users WHERE id = ?");
-  const user = getUser.get(req.user.userid);
-
+  const user = getUser.get(memberId);
   if (!user) return res.redirect("/");
 
   // Set contracted flags
@@ -2613,16 +2649,26 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   );
   updateUser.run(newOwed, user.id);
 
-  // Deduct down payment based on DB deposit_amount (not hard-coded 5000)
-  const downPayment = tuition.deposit_amount || 5000;
+  // Deduct down payment based on DB deposit_amount
+  let downPayment = Number(tuition.deposit_amount || 0);
+
+  // If no deposit set, fall back to full tuition amount
+  if (!downPayment || downPayment <= 0) {
+    downPayment = Number(tuition.amount || 0);
+  }
+
   const remainingOwed = newOwed - downPayment;
 
+  // 3% Chris share, still based on downPayment
   addChrisShare(
     downPayment,
     `Contract down payment for ${ensemble} (user ${user.id})`
   );
 
-  db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(remainingOwed, user.id);
+  db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(
+    remainingOwed,
+    user.id
+  );
 
   // Insert into paymentHistory
   const addPayment = db.prepare(
@@ -2631,11 +2677,10 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
 
   const downLabel = (downPayment / 100).toFixed(2);
   const feeCents = (potential.amount || 0) - downPayment;
-  const feeLabel =
-    feeCents > 0 ? (feeCents / 100).toFixed(2) : "0.00";
+  const feeLabel = feeCents > 0 ? (feeCents / 100).toFixed(2) : "0.00";
 
   const paymentTitle = `Contract down payment for ${ensemble} ensemble`;
-  const paymentDesc = `User ${user.firstname} ${user.lastname} paid $${downLabel} (plus about $${feeLabel} processing fee) down payment for ${ensemble} contract.`;
+  const paymentDesc = `User ${user.firstname} ${user.lastname} made a $${downLabel} down payment (plus $${feeLabel} processing fee) down payment for ${ensemble} contract.`;
 
   addPayment.run(
     paymentTitle,
@@ -2668,78 +2713,199 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     contractExtension.id
   );
 
-  // (You can keep your existing email receipt or flash message code here.)
+  // NEW: email the child when a minor contract is signed
+  if (isMinorContract) {
+    const childRow = db
+      .prepare("SELECT firstname, lastname, email FROM users WHERE id = ?")
+      .get(memberId);
 
-  req.session.flashMessage = "Your down payment has been received. Welcome to Boise Gems!";
-  res.redirect("/member-portal");
+    if (childRow && childRow.email) {
+      const html = `
+        <h1>Your Boise Gems Contract Is Signed!</h1>
+        <p>Hi ${childRow.firstname},</p>
+        <p>
+          Your parent/guardian has signed your contract for the
+          ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : "Boise Gems Independent"}
+          for the ${CURRENTSEASON} season.
+        </p>
+        <p>We’re excited to have you with us!</p>
+      `;
+      sendEmail(
+        childRow.email,
+        "Your Boise Gems contract has been signed!",
+        html
+      );
+    }
+  }
+
+  const redirectTarget = isMinorContract ? "/parent-portal" : "/member-portal";
+  req.session.flashMessage =
+    "Your down payment has been received. Welcome to Boise Gems!";
+  res.redirect(redirectTarget);
 });
 
 
 
 
-app.post("/extend-contract/:id", mustBeStaff, (req,res) => {
-  const userId = req.params.id;
-  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
-  const thisUser = getUserStatement.get(userId);
-  const group = req.body.group;
 
+app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
+  const userId = Number(req.params.id);
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
+  const thisUser = getUserStatement.get(userId);
+  const group = req.body.group; // "corps" or "independent"
   const bypass = req.body.bypass ? 1 : 0;
 
-  if(!thisUser){
-    return res.redirect("/")
+  if (!thisUser) {
+    return res.redirect("/");
   }
 
-  if(thisUser.parent){
-    req.session.flashMessage = `${thisUser.firstname} is a parent. Only members can be changed to contracted.`
-    return res.redirect(req.get('Referer'))
+  // Only actual members can be contracted
+  if (thisUser.parent) {
+    req.session.flashMessage = `${thisUser.firstname} is a parent. Only members can be changed to contracted.`;
+    return res.redirect(req.get("Referer"));
   }
 
-  if(thisUser.admin){
-    req.session.flashMessage = `${thisUser.firstname} is an admin. Only members can be changed to contracted.`
-    return res.redirect(req.get('Referer'))
+  if (thisUser.admin) {
+    req.session.flashMessage = `${thisUser.firstname} is an admin. Only members can be changed to contracted.`;
+    return res.redirect(req.get("Referer"));
   }
 
-  if(thisUser.staff){
-    req.session.flashMessage = `${thisUser.firstname} is staff. Only members can be changed to contracted.`
-    return res.redirect(req.get('Referer'))
+  if (thisUser.staff) {
+    req.session.flashMessage = `${thisUser.firstname} is staff. Only members can be changed to contracted.`;
+    return res.redirect(req.get("Referer"));
   }
 
-  const seasonString = String(CURRENTSEASON)+group;
+    // Determine if this member is a minor (under 18)
+  let isMinor = false;
+  if (thisUser.birthday) {
+    const birthday = new Date(thisUser.birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthday.getFullYear();
+    const hadBDay =
+      today.getMonth() > birthday.getMonth() ||
+      (today.getMonth() === birthday.getMonth() &&
+        today.getDate() >= birthday.getDate());
+    if (!hadBDay) age--;
+    isMinor = age < 18;
+  }
 
-  const oldContractStatement = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?")
-  const oldContractArray = oldContractStatement.all(userId)
+  const parentId = thisUser.parentId || null;
 
-  oldContractArray.forEach(oldContract => {
-    if(oldContract.season == seasonString)
-    {
-      const deleteStatement = db.prepare("DELETE FROM contractExtension WHERE id = ?")
-      deleteStatement.run(oldContract.id)
+  // 🚫 NEW: block sending contracts to minors with no parent attached
+  if (isMinor && !parentId) {
+    req.session.flashMessage = `${thisUser.firstname} ${thisUser.lastname} is a minor and does not have a parent attached. Please add a parent account before sending a contract.`;
+    return res.redirect(req.get("Referer") || "/admin-portal");
+  }
+
+  // Who OWNS the contract extension (who logs in to sign)?
+  //  - Adults: user signs their own contract (user_id = member id)
+  //  - Minors with a parent: parent signs (user_id = parent id, child_id = member id)
+  let contractOwnerId = thisUser.id;
+  let childId = null;
+
+  if (isMinor && parentId) {
+    contractOwnerId = parentId;
+    childId = thisUser.id;
+  }
+
+
+  const seasonString = String(CURRENTSEASON) + group; // e.g. "2026corps"
+
+  // Make sure this specific member only has ONE extension for this season.
+  // Use COALESCE(child_id, user_id) so it works for both adults and minors.
+  const oldContractArray = db
+    .prepare(
+      `
+      SELECT *
+      FROM contractExtension
+      WHERE COALESCE(child_id, user_id) = ?
+        AND season = ?
+      `
+    )
+    .all(thisUser.id, seasonString);
+
+  oldContractArray.forEach((oldContract) => {
+    db.prepare("DELETE FROM contractExtension WHERE id = ?").run(
+      oldContract.id
+    );
+  });
+
+  // Insert new contractExtension
+  const addContractExtensionStatement = db.prepare(`
+    INSERT INTO contractExtension (user_id, child_id, due_date, bypass_fee, created_at, season, extender)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const expiresAt = Date.now() + CONTRACT_EXTENSION_TTL_MS;
+
+  addContractExtensionStatement.run(
+    contractOwnerId, // who logs in to sign
+    childId,         // the child this contract is FOR (null for adults)
+    expiresAt,
+    bypass,
+    Date.now(),
+    seasonString,
+    req.user.userid // staff who issued extension
+  );
+
+  // Build email
+  let welcomeMessage = "The Boise Gems Drum & Bugle Corps";
+  if (group === "independent") {
+    welcomeMessage = "Boise Gems Independent";
+  }
+
+  // Email goes to parent for minors, to member for adults
+  let emailTarget = { email: thisUser.email, firstname: thisUser.firstname };
+  if (isMinor && parentId) {
+    const parentRow = db
+      .prepare("SELECT firstname, email FROM users WHERE id = ?")
+      .get(parentId);
+    if (parentRow && parentRow.email) {
+      emailTarget = parentRow;
     }
-  })
-
-  const addContractExtensionStatement = db.prepare("INSERT INTO contractExtension (user_id , due_date , bypass_fee, created_at , season , extender) VALUES (? , ? , ? , ? , ? , ?)")
-  addContractExtensionStatement.run(thisUser.id, Date.now() + 30 * 24 * 60 * 60 * 1000, bypass, Date.now(), seasonString, req.user.userid)
-
-  let welcomeMessage = "The Boise Gems Drum & Bugle Corps"
-
-  if(group == "independent"){
-    welcomeMessage = "Boise Gems Independent"
   }
 
-  const html = `<h1 style="text-align: center;">Congratulations!</h1>
-  <br>
-  <p>Hello ${thisUser.firstname}, you've been offered a contract at ${welcomeMessage}! Please login and go to your member portal to view the contract and sign it. We're excited to have you with us for the ${CURRENTSEASON} season!</p><br>
-  <div style="text-align: center">
-    <a href="${process.env.BASEURL}/login" target="_blank" style="background-color: #9D76BB; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 4px; font-weight: bold; display: inline-block;">
-                  Log In To Your Account
-                </a>
-  </div>`
+  const html = `
+    <h1 style="text-align: center;">Congratulations!</h1>
+    <br>
+    <p>
+      Hello ${emailTarget.firstname},
+    </p>
+    <p>
+      ${
+        childId
+          ? `${thisUser.firstname} ${thisUser.lastname} has been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+          : `You've been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+      }
+    </p>
+    <p>
+      Please log in to your account to review the contract and sign it.
+    </p>
+    <div style="text-align: center; margin-top: 16px;">
+      <a
+        href="${process.env.BASEURL}/login"
+        target="_blank"
+        style="
+          background-color: #0b71d9;
+          color: white;
+          padding: 10px 18px;
+          border-radius: 4px;
+          font-weight: bold;
+          display: inline-block;
+          text-decoration: none;
+        "
+      >
+        Log In To Your Account
+      </a>
+    </div>
+  `;
 
-  sendEmail(thisUser.email,"Contract Extension", html)
+  sendEmail(emailTarget.email, "Contract Extension", html);
 
+  req.session.flashMessage = "Contract extension sent.";
+  return res.redirect("/admin-portal");
+});
 
-  return res.render("message", {message: "Contract has been sent!"})
-})
 
 
 
@@ -3292,11 +3458,46 @@ app.post("/add-member", mustBeParent, (req,res) => {
   return res.render("message",{message: `An email has been sent to ${email} to confirm that you're their parent/guardian. Have them check their email.`})
 })
 
-app.get("/parent-portal", mustBeParent, (req,res) => {
-  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  const children = db.prepare("SELECT * FROM users WHERE parentId = ?").all(req.user.userid);
+app.get("/parent-portal", mustBeParent, (req, res) => {
+  const member = db
+    .prepare("SELECT * FROM users WHERE id = ?")
+    .get(req.user.userid);
+  const children = db
+    .prepare("SELECT * FROM users WHERE parentId = ?")
+    .all(req.user.userid);
 
-  children.forEach(child => {
+  // Pre-calc child IDs for contract extension lookup
+  const childIds = children.map((c) => c.id);
+  let contractsByChild = {};
+
+  if (childIds.length) {
+    const placeholders = childIds.map(() => "?").join(",");
+    const rows = db
+      .prepare(
+        `
+        SELECT
+          ce.*,
+          u.firstname AS childFirst,
+          u.lastname  AS childLast
+        FROM contractExtension ce
+        JOIN users u
+          ON u.id = COALESCE(ce.child_id, ce.user_id)
+        WHERE ce.user_id = ?
+          AND COALESCE(ce.child_id, ce.user_id) IN (${placeholders})
+        `
+      )
+      .all(req.user.userid, ...childIds);
+
+    contractsByChild = rows.reduce((acc, row) => {
+      const key = row.child_id || row.user_id;
+      if (!acc[key]) acc[key] = [];
+      acc[key] = acc[key] || [];
+      acc[key].push(row);
+      return acc;
+    }, {});
+  }
+
+  children.forEach((child) => {
     // minor flag (kept)
     if (child.birthday) {
       const birthday = new Date(child.birthday);
@@ -3304,19 +3505,26 @@ app.get("/parent-portal", mustBeParent, (req,res) => {
       let age = today.getFullYear() - birthday.getFullYear();
       const hadBDay =
         today.getMonth() > birthday.getMonth() ||
-        (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+        (today.getMonth() === birthday.getMonth() &&
+          today.getDate() >= birthday.getDate());
       if (!hadBDay) age--;
       child.minor = age < 18;
     }
 
-    // NEW: child-specific required forms
+    // child-specific required forms
     const reqForms = getRequiredFormsForUser(child.id);
-    const uploaded = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(child.id);
+    const uploaded = db
+      .prepare("SELECT document_id FROM formUploads WHERE user_id = ?")
+      .all(child.id);
     child.leftoverForms = markUploadsAndCount(reqForms, uploaded);
+
+    // NEW: contract extensions for this child (if any)
+    child.contractExtensions = contractsByChild[child.id] || [];
   });
 
   return res.render("parent-portal", { member, children });
 });
+
 
 
 app.get("/add-transaction/:id", mustBeAdmin, (req,res) => {
@@ -4474,8 +4682,7 @@ app.get("/event/:slug", (req, res) => {
 
 
 
-// GET /event/:slug/rsvps-data?q=&section=*
-// Admin-only JSON endpoint for live RSVP search
+
 app.get("/event/:slug/rsvps-data", mustBeAdmin, (req, res) => {
   const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
   if (!event) return res.status(404).json({ error: "Event not found" });
@@ -4577,23 +4784,72 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
   if (!event) return res.redirect("/");
 
   // Already RSVP'd?
-  const existing = db.prepare("SELECT * FROM rsvp WHERE user_id = ? AND event_id = ?").get(req.user.userid, event.id);
+  const existing = db
+    .prepare("SELECT * FROM rsvp WHERE user_id = ? AND event_id = ?")
+    .get(req.user.userid, event.id);
+
   if (existing) {
     req.session.flashMessage = "You're already RSVP'd for this event.";
     return res.redirect(`/event/${event.slug}`);
   }
 
   const amountCents = toCents(event.cost || 0);
+  const eventType = String(event.type || "").toLowerCase();
 
-  // Free RSVP: just insert and done
+  // Check member contract status
+  const userRow = db
+    .prepare(
+      "SELECT contractedCorps, contractedIndependent FROM users WHERE id = ?"
+    )
+    .get(req.user.userid) || {};
+
+  const isCorpsContracted = !!userRow.contractedCorps;
+  const isIndependentContracted = !!userRow.contractedIndependent;
+
+  // RULES:
+  // 1) Corps contracted => free RSVP for "experience camp" and "camp"
+  const corpsFreeTypes = ["experience camp", "camp"];
+
+  // 2) Independent contracted => free RSVP for "BGI Audition" and "BGI Camp"
+  const bgiFreeTypes = ["bgi audition", "bgi camp"];
+
+  let isFreeForThisUser = false;
+  let freeReason = "";
+
+  if (isCorpsContracted && corpsFreeTypes.includes(eventType)) {
+    isFreeForThisUser = true;
+    freeReason = "Contracted corps members do not pay for this camp.";
+  }
+
+  if (isIndependentContracted && bgiFreeTypes.includes(eventType)) {
+    isFreeForThisUser = true;
+    freeReason =
+      "Contracted independent members do not pay for this BGI event.";
+  }
+
+  // If user qualifies for free RSVP based on contract + event type
+  if (isFreeForThisUser) {
+    // Mark RSVP as "paid" so they don't get charged later
+    db.prepare(
+      "INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 1)"
+    ).run(req.user.userid, event.id);
+
+    req.session.flashMessage = freeReason || "You're RSVP'd!";
+    return res.redirect(`/event/${event.slug}`);
+  }
+
+  // If event itself is free, just RSVP (unpaid)
   if (amountCents <= 0) {
-    db.prepare("INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, ?)").run(req.user.userid, event.id, 0);
+    db.prepare(
+      "INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 0)"
+    ).run(req.user.userid, event.id);
+
     req.session.flashMessage = "You're RSVP'd!";
     return res.redirect(`/event/${event.slug}`);
   }
 
-  // Paid RSVP: create potential, start Stripe Checkout
-  const processingFee = Math.round(amountCents * 0.06); // 5%
+  // Paid RSVP: create potential row, start Stripe Checkout
+  const processingFee = Math.round(amountCents * 0.06); // ~6% fee
   const totalCharge   = amountCents + processingFee;
 
   const insertPot = db.prepare(`
@@ -4635,6 +4891,7 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
     return res.redirect(`/event/${event.slug}`);
   }
 });
+
 
 // GET /event/:slug/rsvp/success/:potentialId  - finalize paid RSVP
 app.get("/event/:slug/rsvp/success/:potentialId", mustBeLoggedIn, (req, res) => {
@@ -4879,6 +5136,11 @@ const STAFF_CATEGORIES = [
   "Color-Guard",
   "Front Ensemble",
   "Visual",
+  "BGI Director",
+  "BGI Visual",
+  "BGI Design",
+  "BGI Percussion",
+  "BGI Front Ensemble",
   "Board",
   "Advisory Board",
   "Other"
@@ -5453,14 +5715,38 @@ app.get("/about", (req, res) => {
     ORDER BY category COLLATE NOCASE, sort_order ASC, last COLLATE NOCASE
   `).all();
 
-  // group by category
-  const grouped = staff.reduce((acc, s) => {
-    (acc[s.category || "Staff"] ||= []).push(s);
+  const corpsStaff = [];
+  const bgiStaff   = [];
+
+  // Split into Corps vs BGI based on category/position containing "BGI"
+  staff.forEach((s) => {
+    const cat = String(s.category || "");
+    const pos = String(s.position || "");
+
+    const isBGI = /bgi/i.test(cat) || /bgi/i.test(pos);
+
+    if (isBGI) {
+      bgiStaff.push(s);
+    } else {
+      corpsStaff.push(s);
+    }
+  });
+
+  const groupedCorps = corpsStaff.reduce((acc, s) => {
+    const key = s.category || "Staff";
+    (acc[key] ||= []).push(s);
     return acc;
   }, {});
 
-  res.render("about", { grouped });
+  const groupedBGI = bgiStaff.reduce((acc, s) => {
+    const key = s.category || "Staff";
+    (acc[key] ||= []).push(s);
+    return acc;
+  }, {});
+
+  res.render("about", { groupedCorps, groupedBGI });
 });
+
 
 
 app.get("/staff/:slug", (req, res) => {

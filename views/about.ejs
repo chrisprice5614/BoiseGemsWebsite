@@ -124,55 +124,143 @@
     <h2>Staff</h2>
 
     <%
-      // Order categories with "Director" first, then common ones, then alpha
-      const catOrder = ["Director","Design","Brass","Color-Guard","Percussion","Admin","Other"];
-      const cats = Object.keys(grouped).sort((a,b) => {
-        const ia = catOrder.indexOf(a); const ib = catOrder.indexOf(b);
-        const aRank = ia === -1 ? 999 : ia;
-        const bRank = ib === -1 ? 999 : ib;
-        return (aRank - bRank) || a.localeCompare(b);
-      });
+      const corps = groupedCorps || {};
+      const bgi   = groupedBGI   || {};
+
+      const hasCorps = Object.keys(corps).length > 0;
+      const hasBGI   = Object.keys(bgi).length > 0;
+
+      // Order categories (works for both Corps & BGI)
+      const catOrder = [
+        "Director-Visual",
+        "Director",
+        "Design",
+        "Visual",
+        "Brass",
+        "Color-Guard",
+        "Percussion",
+        "Admin",
+        "Other"
+      ];
+
+      const sortCats = (obj) => {
+        const keys = Object.keys(obj);
+        return keys.sort((a,b) => {
+          const ia = catOrder.indexOf(a);
+          const ib = catOrder.indexOf(b);
+          const aRank = ia === -1 ? 999 : ia;
+          const bRank = ib === -1 ? 999 : ib;
+          if (aRank !== bRank) return aRank - bRank;
+          return String(a).localeCompare(String(b));
+        });
+      };
+
+      const displayHeading = (program, cat) => {
+        const lower = String(cat || "").toLowerCase();
+        if (program === "corps") {
+          if (lower.includes("visual"))      return "Corps Visual Staff";
+          if (lower.includes("brass"))       return "Corps Brass Staff";
+          if (lower.includes("color"))       return "Corps Color Guard Staff";
+          if (lower.includes("percussion"))  return "Corps Percussion Staff";
+          return cat;
+        }
+        if (program === "bgi") {
+          if (lower.includes("visual"))      return "BGI Visual Staff";
+          return cat;
+        }
+        return cat;
+      };
     %>
 
-    <% cats.forEach(cat => { %>
-      <h3 class="staff-category"><%= cat %></h3>
-      <div class="staff-block">
-        <div class="staff-grid">
-          <%
-            // Make a working copy of this category's staff
-            const staffList = (grouped[cat] || []).slice();
+    <% if (hasCorps) { %>
+      <h3 class="staff-category" style="margin-top:16px;">Boise Gems Drum &amp; Bugle Corps Staff</h3>
 
-            // If category is Design, move Chris Price to the front (case-insensitive match)
-            if (cat === 'Design') {
-              const i = staffList.findIndex(s =>
-                String(s.first || '').toLowerCase() === 'chris' &&
-                String(s.last  || '').toLowerCase()  === 'price'
-              );
-              if (i > 0) {
-                const [chris] = staffList.splice(i, 1);
-                staffList.unshift(chris);
+      <%
+        const corpsCats = sortCats(corps);
+        corpsCats.forEach(cat => {
+      %>
+        <h4 class="staff-category"><%= displayHeading("corps", cat) %></h4>
+        <div class="staff-block">
+          <div class="staff-grid">
+            <%
+              const staffList = (corps[cat] || []).slice();
+
+              // Keep existing behavior: move Chris to front of Design
+              if (cat === "Design") {
+                const i = staffList.findIndex(s =>
+                  String(s.first || "").toLowerCase() === "chris" &&
+                  String(s.last  || "").toLowerCase()  === "price"
+                );
+                if (i > 0) {
+                  const [chris] = staffList.splice(i, 1);
+                  staffList.unshift(chris);
+                }
               }
-            }
 
-            staffList.forEach(s => {
-              const imgUrl = s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png';
-              const href = s.slug ? `/staff/${s.slug}` : `/staff/${s.id}`;
-          %>
-            <article class="staff-card card">
-              <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">
-                <div class="staff-media" style="background-image:url('<%= imgUrl %>');"></div>
-                <div class="staff-meta">
-                  <h4 class="staff-name"><%= s.first %> <%= s.last %></h4>
-                  <p class="staff-role"><%= s.position %></p>
-                </div>
-              </a>
-            </article>
-          <% }) %>
+              staffList.forEach(s => {
+                const imgUrl = s.image ? ("/img/publicupload/" + s.image) : "/img/ui/gem.png";
+                const href = s.slug ? ("/staff/" + s.slug) : ("/staff/" + s.id);
+            %>
+              <article class="staff-card card">
+                <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">
+                  <div class="staff-media" style="background-image:url('<%= imgUrl %>');"></div>
+                  <div class="staff-meta">
+                    <h4 class="staff-name"><%= s.first %> <%= s.last %></h4>
+                    <p class="staff-role"><%= s.position %></p>
+                  </div>
+                </a>
+              </article>
+            <% }); %>
+          </div>
         </div>
-      </div>
-    <% }) %>
+      <% }); %>
+    <% } %>
+
+        <% if (hasBGI) { %>
+      <h3 class="staff-category" style="margin-top:24px;">Boise Gems Independent (BGI) Staff</h3>
+
+      <%
+        const bgiCats = sortCats(bgi);
+        bgiCats.forEach(cat => {
+          // Start with all staff for this BGI category
+          let staffList = (bgi[cat] || []).slice();
+
+          // BGI: hide ONLY explicit brass / color guard if they ever exist
+          staffList = staffList.filter(s => {
+            const c = String(s.category || "").toLowerCase();
+            const p = String(s.position || "").toLowerCase();
+            const both = c + " " + p;
+            return !both.includes("brass") && !both.includes("color-guard");
+          });
+
+          if (!staffList.length) return; // skip empty categories
+      %>
+        <h4 class="staff-category"><%= displayHeading("bgi", cat) %></h4>
+        <div class="staff-block">
+          <div class="staff-grid">
+            <%
+              staffList.forEach(s => {
+                const imgUrl = s.image ? ("/img/publicupload/" + s.image) : "/img/ui/gem.png";
+                const href = s.slug ? ("/staff/" + s.slug) : ("/staff/" + s.id);
+            %>
+              <article class="staff-card card">
+                <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">
+                  <div class="staff-media" style="background-image:url('<%= imgUrl %>');"></div>
+                  <div class="staff-meta">
+                    <h4 class="staff-name"><%= s.first %> <%= s.last %></h4>
+                    <p class="staff-role"><%= s.position %></p>
+                  </div>
+                </a>
+              </article>
+            <% }); %>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+
   </div>
 </section>
+
 
 <footer><%- include("includes/footer") %></footer>
 </body>

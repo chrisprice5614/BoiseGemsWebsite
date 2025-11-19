@@ -694,3 +694,198 @@ a.round-button:hover{
     cursor: pointer;
 }
 
+/* =========================================================
+   Visual refresh – November 2025
+   (Overrides / polishes existing styles without breaking layout)
+   ========================================================= */
+
+/* Global type & background */
+body {
+  background: radial-gradient(circle at top, #f5ecff 0%, #f8f8fb 35%, #f5f5f9 100%);
+  color: #191621;
+  text-rendering: optimizeLegibility;
+}
+
+/* General content container polish (used a lot across pages) */
+main, .login-main, .register-main, .portal-main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 12px 12px 32px;
+  background: radial-gradient(circle at top, #f0e8f9 0%, #e6e6f5 35%, #dfdfe8 100%);
+}
+
+/* Card look: soften shadows / radius */
+.card,
+.event-card,
+.news-card,
+.portal-card,
+table tr td .card {
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.05);
+  background: #ffffff;
+  box-shadow:
+    0 10px 25px rgba(15, 10, 40, 0.08);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.card:hover,
+.event-card:hover,
+.news-card:hover,
+.portal-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 16px 32px rgba(15, 10, 40, 0.16);
+  border-color: rgba(98, 0, 238, 0.15);
+}
+
+/* Event card tweaks (keep your layout, just smoother) */
+.event-card {
+  margin: 32px 12px;
+  padding: 20px;
+  background: #ffffff;
+  color: #201b2d;
+}
+
+.event-card h2 {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.event-card p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Buttons – unify base look (still works with inline overrides) */
+button,
+input[type="submit"],
+.button {
+  border-radius: 999px;
+  border: none;
+  padding: 8px 18px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    filter 0.12s ease,
+    background-position 0.18s ease;
+  background-size: 150% 150%;
+}
+
+button:hover,
+input[type="submit"]:hover,
+.button:hover {
+  cursor: pointer;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
+  filter: brightness(1.04);
+  background-position: 100% 0;
+}
+
+button:disabled,
+input[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* Forms – make inputs feel more modern */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
+input[type="date"],
+input[type="number"],
+select,
+textarea {
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.16);
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(15,10,40,0.06);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="tel"]:focus,
+input[type="date"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: rgba(98, 0, 238, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(98, 0, 238, 0.35),
+    0 4px 10px rgba(27, 10, 60, 0.18);
+  background-color: #fdfbff;
+}
+
+/* Tables in portals / admin: cleaner look */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+th, td {
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+th {
+  background: linear-gradient(135deg, #2b1a40, #3d2759);
+  color: #fff;
+  font-weight: 600;
+}
+
+tr:nth-child(even) td {
+  background-color: #f6f3ff;
+}
+
+tr:nth-child(odd) td {
+  background-color: #ffffff;
+}
+
+/* Footer softening */
+footer {
+  background: radial-gradient(circle at top, #1b1029 0%, #120a1d 50%, #0b0614 100%);
+  color: #f0eaff;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Small chips & badges (calendar key, etc.) */
+.chip {
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* On very small screens, soften spacing a bit */
+@media (max-width: 640px) {
+  main, .login-main, .register-main, .portal-main {
+    padding: 8px 8px 24px;
+  }
+
+  .event-card {
+    margin: 20px 6px;
+    padding: 16px;
+  }
+}

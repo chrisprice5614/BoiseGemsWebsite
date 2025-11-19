@@ -232,14 +232,7 @@
                                 <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
                                 <% } %>
                                 <br>
-                                <% if(new Date(member.birthday) <= new Date(new Date().setFullYear(new Date().getFullYear() - 18))){ %>
-                                    <a href="/member-forms"><button>View Forms</button></a>
-                                <% } else { %>
-                                    <button disabled>View Forms</button>
-                                    <br>
-                                    <br>
-                                    <small>You are under 18. Please have your parent log in to their parent account in order to submit your forms.</small>
-                                <% } %>
+                                <a href="/member-forms"><button>View Forms</button></a>
                             </div>
                         <% } %>
                     <% } else { %>

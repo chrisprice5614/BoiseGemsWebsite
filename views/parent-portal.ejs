@@ -74,6 +74,26 @@
                                         </div>
                                     </div>
                                 </div>
+                                        <% if (child.contractExtensions && child.contractExtensions.length) { %>
+                                            <div style="margin-top: 12px; text-align: center;">
+                                                <h3>Contract Offers for <%= child.firstname %></h3>
+                                                <% child.contractExtensions.forEach(function(ext) { 
+                                                    const isCorps = String(ext.season || '').includes('corps');
+                                                %>
+                                                <p>
+                                                    <b>
+                                                    <%= isCorps ? 'Drum & Bugle Corps' : 'Independent' %>
+                                                    &mdash; Season <%= CURRENTSEASON %>
+                                                    </b>
+                                                    <br>
+                                                    <a href="/accept-contract/<%= ext.id %>">
+                                                    <button>Review &amp; Sign Contract</button>
+                                                    </a>
+                                                </p>
+                                                <% }) %>
+                                            </div>
+                                            <% } %>
+
                             </div>
                         <% }) %>
                     <% } %>

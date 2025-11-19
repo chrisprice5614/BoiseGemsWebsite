@@ -139,8 +139,12 @@
       <span class="chip"><span class="swatch" style="background:#5c6bc0"></span>Performance</span>
       <span class="chip"><span class="swatch" style="background:#ef6c00"></span>Fundraiser</span>
       <span class="chip"><span class="swatch" style="background:#9e9d24"></span>Spring Training</span>
+      <span class="chip"><span class="swatch" style="background:#ec407a"></span>BGI Audition</span>
+      <span class="chip"><span class="swatch" style="background:#26c6da"></span>BGI Camp</span>
+      <span class="chip"><span class="swatch" style="background:#7e57c2"></span>BGI Performance</span>
       <span class="chip"><span class="swatch" style="background:#eeaaee"></span>Other</span>
     </div>
+
 
     <%
       /* ===== Helpers (scoped) ===== */
@@ -152,15 +156,19 @@
 
       const typeClass = (t='') => String(t).toLowerCase().replace(/\s+/g,'-');
 
-      const typeColorMap = {
+            const typeColorMap = {
         'camp': '#43a047',
         'experience camp': '#26a69a',
         'performance': '#5c6bc0',
         'fundraiser': '#ef6c00',
         'spring training': '#9e9d24',
+        'bgi audition': '#ec407a',
+        'bgi camp': '#26c6da',
+        'bgi performance': '#7e57c2',
         'other': '#eeaaee'
       };
       const typeColor = (t='') => typeColorMap[String(t).toLowerCase()] || '#444';
+
 
       const parseEventDate = (s) => {
         if (!s) return null;

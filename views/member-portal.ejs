@@ -118,6 +118,26 @@
                     <% if(member.contractedCorps) {%>
                         <p style="text-align: center;">Contracted for <b>Boise Gems Drum & Bugle Corps</b></p>
                     <% } %>
+                    <% 
+                      const isContracted = member.contractedIndependent || member.contractedCorps;
+                      let videoAuditionUrl = null;
+                      if (!isContracted && member.section) {
+                        if (member.section === "brass") {
+                          videoAuditionUrl = "https://www.omnipply.com/programs/34bbd8ff-73b0-4452-a1ae-617a566d8817/apply";
+                        } else if (member.section === "front ensemble" || member.section === "drumline") {
+                          videoAuditionUrl = "https://www.omnipply.com/programs/54e57104-fb5f-4df1-8ad4-8a61f24513b8/apply";
+                        }
+                      }
+                    %>
+                    <% if (videoAuditionUrl) { %>
+                      <div style="text-align: center; margin-top: 12px;">
+                        <a href="<%= videoAuditionUrl %>" target="_blank" rel="noopener">
+                          <button>Video audition for <%= member.section %></button>
+                        </a>
+                      </div>
+                    <% } %>
+
+
                 </div>
             </div>
             <div class="duple-to-single">

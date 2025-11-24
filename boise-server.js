@@ -15,6 +15,42 @@ const axios = require("axios");
 const marked = require('marked');
 const session = require('express-session');
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+// When true, we will attempt to automatically send Chris's 3% share
+// to his connected Stripe account using Stripe Connect. When false,
+// we only record the share in the local database (no automatic payout).
+const ENABLE_STRIPE_SPLIT = process.env.ENABLE_STRIPE_SPLIT === "true";
+
+// Chris's connected account ID under the Boise Gems Stripe platform.
+// Example: acct_1234...  This must be configured on the Boise Gems
+// Stripe account as a connected account.
+const CHRIS_CONNECTED_ACCOUNT_ID = process.env.CHRIS_CONNECTED_ACCOUNT_ID || null;
+
+// Helper to send Chris's 3% via Stripe Connect from the Boise Gems platform.
+// This uses a simple transfer from the platform balance to Chris's
+// connected account. It is intentionally "fire and forget" so that
+// a failure to create the transfer does not block the main request.
+function sendChrisStripeTransfer(chrisCutCents, source) {
+  if (!ENABLE_STRIPE_SPLIT) return;
+  if (!CHRIS_CONNECTED_ACCOUNT_ID) return;
+
+  const amount = Math.round(Number(chrisCutCents || 0));
+  if (!amount || amount <= 0) return;
+
+  stripe.transfers
+    .create({
+      amount: amount,
+      currency: "usd",
+      destination: CHRIS_CONNECTED_ACCOUNT_ID,
+      description: `3% share from ${source || "transaction"}`,
+    })
+    .then(() => {
+      // Transfer created successfully – nothing else to do here.
+    })
+    .catch((err) => {
+      console.error("Failed to create Chris 3% transfer:", err);
+    });
+}
 const { verify } = require("crypto")
 
 
@@ -636,6 +672,22 @@ const createTables = db.transaction(() => {
       `
     ).run()
 
+
+    db.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS pendingContractExtension (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        member_id INTEGER NOT NULL,
+        group_type TEXT NOT NULL,
+        bypass_fee BOOL DEFAULT 0,
+        season INTEGER,
+        requested_by INTEGER,
+        created_at INTEGER,
+        FOREIGN KEY (member_id) REFERENCES users(id),
+        FOREIGN KEY (requested_by) REFERENCES users(id)
+      )
+      `
+    ).run()
     db.prepare(
       `
       CREATE TABLE IF NOT EXISTS active (
@@ -903,7 +955,12 @@ function addChrisShare(baseAmountCents, source) {
     `3% share from ${source || "transaction"}`,
     source || ""
   );
+
+  // Also attempt to push this 3% share to Chris via Stripe Connect
+  // from the Boise Gems Stripe platform, if configured.
+  sendChrisStripeTransfer(chrisCut, source);
 }
+
 
 function ensureDefaultFolders() {
   const FILE_YEAR = 2026;
@@ -2581,7 +2638,7 @@ app.post(
         mode: "payment",
         success_url: `${process.env.BASEURL}/sign-contract/success/${potentialPaymentId}`,
         cancel_url: `${process.env.BASEURL}/sign-contract/${contractExtension.id}`,
-      });
+      })
 
       return res.redirect(303, sessionObj.url);
     } catch (err) {
@@ -2809,7 +2866,32 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
   }
 
 
+
   const seasonString = String(CURRENTSEASON) + group; // e.g. "2026corps"
+
+  // If a non-admin staff member triggers this, queue it as a pending
+  // contract extension for admin review instead of sending immediately.
+  if (!req.admin) {
+    db.prepare(
+      `
+      INSERT INTO pendingContractExtension
+        (member_id, group_type, bypass_fee, season, requested_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      thisUser.id,
+      group,
+      bypass,
+      seasonString,
+      req.user.userid,
+      Date.now()
+    );
+
+    req.session.flashMessage =
+      "Contract extension request submitted for admin approval.";
+    return res.redirect("/admin-portal");
+  }
+
 
   // Make sure this specific member only has ONE extension for this season.
   // Use COALESCE(child_id, user_id) so it works for both adults and minors.
@@ -2905,6 +2987,194 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
   req.session.flashMessage = "Contract extension sent.";
   return res.redirect("/admin-portal");
 });
+
+app.get("/admin/pending-contracts", mustBeAdmin, (req, res) => {
+  const pending = db
+    .prepare(
+      `
+      SELECT p.*,
+             m.firstname AS member_firstname,
+             m.lastname  AS member_lastname,
+             m.email     AS member_email,
+             r.firstname AS requester_firstname,
+             r.lastname  AS requester_lastname
+      FROM pendingContractExtension p
+      JOIN users m ON m.id = p.member_id
+      LEFT JOIN users r ON r.id = p.requested_by
+      ORDER BY p.created_at DESC
+      `
+    )
+    .all();
+
+  return res.render("admin-pending-contracts", {
+    user: req.user,
+    pending,
+  });
+});
+
+app.post("/admin/pending-contracts/:id/deny", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  db.prepare("DELETE FROM pendingContractExtension WHERE id = ?").run(id);
+  req.session.flashMessage = "Pending contract request deleted.";
+  return res.redirect("/admin/pending-contracts");
+});
+
+app.post("/admin/pending-contracts/:id/approve", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+
+  const pending = db
+    .prepare("SELECT * FROM pendingContractExtension WHERE id = ?")
+    .get(id);
+
+  if (!pending) {
+    req.session.flashMessage = "Pending contract request not found.";
+    return res.redirect("/admin/pending-contracts");
+  }
+
+  const member = db
+    .prepare("SELECT * FROM users WHERE id = ?")
+    .get(pending.member_id);
+
+  if (!member) {
+    req.session.flashMessage = "Member not found for pending contract.";
+    return res.redirect("/admin/pending-contracts");
+  }
+
+  // Only actual members can be contracted
+  if (member.parent || member.admin || member.staff) {
+    req.session.flashMessage =
+      "Only members (not parents, staff, or admins) can be contracted.";
+    return res.redirect("/admin/pending-contracts");
+  }
+
+  // Determine if this member is a minor (under 18)
+  let isMinor = false;
+  if (member.birthday) {
+    const birthday = new Date(member.birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthday.getFullYear();
+    const hadBDay =
+      today.getMonth() > birthday.getMonth() ||
+      (today.getMonth() === birthday.getMonth() &&
+        today.getDate() >= birthday.getDate());
+    if (!hadBDay) age--;
+    isMinor = age < 18;
+  }
+
+  const parentId = member.parentId || null;
+
+  // Minors must have a parent linked
+  if (isMinor && !parentId) {
+    req.session.flashMessage =
+      `${member.firstname} ${member.lastname} is a minor and has no parent attached. Please add a parent account before sending a contract.`;
+    return res.redirect("/admin/pending-contracts");
+  }
+
+  // Who OWNS the contract extension (who logs in to sign)?
+  let contractOwnerId = member.id;
+  let childId = null;
+
+  if (isMinor && parentId) {
+    contractOwnerId = parentId;
+    childId = member.id;
+  }
+
+  const group = pending.group_type; // "corps" or "independent"
+  const bypass = pending.bypass_fee ? 1 : 0;
+  const seasonString =
+    pending.season || String(CURRENTSEASON) + String(group || "");
+
+  // Ensure only one extension for this member/season
+  const oldContractArray = db
+    .prepare(
+      `
+      SELECT *
+      FROM contractExtension
+      WHERE COALESCE(child_id, user_id) = ?
+        AND season = ?
+      `
+    )
+    .all(member.id, seasonString);
+
+  oldContractArray.forEach((oldContract) => {
+    db.prepare("DELETE FROM contractExtension WHERE id = ?").run(
+      oldContract.id
+    );
+  });
+
+  const addContractExtensionStatement = db.prepare(`
+    INSERT INTO contractExtension (user_id, child_id, due_date, bypass_fee, created_at, season, extender)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const expiresAt = Date.now() + CONTRACT_EXTENSION_TTL_MS;
+
+  addContractExtensionStatement.run(
+    contractOwnerId, // who logs in to sign
+    childId, // null for adults
+    expiresAt,
+    bypass,
+    Date.now(),
+    seasonString,
+    req.user.userid // admin who approved
+  );
+
+  let welcomeMessage = "The Boise Gems Drum & Bugle Corps";
+  if (group === "independent") {
+    welcomeMessage = "Boise Gems Independent";
+  }
+
+  let emailTarget = { email: member.email, firstname: member.firstname };
+  if (isMinor && parentId) {
+    const parentRow = db
+      .prepare("SELECT firstname, email FROM users WHERE id = ?")
+      .get(parentId);
+    if (parentRow && parentRow.email) {
+      emailTarget = parentRow;
+    }
+  }
+
+  const html = `
+    <p>Hello ${emailTarget.firstname || ""},</p>
+    <p>
+      ${
+        childId
+          ? `${member.firstname} ${member.lastname} has been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+          : `You've been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+      }
+    </p>
+    <p>
+      Please log in to your account to review the contract and sign it.
+    </p>
+    <div style="text-align: center; margin-top: 16px;">
+      <a
+        href="${process.env.BASEURL}/login"
+        target="_blank"
+        style="
+          background-color: #0b71d9;
+          color: white;
+          padding: 10px 18px;
+          border-radius: 4px;
+          font-weight: bold;
+          display: inline-block;
+          text-decoration: none;
+        "
+      >
+        Log In To Your Account
+      </a>
+    </div>
+  `;
+
+  if (emailTarget.email) {
+    sendEmail(emailTarget.email, "Contract Extension", html);
+  }
+
+  db.prepare("DELETE FROM pendingContractExtension WHERE id = ?").run(id);
+
+  req.session.flashMessage = "Pending contract approved and extension sent.";
+  return res.redirect("/admin/pending-contracts");
+});
+
 
 
 
@@ -4242,17 +4512,17 @@ app.post("/donate", async (req, res) => {
             currency: "usd",
             product_data: {
               name: "Donation to The Boise Gems Drum & Bugle Corps",
-              description: donorMsg || `Donation by ${donorName}`
+              description: donorMsg || `Donation by ${donorName}`,
             },
-            unit_amount: totalCharge
+            unit_amount: totalCharge,
           },
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       mode: "payment",
       success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
-      cancel_url: `${process.env.BASEURL}/donate`
-    });
+      cancel_url: `${process.env.BASEURL}/donate`,
+    })
 
     // store the stripe session id for reference
     const updateSession = db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?");
@@ -4868,17 +5138,17 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
             currency: "usd",
             product_data: {
               name: `RSVP: ${event.title}`,
-              description: `Event on ${new Date(event.datetime).toLocaleString("en-US")}`
+              description: `Event on ${new Date(event.datetime).toLocaleString("en-US")}`,
             },
-            unit_amount: totalCharge
+            unit_amount: totalCharge,
           },
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       mode: "payment",
       success_url: `${process.env.BASEURL}/event/${event.slug}/rsvp/success/${potentialId}`,
-      cancel_url: `${process.env.BASEURL}/event/${event.slug}`
-    });
+      cancel_url: `${process.env.BASEURL}/event/${event.slug}`,
+    })
 
     db.prepare("UPDATE potential_event_rsvp SET stripe_session_id = ? WHERE id = ?")
       .run(sessionObj.id, potentialId);

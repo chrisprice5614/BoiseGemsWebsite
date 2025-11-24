@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Pending Contract Extensions — Boise Gems</title>
+    <%- include("includes/head") %>
+  </head>
+  <body>
+    <header>
+      <%- include("includes/header") %>
+    </header>
+    <main>
+      <div style="margin:12px;">
+        <h1>Pending Contract Extensions</h1>
+        <p>These requests were created by staff members. Approving will send the contract extension email to the member (or parent for minors).</p>
+
+        <% if (!pending || !pending.length) { %>
+          <p><em>No pending contract extension requests.</em></p>
+        <% } else { %>
+          <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; max-width:900px;">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Ensemble</th>
+                <th>Bypass Fee</th>
+                <th>Requested By</th>
+                <th>Requested At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% pending.forEach(function(req) { %>
+                <tr>
+                  <td>
+                    <strong><%= req.member_firstname %> <%= req.member_lastname %></strong><br/>
+                    <small><%= req.member_email %></small>
+                  </td>
+                  <td>
+                    <%= req.group_type === "corps" ? "Corps" : "Independent" %>
+                  </td>
+                  <td><%= req.bypass_fee ? "Yes" : "No" %></td>
+                  <td>
+                    <% if (req.requester_firstname) { %>
+                      <%= req.requester_firstname %> <%= req.requester_lastname %>
+                    <% } else { %>
+                      <em>Unknown</em>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (req.created_at) { %>
+                      <%= new Date(req.created_at).toLocaleString("en-US") %>
+                    <% } else { %>
+                      <em>—</em>
+                    <% } %>
+                  </td>
+                  <td>
+                    <form method="POST" action="/admin/pending-contracts/<%= req.id %>/approve" style="display:inline-block; margin-right:4px;">
+                      <button type="submit">Approve &amp; Send</button>
+                    </form>
+                    <form method="POST" action="/admin/pending-contracts/<%= req.id %>/deny" style="display:inline-block;" onsubmit="return confirm('Deny and delete this pending request?');">
+                      <button type="submit">Deny</button>
+                    </form>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        <% } %>
+      </div>
+    </main>
+    <footer>
+      <%- include("includes/footer") %>
+    </footer>
+  </body>
+</html>

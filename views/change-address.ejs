@@ -12,14 +12,16 @@
     <main>
         <div style="padding: 8px; max-width: 640px; margin: 0 auto;">
             <br />
-            <h1 style="text-align: center;">Update Contact Information</h1>
+            <h1 style="text-align: center;">Update Your Information</h1>
             <br />
 
-            <p style="text-align: center;">
-                Use this page to update your mailing address, email, and phone number.
-            </p>
+            <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+                <div class="info"><%= flashMessage %></div>
+                <br />
+            <% } %>
 
             <form action="/change-address" method="POST" style="max-width: 480px; margin: 0 auto;">
+                <!-- Address -->
                 <label for="address"><strong>Mailing Address</strong></label><br />
                 <input
                     type="text"
@@ -32,6 +34,7 @@
                 />
                 <br /><br />
 
+                <!-- Email -->
                 <label for="email"><strong>Email</strong></label><br />
                 <input
                     type="email"
@@ -44,6 +47,7 @@
                 />
                 <br /><br />
 
+                <!-- Phone -->
                 <label for="phone"><strong>Phone</strong></label><br />
                 <input
                     type="tel"
@@ -55,8 +59,19 @@
                 />
                 <br /><br />
 
+                <!-- Birthday -->
+                <label for="birthday"><strong>Birthday</strong></label><br />
+                <input
+                    type="date"
+                    id="birthday"
+                    name="birthday"
+                    style="width: 100%; padding: 8px;"
+                    value="<%= member.birthday ? new Date(member.birthday).toISOString().slice(0,10) : '' %>"
+                />
+                <br /><br />
+
                 <div style="text-align: center;">
-                    <button type="submit">Save Contact Info</button>
+                    <button type="submit">Save Info</button>
                 </div>
             </form>
             <br />

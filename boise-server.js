@@ -4695,6 +4695,7 @@ app.get("/update-info", mustBeMember, (req,res) => {
 
   return res.render("change-address", {member})
 })
+
 app.post("/change-address", mustBeMember, (req, res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
 
@@ -4705,10 +4706,11 @@ app.post("/change-address", mustBeMember, (req, res) => {
   const address = String(req.body.address || "").trim();
   const email = String(req.body.email || "").trim();
   const phone = String(req.body.phone || "").trim();
+  const birthdayRaw = String(req.body.birthday || "").trim();
 
   if (!address || !email) {
     req.session.flashMessage = "Address and email are required.";
-    return res.redirect("/update-info");
+    return res.redirect("/update-info"); // your GET route (you said you renamed it)
   }
 
   // Make sure email is unique to this user
@@ -4722,13 +4724,23 @@ app.post("/change-address", mustBeMember, (req, res) => {
     return res.redirect("/update-info");
   }
 
+  // Preserve old birthday unless we get a valid new one
+  let birthdayMs = member.birthday || null;
+  if (birthdayRaw) {
+    const parsed = new Date(birthdayRaw);
+    if (!isNaN(parsed.getTime())) {
+      birthdayMs = parsed.getTime();
+    }
+  }
+
   db.prepare(
-    "UPDATE users SET address = ?, email = ?, phone = ? WHERE id = ?"
-  ).run(address, email, phone, req.user.userid);
+    "UPDATE users SET address = ?, email = ?, phone = ?, birthday = ? WHERE id = ?"
+  ).run(address, email, phone, birthdayMs, req.user.userid);
 
   req.session.flashMessage = "Contact information updated.";
   return res.redirect("/member-portal");
 });
+
 
 
 app.get("/allergy-info", mustBeMember, (req,res) => {

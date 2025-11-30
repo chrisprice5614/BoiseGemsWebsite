@@ -1,7 +1,7 @@
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Boise Gems</title>
     <%- include("includes/head") %>
 </head>
@@ -10,20 +10,56 @@
         <%- include("includes/header") %>
     </header>
     <main>
-        <div style="padding: 8px">
-            <br>
-            <h1 style="text-align: center;">Change Address</h1>
-            <br>
-            <form action="/change-address" method="POST">
-                <label for="address">Change Address</label>
-                <input type="text" name="address" placeholder="123 E Fake Street" required/>
-                <br>
-                <br>
+        <div style="padding: 8px; max-width: 640px; margin: 0 auto;">
+            <br />
+            <h1 style="text-align: center;">Update Contact Information</h1>
+            <br />
+
+            <p style="text-align: center;">
+                Use this page to update your mailing address, email, and phone number.
+            </p>
+
+            <form action="/change-address" method="POST" style="max-width: 480px; margin: 0 auto;">
+                <label for="address"><strong>Mailing Address</strong></label><br />
+                <input
+                    type="text"
+                    id="address"
+                    name="address"
+                    placeholder="123 E Fake Street"
+                    required
+                    style="width: 100%; padding: 8px;"
+                    value="<%= member.address || '' %>"
+                />
+                <br /><br />
+
+                <label for="email"><strong>Email</strong></label><br />
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    placeholder="you@example.com"
+                    required
+                    style="width: 100%; padding: 8px;"
+                    value="<%= member.email || '' %>"
+                />
+                <br /><br />
+
+                <label for="phone"><strong>Phone</strong></label><br />
+                <input
+                    type="tel"
+                    id="phone"
+                    name="phone"
+                    placeholder="555-555-5555"
+                    style="width: 100%; padding: 8px;"
+                    value="<%= member.phone || '' %>"
+                />
+                <br /><br />
+
                 <div style="text-align: center;">
-                    <button>Change Address</button>
+                    <button type="submit">Save Contact Info</button>
                 </div>
             </form>
-            <br>
+            <br />
         </div>
     </main>
     <footer>

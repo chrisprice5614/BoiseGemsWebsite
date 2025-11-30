@@ -4686,7 +4686,7 @@ app.get("/donate/thank-you", (req,res) => {
   return res.render("donation-thank-you")
 })
 
-app.get("/update-address", mustBeMember, (req,res) => {
+app.get("/update-info", mustBeMember, (req,res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
 
   if(!member)
@@ -4695,17 +4695,41 @@ app.get("/update-address", mustBeMember, (req,res) => {
 
   return res.render("change-address", {member})
 })
-
-app.post("/change-address", mustBeMember, (req,res) => {
+app.post("/change-address", mustBeMember, (req, res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
 
-  if(!member)
-    return res.redirect("/")
+  if (!member) {
+    return res.redirect("/");
+  }
 
+  const address = String(req.body.address || "").trim();
+  const email = String(req.body.email || "").trim();
+  const phone = String(req.body.phone || "").trim();
 
-  db.prepare("UPDATE users SET address = ? WHERE id = ?").run(req.body.address, req.user.userid)
-  return res.redirect("/member-portal")
-})
+  if (!address || !email) {
+    req.session.flashMessage = "Address and email are required.";
+    return res.redirect("/update-info");
+  }
+
+  // Make sure email is unique to this user
+  const existingEmail = db
+    .prepare("SELECT id FROM users WHERE email = ? AND id != ?")
+    .get(email, req.user.userid);
+
+  if (existingEmail) {
+    req.session.flashMessage =
+      "That email address is already in use. Please use a different one.";
+    return res.redirect("/update-info");
+  }
+
+  db.prepare(
+    "UPDATE users SET address = ?, email = ?, phone = ? WHERE id = ?"
+  ).run(address, email, phone, req.user.userid);
+
+  req.session.flashMessage = "Contact information updated.";
+  return res.redirect("/member-portal");
+});
+
 
 app.get("/allergy-info", mustBeMember, (req,res) => {
   const allergyInfo = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid)
@@ -5067,14 +5091,31 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
   const eventType = String(event.type || "").toLowerCase();
 
   // Check member contract status
-  const userRow = db
-    .prepare(
-      "SELECT contractedCorps, contractedIndependent FROM users WHERE id = ?"
-    )
-    .get(req.user.userid) || {};
+   const userRow =
+    db
+      .prepare(
+        "SELECT contractedCorps, contractedIndependent FROM users WHERE id = ?"
+      )
+      .get(req.user.userid) || {};
 
-  const isCorpsContracted = !!userRow.contractedCorps;
-  const isIndependentContracted = !!userRow.contractedIndependent;
+  // Look for any contracted children of this user (parentId = current user)
+  const childContracts =
+    db
+      .prepare(
+        `
+        SELECT
+          MAX(COALESCE(contractedCorps, 0))       AS anyCorps,
+          MAX(COALESCE(contractedIndependent, 0)) AS anyIndependent
+        FROM users
+        WHERE parentId = ?
+        `
+      )
+      .get(req.user.userid) || {};
+
+  const isCorpsContracted =
+    !!(userRow.contractedCorps || childContracts.anyCorps);
+  const isIndependentContracted =
+    !!(userRow.contractedIndependent || childContracts.anyIndependent);
 
   // RULES:
   // 1) Corps contracted => free RSVP for "experience camp" and "camp"
@@ -5088,13 +5129,14 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
 
   if (isCorpsContracted && corpsFreeTypes.includes(eventType)) {
     isFreeForThisUser = true;
-    freeReason = "Contracted corps members do not pay for this camp.";
+    freeReason =
+      "Contracted corps members (or their parents) do not pay for this camp.";
   }
 
   if (isIndependentContracted && bgiFreeTypes.includes(eventType)) {
     isFreeForThisUser = true;
     freeReason =
-      "Contracted independent members do not pay for this BGI event.";
+      "Contracted independent members (or their parents) do not pay for this BGI event.";
   }
 
   // If user qualifies for free RSVP based on contract + event type

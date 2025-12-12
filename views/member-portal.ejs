@@ -199,20 +199,55 @@
                         </div>
                 </div>
                 <div style="margin: 24px 8px; padding: 8px; background-color: #dfdfdf; border-radius: 12px; box-shadow: 2px 2px 6px rgba(0,0,0,0.25);">
-                    <% if(contracts.length) { %>
+                     <% if (contracts.length) { %>
                         <div style="text-align: center;">
                             <h3>You have a membership contract to view!</h3>
-                            <% contracts.forEach(contract => { 
-                                let groupString = "Corps"
+                            <% contracts.forEach(function (contract) { 
+                                let groupString = "Corps";
 
-                                if(contract.season.includes("independent")){
-                                    groupString = "Independent"
+                                if (contract.season && contract.season.includes("independent")) {
+                                    groupString = "Independent";
                                 }
-                                %>
+
+                                const dueMs = Number(contract.due_date || 0);
+                                let daysRemaining = null;
+                                let dueLabel = "";
+
+                                if (dueMs) {
+                                    const now = Date.now();
+                                    const diffMs = dueMs - now;
+                                    daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+
+                                    const dueDateObj = new Date(dueMs);
+                                    dueLabel = dueDateObj.toLocaleDateString("en-US", {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric"
+                                    });
+                                }
+                            %>
                                 <br>
-                                <a href="/accept-contract/<%= contract.id %>"><button>View/Accept Contract - <%= groupString %></button></a>
+                                <% if (dueLabel) { %>
+                                    <p style="margin: 4px 0;">
+                                        Contract due by <%= dueLabel %>
+                                        <% if (typeof daysRemaining === "number" && !Number.isNaN(daysRemaining)) { %>
+                                            (
+                                            <% if (daysRemaining > 0) { %>
+                                                <%= daysRemaining %> day<%= daysRemaining === 1 ? "" : "s" %> remaining
+                                            <% } else if (daysRemaining === 0) { %>
+                                                due today
+                                            <% } else { %>
+                                                past due
+                                            <% } %>
+                                            )
+                                        <% } %>
+                                    </p>
+                                <% } %>
+                                <a href="/accept-contract/<%= contract.id %>">
+                                    <button>View/Accept Contract - <%= groupString %></button>
+                                </a>
                                 <br>
-                            <%})%>
+                            <% }); %>
                         </div>
                     <% } %>
                     <div style="text-align: center;">
@@ -231,6 +266,9 @@
                         <br>
                         <br>
                         <a href="/update-info"><button>Update Information</button></a>
+                        <br>
+                        <br>
+                        <a href="/member-transactions"><button>View Payment History</button></a>
                         <br>
                         <br>
                         <% if(member.owed>0) { %>
@@ -260,7 +298,7 @@
                             <a href="/audition-member"><button>Audition Member</button></a>
                             <br>
                             <br>
-                            <a href="/extend-contract"><button>Extend Contract</button></a>
+                            <a href="/staff/members"><button>Extend Contract</button></a>
                             <br>
                             <br>
                             <a href="/set-materials"><button>Set Audition Material</button></a>

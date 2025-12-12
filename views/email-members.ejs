@@ -17,7 +17,7 @@
     <div style="padding: 12px;">
         <form method="POST" action="/email-members">
             <div class="duple-to-single" style="gap: 16px;">
-                <div>
+                                <div>
                     <label for="section">Section</label>
                     <select name="section" id="section">
                         <option value="all">All Sections</option>
@@ -38,7 +38,21 @@
                         <option value="independent">Contracted Independent</option>
                     </select>
                 </div>
+                <div>
+                    <label for="extensionMode">Contract Extensions</label>
+                    <select name="extensionMode" id="extensionMode">
+                        <option value="none">All matching members</option>
+                        <option value="all">Only members with active extensions</option>
+                        <option value="corps">Only corps contract extensions</option>
+                        <option value="independent">Only independent contract extensions</option>
+                    </select>
+                    <p style="font-size: 0.8rem; margin-top: 4px; max-width: 260px;">
+                        When you choose an extension option, only people with an active contract extension
+                        for this season will be emailed.
+                    </p>
+                </div>
             </div>
+
 
             <br><br>
 
@@ -55,11 +69,136 @@
             <div style="text-align: center;">
                 <button type="submit">Send Bulk Email</button>
             </div>
+
+            <div id="bulk-progress" style="display:none; margin-top: 20px;">
+                <div style="max-width: 600px; margin: 0 auto;">
+                    <div style="height: 20px; border-radius: 999px; border: 1px solid #ccc; overflow: hidden;">
+                        <div id="bulk-progress-bar" style="height: 100%; width: 0%; background: #2a9d8f;"></div>
+                    </div>
+                    <p id="bulk-progress-text" style="margin-top: 8px; text-align: center; font-size: 0.9rem;"></p>
+                    <p id="bulk-progress-email" style="margin-top: 4px; text-align: center; font-size: 0.9rem; color: #555;"></p>
+                </div>
+            </div>
         </form>
     </div>
 </main>
 <footer>
     <%- include("includes/footer") %>
 </footer>
+<script>
+  (function () {
+    const form = document.querySelector("form");
+    if (!form) return;
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const progressContainer = document.getElementById("bulk-progress");
+    const progressBar = document.getElementById("bulk-progress-bar");
+    const progressText = document.getElementById("bulk-progress-text");
+    const progressEmail = document.getElementById("bulk-progress-email");
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const formData = new FormData(form);
+      const subject = String(formData.get("subject") || "").trim();
+      const message = String(formData.get("message") || "").trim();
+
+      if (!subject || !message) {
+        alert("Subject and message are required.");
+        return;
+      }
+
+      if (!confirm("Send this bulk email?")) {
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending...";
+      }
+
+      if (progressContainer) progressContainer.style.display = "block";
+      if (progressBar) progressBar.style.width = "0%";
+      if (progressText) progressText.textContent = "Preparing recipient list...";
+      if (progressEmail) progressEmail.textContent = "";
+
+      try {
+        const previewRes = await fetch("/email-members/preview", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+          subject,
+          message,
+          section: formData.get("section") || "all",
+          membership: formData.get("membership") || "all",
+          extensionMode: formData.get("extensionMode") || "none"
+        })
+        });
+
+        if (!previewRes.ok) {
+          throw new Error("Failed to prepare recipient list.");
+        }
+
+        const previewData = await previewRes.json();
+        const recipients = Array.isArray(previewData.recipients) ? previewData.recipients : [];
+
+        if (recipients.length === 0) {
+          alert("No recipients found for the selected filters.");
+          return;
+        }
+
+        let sent = 0;
+        const total = recipients.length;
+
+        if (progressText) progressText.textContent = `Sending emails (0 / ${total})...`;
+
+        for (const recipient of recipients) {
+          const email = recipient.email;
+          const name = recipient.name || "";
+
+          if (progressEmail && email) {
+            progressEmail.textContent = `Current: ${email}${name ? " (" + name + ")" : ""}`;
+          }
+
+          const sendRes = await fetch("/email-members/send-one", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              email,
+              subject,
+              message
+            })
+          });
+
+          if (!sendRes.ok) {
+            console.error("Failed to send to", email);
+          }
+
+          sent++;
+          const pct = Math.round((sent / total) * 100);
+          if (progressBar) progressBar.style.width = pct + "%";
+          if (progressText) progressText.textContent = `Sending emails (${sent} / ${total})...`;
+
+          // Throttler: 1 email every 0.2 seconds
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        if (progressText) progressText.textContent = `Done! Sent ${sent} email(s).`;
+        if (submitBtn) submitBtn.textContent = "Send Bulk Email";
+        alert(`Bulk email sent to ${sent} recipient(s).`);
+      } catch (err) {
+        console.error(err);
+        alert("There was an error while sending the bulk email. Please try again.");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  })();
+</script>
+
 </body>
 </html>

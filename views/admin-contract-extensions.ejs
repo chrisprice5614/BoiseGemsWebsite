@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Contract Extensions - Boise Gems</title>
+    <%- include("includes/head") %>
+  </head>
+  <body>
+    <header>
+      <%- include("includes/header") %>
+    </header>
+    <main>
+      <div style="margin:12px;">
+        <h1>Contract Extensions</h1>
+        <p>
+          These are contract extension links that have been issued. The “Signer”
+          is the account that logs in and signs; if there is a child, the child
+          name is shown as well.
+        </p>
+        <br/>
+
+        <% if (!extensions.length) { %>
+          <p><em>No contract extensions found.</em></p>
+        <% } else { %>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Signer</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Child (if any)</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Group</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Due Date</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Days Remaining</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Bypass Fee</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Status</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% extensions.forEach(function(ext) { %>
+                  <% 
+                    var groupLabel = "Independent";
+                    if (ext.season && String(ext.season).includes("corps")) {
+                      groupLabel = "Corps";
+                    }
+                  %>
+                  <tr>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <%= ext.signerFirst %> <%= ext.signerLast %><br/>
+                      <small><%= ext.signerEmail %></small>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (ext.childFirst) { %>
+                        <%= ext.childFirst %> <%= ext.childLast %>
+                      <% } else { %>
+                        <em>—</em>
+                      <% } %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= groupLabel %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (ext.due_date) { %>
+                        <%= new Date(ext.due_date).toLocaleString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric"
+                        }) %>
+                      <% } else { %>
+                        <em>Unknown</em>
+                      <% } %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (typeof ext.daysRemaining === "number" && !Number.isNaN(ext.daysRemaining)) { %>
+                        <%= ext.daysRemaining %> day<%= ext.daysRemaining === 1 ? "" : "s" %>
+                      <% } else { %>
+                        <em>—</em>
+                      <% } %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.bypass_fee ? "Yes" : "No" %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (ext.status === "active") { %>
+                        <span style="color:green; font-weight:bold;">Active</span>
+                      <% } else if (ext.status === "expired") { %>
+                        <span style="color:#b00000; font-weight:bold;">Expired</span>
+                      <% } else { %>
+                        <em>Unknown</em>
+                      <% } %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (ext.created_at) { %>
+                        <%= new Date(ext.created_at).toLocaleString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit"
+                        }) %>
+                      <% } else { %>
+                        <em>Unknown</em>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </main>
+    <footer>
+      <%- include("includes/footer") %>
+    </footer>
+  </body>
+</html>

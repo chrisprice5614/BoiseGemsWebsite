@@ -1797,6 +1797,45 @@ app.get("/member-portal", mustBeMember, (req,res) => {
   return res.render("member-portal", { member, contracts, leftoverForms, allergy });
 });
 
+app.get("/member-transactions", mustBeMember, (req, res) => {
+  // Logged-in member’s own record
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
+  const thisUser = getUserStatement.get(req.user.userid);
+
+  if (!thisUser) {
+    return res.redirect("/");
+  }
+
+  const getPayments = db.prepare(
+    "SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC"
+  );
+  const payments = getPayments.all(thisUser.id);
+
+  return res.render("transaction-history", { payments, thisUser });
+});
+
+app.get("/parent/transactions/:childId", mustBeParent, (req, res) => {
+  const childId = req.params.childId;
+
+  // Make sure this child actually belongs to the logged-in parent
+  const getChild = db.prepare(
+    "SELECT * FROM users WHERE id = ? AND parentId = ?"
+  );
+  const thisUser = getChild.get(childId, req.user.userid);
+
+  if (!thisUser) {
+    // Not your kid, or doesn’t exist
+    return res.redirect("/parent-portal");
+  }
+
+  const getPayments = db.prepare(
+    "SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC"
+  );
+  const payments = getPayments.all(thisUser.id);
+
+  return res.render("transaction-history", { payments, thisUser });
+});
+
 app.post("/member-portal/indoor", mustBeMember, (req, res) => {
   const rawSection = String(req.body.indoorSection || "").trim();
   const rawInstrument = String(req.body.indoorInstrument || "").trim();
@@ -2872,6 +2911,27 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
   // If a non-admin staff member triggers this, queue it as a pending
   // contract extension for admin review instead of sending immediately.
   if (!req.admin) {
+    // First check if there is already a pending extension for this member/season
+    const existingPending = db
+      .prepare(
+        `
+        SELECT id
+        FROM pendingContractExtension
+        WHERE member_id = ?
+          AND season = ?
+        LIMIT 1
+        `
+      )
+      .get(thisUser.id, seasonString);
+
+    if (existingPending) {
+      // Let the staff member know there is already a pending request
+      req.session.flashMessage =
+        "A pending contract extension for this member already exists and is awaiting admin approval.";
+      return res.redirect(req.get("Referer") || "/member-portal");
+    }
+
+    // No existing pending → create a new pending contract extension
     db.prepare(
       `
       INSERT INTO pendingContractExtension
@@ -2889,7 +2949,9 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
 
     req.session.flashMessage =
       "Contract extension request submitted for admin approval.";
-    return res.redirect("/admin-portal");
+    // Send them back to where they came from (usually /extend-contract/:id
+    // or your staff members page) so they SEE the success message.
+    return res.redirect(req.get("Referer") || "/member-portal");
   }
 
 
@@ -3175,7 +3237,47 @@ app.post("/admin/pending-contracts/:id/approve", mustBeAdmin, (req, res) => {
   return res.redirect("/admin/pending-contracts");
 });
 
+app.get("/admin/contract-extensions", mustBeAdmin, (req, res) => {
+  const now = Date.now();
 
+  const rows = db
+    .prepare(`
+      SELECT
+        ce.*,
+        signer.firstname AS signerFirst,
+        signer.lastname  AS signerLast,
+        signer.email     AS signerEmail,
+        child.firstname  AS childFirst,
+        child.lastname   AS childLast
+      FROM contractExtension ce
+      JOIN users signer
+        ON signer.id = ce.user_id
+      LEFT JOIN users child
+        ON child.id = ce.child_id
+      ORDER BY ce.created_at DESC
+    `)
+    .all();
+
+  const extensions = rows.map((ce) => {
+    const dueMs = Number(ce.due_date || 0);
+    let daysRemaining = null;
+    let status = "unknown";
+
+    if (dueMs > 0) {
+      const diffMs = dueMs - now;
+      daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+      status = diffMs >= 0 ? "active" : "expired";
+    }
+
+    ce.daysRemaining = daysRemaining;
+    ce.status = status;
+    return ce;
+  });
+
+  return res.render("admin-contract-extensions", {
+    extensions,
+  });
+});
 
 
 
@@ -3444,6 +3546,61 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
     totalPages
   });
 });
+
+app.get("/staff/members", mustBeStaffOrAdmin, (req, res) => {
+  const search = String(req.query.search || "").trim();
+  const filter = String(req.query.filter || "all").trim(); // section filter
+  const membership = String(req.query.membership || "all").trim(); // corps/independent/all
+
+  const where = [];
+  const params = [];
+
+  // Only real members, not parents/admin/staff accounts
+  where.push("(parent IS NULL OR parent = 0)");
+  where.push("(admin IS NULL OR admin = 0)");
+  where.push("(staff IS NULL OR staff = 0)");
+
+  if (filter !== "all") {
+    where.push("section = ?");
+    params.push(filter);
+  }
+
+  if (search) {
+    where.push("(firstname LIKE ? OR lastname LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  if (membership === "corps") {
+    where.push("contractedCorps = 1");
+  } else if (membership === "independent") {
+    where.push("contractedIndependent = 1");
+  }
+
+  const whereSql = where.length ? ("WHERE " + where.join(" AND ")) : "";
+  const sql = `
+    SELECT id,
+           firstname,
+           lastname,
+           email,
+           section,
+           contractedCorps,
+           contractedIndependent
+    FROM users
+    ${whereSql}
+    ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+  `;
+
+  const members = db.prepare(sql).all(...params);
+
+  return res.render("staff-members", {
+    user: req.user,
+    members,
+    search,
+    filter,
+    membership
+  });
+});
+
 
 app.get("/admin/contracts/:userId/:contractId", mustBeAdmin, (req, res) => {
   const userId = Number(req.params.userId);
@@ -3845,6 +4002,50 @@ app.post("/add-transaction/:id", mustBeAdmin, (req,res) => {
   return res.redirect(`/transaction-edit/${child.id}`)
 })
 
+app.post("/add-charge/:id", mustBeAdmin, (req, res) => {
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
+  const user = getUserStatement.get(req.params.id);
+
+  if (!user) {
+    req.session.flashMessage = "User doesn't exist.";
+    return res.redirect("/admin-portal");
+  }
+
+  const rawAmount = Number(req.body.amount || 0);
+  const amountCents = Math.round(rawAmount * 100);
+
+  if (!amountCents || amountCents <= 0) {
+    req.session.flashMessage = "Please enter a valid charge amount.";
+    return res.redirect(`/add-transaction/${user.id}#add-charge`);
+  }
+
+  const title = String(req.body.title || "").trim() || "Additional charge";
+  const description =
+    String(req.body.description || "").trim() ||
+    "Manual charge added by admin.";
+
+  // Increase how much they owe
+  const newOwed = Number(user.owed || 0) + amountCents;
+  const updateUser = db.prepare("UPDATE users SET owed = ? WHERE id = ?");
+  updateUser.run(newOwed, user.id);
+
+  // Log in paymentHistory as a "Charge"
+  const insertHistory = db.prepare(
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
+  );
+  insertHistory.run(
+    title,
+    description,
+    amountCents,
+    "Charge",
+    Date.now(),
+    user.id
+  );
+
+  req.session.flashMessage = "Charge added to account.";
+  return res.redirect(`/transaction-edit/${user.id}`);
+});
+
 app.get("/pay-behalf/:id", mustBeParent, (req,res) => {
   //Check if child is yours
   const getChildStatement = db.prepare("SELECT * FROM users WHERE id = ? AND parentId = ?")
@@ -4097,49 +4298,229 @@ app.get("/email-members", mustBeAdmin, (req, res) => {
   res.render("email-members");
 });
 
+app.post("/email-members/preview", mustBeAdmin, (req, res) => {
+  const subject = String(req.body.subject || "").trim();
+  const message = String(req.body.message || "").trim();
+  const section = String(req.body.section || "all").trim();
+  const membership = String(req.body.membership || "all").trim();
+  // "none" | "all" | "corps" | "independent"
+  const extensionMode = String(req.body.extensionMode || "none")
+    .trim()
+    .toLowerCase();
+
+  if (!subject || !message) {
+    return res
+      .status(400)
+      .json({ ok: false, error: "Subject and message are required." });
+  }
+
+  let recipients = [];
+
+  if (extensionMode !== "none") {
+    // 🔹 EXACT SAME FILTER AS /email-members (bulk send) for contractExtension
+    const now = Date.now();
+    const where = ["ce.due_date IS NOT NULL", "ce.due_date >= ?"];
+    const params = [now];
+
+    // Current season only (handles "2026corps"/"2026independent" strings)
+    where.push("CAST(SUBSTR(ce.season, 1, 4) AS INTEGER) = ?");
+    params.push(CURRENTSEASON);
+
+    // Filter by corps vs independent extension
+    if (extensionMode === "corps") {
+      where.push("LOWER(ce.season) LIKE ?");
+      params.push("%corps%");
+    } else if (extensionMode === "independent") {
+      where.push("LOWER(ce.season) LIKE ?");
+      params.push("%independent%");
+    }
+
+    // Optional section filter (Brass, Guard, etc.)
+    if (section !== "all") {
+      where.push("u.section = ?");
+      params.push(section);
+    }
+
+    const rows = db
+      .prepare(
+        `
+        SELECT
+          u.email,
+          u.firstname,
+          u.lastname
+        FROM contractExtension ce
+        JOIN users u
+          ON u.id = ce.user_id
+        WHERE ${where.join(" AND ")}
+      `
+      )
+      .all(...params);
+
+    recipients = rows
+      .filter((r) => r.email && String(r.email).trim() !== "")
+      .map((r) => ({
+        email: String(r.email).trim(),
+        name: `${r.firstname || ""} ${r.lastname || ""}`.trim(),
+      }));
+  } else {
+    // 🔹 Normal members list (no contract-extension filter)
+    const where = [];
+    const params = [];
+
+    if (section !== "all") {
+      where.push("section = ?");
+      params.push(section);
+    }
+
+    if (membership === "corps") {
+      where.push("contractedCorps = 1");
+    } else if (membership === "independent") {
+      where.push("contractedIndependent = 1");
+    }
+
+    where.push("email IS NOT NULL AND TRIM(email) <> ''");
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const rows = db
+      .prepare(
+        `
+        SELECT email, firstname, lastname
+        FROM users
+        ${whereSql}
+      `
+      )
+      .all(...params);
+
+    recipients = rows
+      .filter((r) => r.email && String(r.email).trim() !== "")
+      .map((r) => ({
+        email: String(r.email).trim(),
+        name: `${r.firstname || ""} ${r.lastname || ""}`.trim(),
+      }));
+  }
+
+  // ✅ Preview just returns the list; no email sent here
+  return res.json({ ok: true, recipients });
+});
+
+app.post("/email-members/send-one", mustBeAdmin, async (req, res) => {
+  const email = String(req.body.email || "").trim();
+  const subject = String(req.body.subject || "").trim();
+  const message = String(req.body.message || "").trim();
+
+  if (!email || !subject || !message) {
+    return res
+      .status(400)
+      .json({ ok: false, error: "Missing email, subject, or message." });
+  }
+
+  try {
+    await sendEmail(email, subject, message);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Bulk email send-one error", err);
+    return res
+      .status(500)
+      .json({ ok: false, error: "Failed to send email." });
+  }
+});
+
 app.post("/email-members", mustBeAdmin, (req, res) => {
   const subject = String(req.body.subject || "").trim();
   const message = String(req.body.message || "").trim();
   const section = String(req.body.section || "all").trim();
   const membership = String(req.body.membership || "all").trim();
+  // NEW: extensionMode here too so the non-JS fallback respects it
+  const extensionMode = String(req.body.extensionMode || "none").trim().toLowerCase();
 
   if (!subject || !message) {
     req.session.flashMessage = "Subject and message are required.";
     return res.redirect("/email-members");
   }
 
-  const where = [];
-  const params = [];
+  let sentCount = 0;
 
-  if (section !== "all") {
-    where.push("section = ?");
-    params.push(section);
+  if (extensionMode !== "none") {
+    const now = Date.now();
+    const where = ["ce.due_date IS NOT NULL", "ce.due_date >= ?"];
+    const params = [now];
+
+    where.push("CAST(SUBSTR(ce.season, 1, 4) AS INTEGER) = ?");
+    params.push(CURRENTSEASON);
+
+    if (extensionMode === "corps") {
+      where.push("LOWER(ce.season) LIKE ?");
+      params.push("%corps%");
+    } else if (extensionMode === "independent") {
+      where.push("LOWER(ce.season) LIKE ?");
+      params.push("%independent%");
+    }
+
+    if (section !== "all") {
+      where.push("u.section = ?");
+      params.push(section);
+    }
+
+    const rows = db
+      .prepare(
+        `
+        SELECT
+          u.email,
+          u.firstname,
+          u.lastname
+        FROM contractExtension ce
+        JOIN users u
+          ON u.id = ce.user_id
+        WHERE ${where.join(" AND ")}
+      `
+      )
+      .all(...params);
+
+    rows.forEach((row) => {
+      if (!row.email) return;
+      sendEmail(row.email, subject, message);
+      sentCount++;
+    });
+  } else {
+    const where = [];
+    const params = [];
+
+    if (section !== "all") {
+      where.push("section = ?");
+      params.push(section);
+    }
+
+    if (membership === "corps") {
+      where.push("contractedCorps = 1");
+    } else if (membership === "independent") {
+      where.push("contractedIndependent = 1");
+    }
+
+    where.push("email IS NOT NULL AND TRIM(email) <> ''");
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const rows = db
+      .prepare(
+        `
+        SELECT email, firstname, lastname
+        FROM users
+        ${whereSql}
+      `
+      )
+      .all(...params);
+
+    rows.forEach((row) => {
+      if (!row.email) return;
+      sendEmail(row.email, subject, message);
+      sentCount++;
+    });
   }
 
-  if (membership === "corps") {
-    where.push("contractedCorps = 1");
-  } else if (membership === "independent") {
-    where.push("contractedIndependent = 1");
-  }
-
-  where.push("email IS NOT NULL AND TRIM(email) <> ''");
-
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-
-  const rows = db.prepare(`
-    SELECT email, firstname, lastname
-    FROM users
-    ${whereSql}
-  `).all(...params);
-
-  rows.forEach(row => {
-    sendEmail(row.email, subject, message);
-  });
-
-  req.session.flashMessage = `Bulk email sent to ${rows.length} recipient(s).`;
+  req.session.flashMessage = `Bulk email sent to ${sentCount} recipient(s).`;
   return res.redirect("/admin-portal");
 });
-
 
 app.get("/delete-form/:id", mustBeAdmin, (req,res) => {
   const formId = req.params.id;

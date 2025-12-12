@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Staff — Members & Contract Extensions</title>
+    <%- include("includes/head") %>
+  </head>
+  <body>
+    <header>
+      <%- include("includes/header") %>
+    </header>
+    <main>
+      <div style="margin:12px; max-width:1100px;">
+        <p><a href="/member-portal">&larr; Back to Staff Portal</a></p>
+
+        <h1>Members & Contract Extensions</h1>
+        <p>
+          Use this page to look up members and start contract extension requests.
+          Requests submitted from here are <strong>pending</strong> until an admin
+          approves them on the Pending Contracts page.
+        </p>
+
+        <hr style="margin:16px 0;">
+
+        <% const q = typeof search === "string" ? search : ""; %>
+        <% const sectionFilter = typeof filter === "string" ? filter : "all"; %>
+        <% const memberFilter = typeof membership === "string" ? membership : "all"; %>
+
+        <form method="get" action="/staff/members" style="margin-bottom:16px;">
+          <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+            <div>
+              <label for="search"><strong>Search name</strong></label><br>
+              <input
+                id="search"
+                type="text"
+                name="search"
+                value="<%= q %>"
+                placeholder="First or last name"
+              />
+            </div>
+
+            <div>
+              <label for="filter"><strong>Section</strong></label><br>
+              <select id="filter" name="filter">
+                <option value="all" <%= sectionFilter === "all" ? "selected" : "" %>>All</option>
+                <option value="brass" <%= sectionFilter === "brass" ? "selected" : "" %>>Brass</option>
+                <option value="perc" <%= sectionFilter === "perc" ? "selected" : "" %>>Percussion</option>
+                <option value="guard" <%= sectionFilter === "guard" ? "selected" : "" %>>Guard</option>
+                <option value="front" <%= sectionFilter === "front" ? "selected" : "" %>>Front Ensemble</option>
+                <option value="drummajor" <%= sectionFilter === "drummajor" ? "selected" : "" %>>Drum Major</option>
+                <option value="bgi" <%= sectionFilter === "bgi" ? "selected" : "" %>>BGI</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="membership"><strong>Membership</strong></label><br>
+              <select id="membership" name="membership">
+                <option value="all" <%= memberFilter === "all" ? "selected" : "" %>>All</option>
+                <option value="corps" <%= memberFilter === "corps" ? "selected" : "" %>>Contracted Corps</option>
+                <option value="independent" <%= memberFilter === "independent" ? "selected" : "" %>>Contracted Independent</option>
+              </select>
+            </div>
+
+            <div>
+              <button type="submit">Apply Filters</button>
+            </div>
+          </div>
+        </form>
+
+        <% if (!Array.isArray(members) || members.length === 0) { %>
+          <p><em>No members found with those filters.</em></p>
+        <% } else { %>
+          <table style="width:100%; border-collapse:collapse; font-size:0.95rem;">
+            <thead>
+              <tr>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Name</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Section</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Corps</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Independent</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Email</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% members.forEach(m => { %>
+                <tr>
+                  <td style="border-bottom:1px solid #eee; padding:6px;">
+                    <strong><%= m.firstname %> <%= m.lastname %></strong>
+                  </td>
+                  <td style="border-bottom:1px solid #eee; padding:6px; text-transform:capitalize;">
+                    <%= m.section || "—" %>
+                  </td>
+                  <td style="border-bottom:1px solid #eee; padding:6px;">
+                    <%= m.contractedCorps ? "✅" : "❌" %>
+                  </td>
+                  <td style="border-bottom:1px solid #eee; padding:6px;">
+                    <%= m.contractedIndependent ? "✅" : "❌" %>
+                  </td>
+                  <td style="border-bottom:1px solid #eee; padding:6px;">
+                    <%= m.email || "—" %>
+                  </td>
+                  <td style="border-bottom:1px solid #eee; padding:6px;">
+                    <a href="/extend-contract/<%= m.id %>">
+                      <button type="button">Start Contract Extension</button>
+                    </a>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% } %>
+      </div>
+    </main>
+    <footer>
+      <%- include("includes/footer") %>
+    </footer>
+  </body>
+</html>

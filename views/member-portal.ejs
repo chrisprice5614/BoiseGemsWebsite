@@ -93,7 +93,7 @@
                     <h2>Staff Portal</h2>
                 </div>
             <% } %>
-            <% if((member.section == "staff")&&(member.staff == 1)) {%>
+            <% if((member.section != "staff")or(member.staff == 0)) {%>
                 <br>
                 <p style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>Your profile is set as staff but an admin has not yet cleared you as staff.</i></p>
                 <br>

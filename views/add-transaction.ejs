@@ -14,7 +14,7 @@
             <br>
             <h1 style="text-align: center;">Pay for <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
             <br>
-            <h2 style="text-align: center;">Total Amount Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.owed / 100) %></h2>
+            <h2 style="text-align: center;">Total Balance Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.owed / 100) %></h2>
             <br>
             <form action="/add-transaction/<%= thisUser.id %>" method="POST">
                 <label for="title">Enter Payment Title</label>
@@ -40,7 +40,7 @@
                 <br>
                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 5%;">
                     <input type="checkbox" name="tuition" id="tuition" style="margin: 0;" />
-                    <label for="tuition" style="margin: 0;">Pay Towards Tuition</label>
+                    <label for="tuition" style="margin: 0;">Pay Towards Balance</label>
                 </div>
                 <br>
                 <br>

@@ -1562,7 +1562,7 @@ app.post("/register-parent", (req, res) => {
 
   sendEmail(email, "Welcome to Boise Gems!", html);
 
-  return res.redirect("/");
+  return res.redirect("/member-portal");
 });
 
 
@@ -1793,6 +1793,19 @@ app.get("/member-portal", mustBeMember, (req,res) => {
   const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
 
   const allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid);
+
+  // Compute minor flag for UI (age < 18)
+  member.minor = false;
+  if (member && member.birthday) {
+    const birthday = new Date(member.birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthday.getFullYear();
+    const hadBDay =
+      today.getMonth() > birthday.getMonth() ||
+      (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+    if (!hadBDay) age--;
+    member.minor = age < 18;
+  }
 
   return res.render("member-portal", { member, contracts, leftoverForms, allergy });
 });
@@ -2299,6 +2312,28 @@ app.get("/change-membership/:id", mustBeAdmin,(req,res) => {
   if(thisUser.staff){
     req.session.flashMessage = `${thisUser.firstname} is staff. Only members can be changed to contracted.`
     return res.redirect(req.get('Referer'))
+  }
+
+  // If the member is a minor with no parent attached, block staff from
+  // issuing a contract and show a popup instructing them to have a parent
+  // claim the member first.
+  let isMinor = false;
+  if (thisUser.birthday) {
+    const birthday = new Date(thisUser.birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthday.getFullYear();
+    const hadBDay =
+      today.getMonth() > birthday.getMonth() ||
+      (today.getMonth() === birthday.getMonth() &&
+        today.getDate() >= birthday.getDate());
+    if (!hadBDay) age--;
+    isMinor = age < 18;
+  }
+
+  const parentId = thisUser.parentId || null;
+  if (isMinor && !parentId) {
+    req.session.flashMessage = `${thisUser.firstname} ${thisUser.lastname} is a minor and does not have a parent attached. Please have a parent claim this member as their child before sending a contract.`;
+    return res.redirect(req.get('Referer') || '/staff/members');
   }
 
   return res.render("change-membership", {thisUser})
@@ -3829,6 +3864,85 @@ app.post('/update-emergency', mustBeLoggedIn, (req, res) => {
     res.redirect('/member-portal'); // or another success page
 });
 
+
+// Member requests a parent/guardian invite by entering their parent's email
+app.post('/member-portal/request-parent-invite', mustBeMember, (req, res) => {
+  const parentEmailRaw = String(req.body.parentEmail || '').trim().toLowerCase();
+  if (!parentEmailRaw) {
+    req.session.flashMessage = 'Please provide a parent/guardian email.';
+    return res.redirect('/member-portal');
+  }
+  // Do NOT generate any claim codes or create childVerify records here.
+  // Instead, simply notify the parent that they should register or login
+  // and then use the Parent Portal "Add Member" flow to add/claim the child.
+
+  const html = `
+    Hello,
+
+    <p>${req.user.firstname} ${req.user.lastname} has entered your email as their parent/guardian on the Boise Gems website.</p>
+    <p>Please register as a parent/guardian account at <a href="${process.env.BASEURL}/register-parent">${process.env.BASEURL}/register-parent</a> or login if you already have an account.</p>
+    <p>After logging in as a parent/guardian, go to your Parent Portal and use "Add Member" to add your child by their email address. That process will send a confirmation to the child so they can approve the connection.</p>
+  `;
+
+  sendEmail(parentEmailRaw, 'Please register/login to claim your child on Boise Gems', html);
+  req.session.flashMessage = `An email has been sent to ${parentEmailRaw} instructing them to register or login and then add you via the Parent Portal.`;
+  return res.redirect('/member-portal');
+});
+
+
+// Parent (or newly-registered parent) clicks link to claim child
+app.get('/claim-child/:code', mustBeLoggedIn, (req, res) => {
+  // Keep compatibility: if someone visits the claim link while logged in,
+  // allow claiming (same behavior as the POST flow). This route is less
+  // commonly used since emails no longer include direct links.
+  const getVerify = db.prepare('SELECT * FROM childVerify WHERE code = ?').get(req.params.code);
+  if (!getVerify) {
+    return res.render('message', { message: 'Invalid or expired claim code.' });
+  }
+
+  if (getVerify.user_id && getVerify.user_id !== req.user.userid) {
+    return res.render('message', { message: 'This claim code was sent to a different account. Please use the account that received the email.' });
+  }
+
+  const updateStmt = db.prepare('UPDATE users SET parentId = ? WHERE id = ?');
+  updateStmt.run(req.user.userid, getVerify.target_id);
+
+  const deleteStmt = db.prepare('DELETE FROM childVerify WHERE target_id = ?');
+  deleteStmt.run(getVerify.target_id);
+
+  return res.render('message', { message: 'You have successfully claimed this child as your own. Thank you!' });
+});
+
+// Claim child form (parent registers/logs-in first, then uses this form)
+app.get('/claim-child', mustBeLoggedIn, (req, res) => {
+  return res.render('claim-child');
+});
+
+app.post('/claim-child', mustBeLoggedIn, (req, res) => {
+  const code = String(req.body.code || '').trim();
+  if (!code) {
+    req.session.flashMessage = 'Please enter a claim code.';
+    return res.redirect('/claim-child');
+  }
+
+  const getVerify = db.prepare('SELECT * FROM childVerify WHERE code = ?').get(code);
+  if (!getVerify) {
+    return res.render('message', { message: 'Invalid or expired claim code.' });
+  }
+
+  if (getVerify.user_id && getVerify.user_id !== req.user.userid) {
+    return res.render('message', { message: 'This claim code was sent to a different account. Please use the account that received the email.' });
+  }
+
+  const updateStmt = db.prepare('UPDATE users SET parentId = ? WHERE id = ?');
+  updateStmt.run(req.user.userid, getVerify.target_id);
+
+  const deleteStmt = db.prepare('DELETE FROM childVerify WHERE target_id = ?');
+  deleteStmt.run(getVerify.target_id);
+
+  return res.render('message', { message: 'You have successfully claimed this child as your own. Thank you!' });
+});
+
 app.post("/add-member", mustBeParent, (req,res) => {
   errors = [];
   const email = req.body.email;
@@ -5067,7 +5181,7 @@ app.get("/donate/thank-you", (req,res) => {
   return res.render("donation-thank-you")
 })
 
-app.get("/update-info", mustBeMember, (req,res) => {
+app.get("/update-info", mustBeLoggedInAny, (req,res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
 
   if(!member)
@@ -5077,7 +5191,7 @@ app.get("/update-info", mustBeMember, (req,res) => {
   return res.render("change-address", {member})
 })
 
-app.post("/change-address", mustBeMember, (req, res) => {
+app.post("/change-address", mustBeLoggedInAny, (req, res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
 
   if (!member) {
@@ -5119,7 +5233,47 @@ app.post("/change-address", mustBeMember, (req, res) => {
   ).run(address, email, phone, birthdayMs, req.user.userid);
 
   req.session.flashMessage = "Contact information updated.";
-  return res.redirect("/member-portal");
+  // Redirect based on role
+  if (req.parent) return res.redirect('/parent-portal');
+  if (req.staff) return res.redirect('/staff/members');
+  if (req.admin) return res.redirect('/admin-portal');
+  return res.redirect('/member-portal');
+});
+
+
+// Admin — view all contracted members and balances
+app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
+  const rows = db.prepare(
+    `SELECT id, firstname, lastname, email, phone, address, owed, contractedCorps, contractedIndependent FROM users
+     WHERE contractedCorps = 1 OR contractedIndependent = 1
+     ORDER BY lastname, firstname`
+  ).all();
+
+  return res.render('admin-contracted-members', { members: rows });
+});
+
+// Admin — view expired contract extensions
+app.get('/admin/expired-contracts', mustBeAdmin, (req, res) => {
+  const now = Date.now();
+  const rows = db.prepare(
+    `SELECT ce.*, u.firstname AS signerFirst, u.lastname AS signerLast, u.email AS signerEmail, 
+            child.firstname AS childFirst, child.lastname AS childLast
+     FROM contractExtension ce
+     JOIN users u ON u.id = ce.user_id
+     LEFT JOIN users child ON child.id = ce.child_id
+     WHERE ce.due_date IS NOT NULL AND ce.due_date < ?
+     ORDER BY ce.due_date DESC`
+  ).all(now);
+
+  return res.render('admin-expired-contracts', { extensions: rows });
+});
+
+// Admin — delete a contract extension
+app.post('/admin/contract-extension/:id/delete', mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  db.prepare('DELETE FROM contractExtension WHERE id = ?').run(id);
+  req.session.flashMessage = 'Contract extension deleted.';
+  return res.redirect('/admin/expired-contracts');
 });
 
 

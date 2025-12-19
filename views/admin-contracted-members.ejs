@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Contracted Members - Boise Gems</title>
+    <%- include("includes/head") %>
+  </head>
+  <body>
+    <header>
+      <%- include("includes/header") %>
+    </header>
+    <main>
+      <div style="margin:12px;">
+        <h1>Contracted Members</h1>
+        <div style="display:flex; gap:8px; align-items:center; margin:12px 0;">
+          <input id="cm-search" type="search" placeholder="Search name, email, phone" style="flex:1; padding:8px; border-radius:6px; border:1px solid #ccc;" />
+          <select id="cm-group" style="padding:8px; border-radius:6px;">
+            <option value="all">All Groups</option>
+            <option value="corps">Corps</option>
+            <option value="independent">Independent</option>
+          </select>
+          <label style="display:flex; align-items:center; gap:6px;"><input id="cm-only-owed" type="checkbox" /> Only owe > $0</label>
+          <select id="cm-sort" style="padding:8px; border-radius:6px;">
+            <option value="name-asc">Name ↑</option>
+            <option value="name-desc">Name ↓</option>
+            <option value="owed-desc">Balance ↓</option>
+            <option value="owed-asc">Balance ↑</option>
+          </select>
+        </div>
+        <% if (!members || !members.length) { %>
+          <p><em>No contracted members found.</em></p>
+        <% } else { %>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Name</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Email</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Phone</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Section</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Balance Due</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% members.forEach(function(m) { %>
+                      <tr data-name="<%= (m.firstname + ' ' + m.lastname).toLowerCase() %>" data-email="<%= (m.email||'').toLowerCase() %>" data-phone="<%= (m.phone||'') %>" data-group="<%= m.contractedCorps ? 'corps' : (m.contractedIndependent ? 'independent' : 'none') %>" data-owed="<%= (m.owed || 0) %>">
+                        <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.firstname %> <%= m.lastname %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.email %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.phone %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.contractedCorps ? 'Corps' : (m.contractedIndependent ? 'Independent' : '-') %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;" class="owed-col"><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((m.owed || 0) / 100) %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;">
+                          <a href="/view-forms/<%= m.id %>">Forms</a> •
+                          <a href="/edit-users/<%= m.id %>">Edit</a> •
+                          <a href="/add-transaction/<%= m.id %>">Charge/Payment</a>
+                        </td>
+                      </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+          <script>
+            (function(){
+              const search = document.getElementById('cm-search');
+              const group = document.getElementById('cm-group');
+              const onlyOwed = document.getElementById('cm-only-owed');
+              const sortSel = document.getElementById('cm-sort');
+              const tbody = document.querySelector('table tbody');
+
+              function applyFilters(){
+                const q = (search.value||'').toLowerCase().trim();
+                const g = group.value;
+                const oweOnly = onlyOwed.checked;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                let visible = rows.filter(r => {
+                  const name = r.getAttribute('data-name')||'';
+                  const email = r.getAttribute('data-email')||'';
+                  const phone = r.getAttribute('data-phone')||'';
+                  const grp = r.getAttribute('data-group')||'none';
+                  const owed = Number(r.getAttribute('data-owed')||0);
+
+                  if (g !== 'all' && grp !== g) return false;
+                  if (oweOnly && owed <= 0) return false;
+                  if (!q) return true;
+                  return name.includes(q) || email.includes(q) || phone.includes(q);
+                });
+
+                const sort = sortSel.value;
+                visible.sort((a,b)=>{
+                  if(sort.startsWith('name')){
+                    const an = a.getAttribute('data-name')||'';
+                    const bn = b.getAttribute('data-name')||'';
+                    if(an<bn) return sort==='name-asc'? -1:1;
+                    if(an>bn) return sort==='name-asc'? 1:-1;
+                    return 0;
+                  }
+                  if(sort.startsWith('owed')){
+                    const ao = Number(a.getAttribute('data-owed')||0);
+                    const bo = Number(b.getAttribute('data-owed')||0);
+                    return sort==='owed-asc' ? ao-bo : bo-ao;
+                  }
+                  return 0;
+                });
+
+                // Hide all rows then re-append visible in order
+                rows.forEach(r=> r.style.display='none');
+                visible.forEach(r=>{ r.style.display='table-row'; tbody.appendChild(r); });
+              }
+
+              [search, group, onlyOwed, sortSel].forEach(el=> el.addEventListener('input', applyFilters));
+              // init
+              applyFilters();
+            })();
+          </script>
+    </main>
+    <footer>
+      <%- include("includes/footer") %>
+    </footer>
+  </body>
+</html>

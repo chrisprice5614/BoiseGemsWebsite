@@ -1,0 +1,29 @@
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Claim Child — Boise Gems</title>
+  <%- include('includes/head') %>
+</head>
+<body>
+  <header>
+    <%- include('includes/header') %>
+  </header>
+  <main style="padding: 12px;">
+    <div style="max-width:720px; margin: 0 auto;">
+      <h1>Claim a Child</h1>
+      <p>Enter the claim code you received by email after registering or logging in as a parent/guardian.</p>
+
+      <form action="/claim-child" method="POST" style="display:flex; gap:8px; align-items:center;">
+        <input type="text" name="code" placeholder="Enter claim code" required style="flex:1; padding:8px; border-radius:6px; border:1px solid #ccc;" />
+        <button type="submit" style="padding:10px 14px; border-radius:8px; background:#9D76BB; color:#fff; border:0; font-weight:700;">Claim</button>
+      </form>
+
+      <p style="margin-top:12px;">If you don't have an account, please <a href="/register-parent">register as a parent/guardian</a> first, then come back to this page.</p>
+    </div>
+  </main>
+  <footer>
+    <%- include('includes/footer') %>
+  </footer>
+</body>
+</html>

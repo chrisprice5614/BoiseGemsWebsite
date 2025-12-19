@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Expired Contracts - Boise Gems</title>
+    <%- include("includes/head") %>
+  </head>
+  <body>
+    <header>
+      <%- include("includes/header") %>
+    </header>
+    <main>
+      <div style="margin:12px;">
+        <h1>Expired Contract Extensions</h1>
+        <div style="display:flex; gap:8px; align-items:center; margin:12px 0;">
+          <input id="ec-search" type="search" placeholder="Search signer, child, email" style="flex:1; padding:8px; border-radius:6px; border:1px solid #ccc;" />
+          <select id="ec-group" style="padding:8px; border-radius:6px;">
+            <option value="all">All Groups</option>
+            <option value="corps">Corps</option>
+            <option value="independent">Independent</option>
+          </select>
+          <select id="ec-sort" style="padding:8px; border-radius:6px;">
+            <option value="date-desc">Expired New → Old</option>
+            <option value="date-asc">Expired Old → New</option>
+            <option value="signer-asc">Signer ↑</option>
+            <option value="signer-desc">Signer ↓</option>
+          </select>
+        </div>
+        <% if (!extensions || !extensions.length) { %>
+          <p><em>No expired contract extensions found.</em></p>
+        <% } else { %>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Signer</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Child (if any)</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Group</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Expired On</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% extensions.forEach(function(ext) { %>
+                  <% var groupLabel = (ext.season && String(ext.season).includes('corps')) ? 'corps' : 'independent'; %>
+                  <tr data-signer="<%= (ext.signerFirst + ' ' + ext.signerLast).toLowerCase() %>" data-signer-email="<%= (ext.signerEmail||'').toLowerCase() %>" data-child="<%= (ext.childFirst ? (ext.childFirst + ' ' + ext.childLast).toLowerCase() : '') %>" data-group="<%= groupLabel %>" data-due="<%= ext.due_date || 0 %>">
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.signerFirst %> <%= ext.signerLast %><br/><small><%= ext.signerEmail %></small></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><% if (ext.childFirst) { %><%= ext.childFirst %> <%= ext.childLast %><% } else { %><em>—</em><% } %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= groupLabel === 'corps' ? 'Corps' : 'Independent' %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.due_date ? new Date(ext.due_date).toLocaleString() : '—' %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% const memberId = ext.child_id || ext.user_id; %>
+                      <form method="POST" action="/admin/contract-extension/<%= ext.id %>/delete" style="display:inline-block; margin-right:6px;">
+                        <button type="submit" onclick="return confirm('Delete this expired contract extension?')">Delete</button>
+                      </form>
+                      <a href="/extend-contract/<%= memberId %>"><button>Resend (Open Send Page)</button></a>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+      <script>
+        (function(){
+          const search = document.getElementById('ec-search');
+          const group = document.getElementById('ec-group');
+          const sortSel = document.getElementById('ec-sort');
+          const tbody = document.querySelector('table tbody');
+
+          function applyFilters(){
+            const q = (search.value||'').toLowerCase().trim();
+            const g = group.value;
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            let visible = rows.filter(r => {
+              const signer = r.getAttribute('data-signer')||'';
+              const signerEmail = r.getAttribute('data-signer-email')||'';
+              const child = r.getAttribute('data-child')||'';
+              const grp = r.getAttribute('data-group')||'none';
+
+              if (g !== 'all' && grp !== g) return false;
+              if (!q) return true;
+              return signer.includes(q) || signerEmail.includes(q) || child.includes(q);
+            });
+
+            const sort = sortSel.value;
+            visible.sort((a,b)=>{
+              if(sort.startsWith('date')){
+                const ad = Number(a.getAttribute('data-due')||0);
+                const bd = Number(b.getAttribute('data-due')||0);
+                return sort==='date-asc' ? ad-bd : bd-ad;
+              }
+              if(sort.startsWith('signer')){
+                const an = a.getAttribute('data-signer')||'';
+                const bn = b.getAttribute('data-signer')||'';
+                if(an<bn) return sort==='signer-asc'? -1:1;
+                if(an>bn) return sort==='signer-asc'? 1:-1;
+                return 0;
+              }
+              return 0;
+            });
+
+            rows.forEach(r=> r.style.display='none');
+            visible.forEach(r=>{ r.style.display='table-row'; tbody.appendChild(r); });
+          }
+
+          [search, group, sortSel].forEach(el=> el.addEventListener('input', applyFilters));
+          applyFilters();
+        })();
+      </script>
+    </main>
+    <footer>
+      <%- include("includes/footer") %>
+    </footer>
+  </body>
+</html>

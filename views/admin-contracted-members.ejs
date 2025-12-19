@@ -53,7 +53,6 @@
                         <td style="border-bottom:1px solid #eee; padding:6px;" class="owed-col"><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((m.owed || 0) / 100) %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;">
                           <a href="/view-forms/<%= m.id %>">Forms</a> •
-                          <a href="/edit-users/<%= m.id %>">Edit</a> •
                           <a href="/add-transaction/<%= m.id %>">Charge/Payment</a>
                         </td>
                       </tr>

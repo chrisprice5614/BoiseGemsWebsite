@@ -608,6 +608,9 @@ const createTables = db.transaction(() => {
     if (!cmCols.includes("signedContractPath")) {
       db.prepare("ALTER TABLE contractedMembers ADD COLUMN signedContractPath TEXT").run();
     }
+    if (!cmCols.includes("paymentMethod")) {
+      db.prepare("ALTER TABLE contractedMembers ADD COLUMN paymentMethod TEXT").run();
+    }
 
     db.prepare(
         `
@@ -2622,8 +2625,9 @@ app.post(
       return res.redirect("/");
     }
 
-    // If bypass fee is true, skip Stripe but still mark contracted + store contract file
-    if (contractExtension.bypass_fee) {
+    // If bypass fee or user selected cash, skip Stripe but still mark contracted + store contract file
+    const payWithCash = contractExtension.bypass_fee || req.body.pay_with_cash === 'on' || req.body.check === 'on';
+    if (payWithCash) {
       if (ensemble === "corps") {
         db.prepare(
           "UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
@@ -2636,15 +2640,16 @@ app.post(
 
       db.prepare(
         `
-        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod)
+        VALUES (?, ?, ?, ?, ?, ?)
         `
       ).run(
         contractExtension.season,
         ensemble,
         Date.now(),
         memberId,
-        contractFilePath
+        contractFilePath,
+        'cash'
       );
 
       // Remove temporary contractExtension entry
@@ -2652,8 +2657,33 @@ app.post(
         req.params.id
       );
 
+      // NEW: email the child when a minor contract is signed (cash path)
+      if (isMinorContract) {
+        const childRow = db
+          .prepare("SELECT firstname, lastname, email FROM users WHERE id = ?")
+          .get(memberId);
+
+        if (childRow && childRow.email) {
+          const html = `
+            <h1>Your Boise Gems Contract Is Signed!</h1>
+            <p>Hi ${childRow.firstname},</p>
+            <p>
+              Your parent/guardian has signed your contract for the
+              ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : "Boise Gems Independent"}
+              for the ${CURRENTSEASON} season.
+            </p>
+            <p>We’re excited to have you with us!</p>
+          `;
+          sendEmail(
+            childRow.email,
+            "Your Boise Gems contract has been signed!",
+            html
+          );
+        }
+      }
+
       const redirectTarget = isMinorContract ? "/parent-portal" : "/member-portal";
-      req.session.flashMessage = "Welcome to Boise Gems!";
+      req.session.flashMessage = "Contract signed successfully — cash/check selected. No online payment required. Welcome to Boise Gems!";
       return res.redirect(redirectTarget);
     }
 
@@ -2825,15 +2855,16 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   // Insert contractedMembers row (with stored contract file path)
   db.prepare(
     `
-    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod)
+    VALUES (?, ?, ?, ?, ?, ?)
     `
   ).run(
     contractExtension.season,
     ensemble,
     Date.now(),
     user.id,
-    potential.contract_file_path || null
+    potential.contract_file_path || null,
+    'stripe'
   );
 
   // Delete potential payment to prevent reuse
@@ -2871,7 +2902,7 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
 
   const redirectTarget = isMinorContract ? "/parent-portal" : "/member-portal";
   req.session.flashMessage =
-    "Your down payment has been received. Welcome to Boise Gems!";
+    "Contract signed successfully and payment received. Welcome to Boise Gems!";
   res.redirect(redirectTarget);
 });
 
@@ -5244,9 +5275,19 @@ app.post("/change-address", mustBeLoggedInAny, (req, res) => {
 // Admin — view all contracted members and balances
 app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
   const rows = db.prepare(
-    `SELECT id, firstname, lastname, email, phone, address, owed, contractedCorps, contractedIndependent FROM users
-     WHERE contractedCorps = 1 OR contractedIndependent = 1
-     ORDER BY lastname, firstname`
+     `SELECT 
+       u.id, u.firstname, u.lastname, u.email, u.phone, u.address, u.owed, 
+       u.contractedCorps AS contractedCorps, u.contractedIndependent AS contractedIndependent,
+       (
+         SELECT paymentMethod 
+         FROM contractedMembers cm 
+         WHERE cm.user_id = u.id 
+         ORDER BY cm.contracted_date DESC 
+         LIMIT 1
+       ) AS paymentMethod
+    FROM users u
+    WHERE u.contractedCorps = 1 OR u.contractedIndependent = 1
+     ORDER BY u.lastname, u.firstname`
   ).all();
 
   return res.render('admin-contracted-members', { members: rows });

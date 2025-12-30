@@ -137,6 +137,13 @@
             <div class="triple-to-single triple-to-single-mod">
               <div>
                 <p><b>Email: </b><span onclick="copyText(this)"><%= thisUser.email %></span></p>
+                <p><b>Phone: </b>
+                  <% if (thisUser.phone) { %>
+                    <span class="copy-phone" title="Click to copy"><%= thisUser.phone %></span>
+                  <% } else { %>
+                    <span style="color:#888;">—</span>
+                  <% } %>
+                </p>
                 <p><b>Birthday: </b><%= new Date(thisUser.birthday + 86400000).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %></p>
                 <p><b>Age: </b><%= Math.floor((Date.now() - thisUser.birthday) / 31557600000) %></p>
               </div>
@@ -296,6 +303,50 @@
     const text = node.textContent || node.innerText || "";
     navigator.clipboard.writeText(text).catch(()=>{});
   }
+
+  // Toast element setup
+  (function(){
+    let t = document.getElementById('copy-toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'copy-toast';
+      t.style.position = 'fixed';
+      t.style.left = '50%';
+      t.style.bottom = '24px';
+      t.style.transform = 'translateX(-50%)';
+      t.style.padding = '10px 16px';
+      t.style.background = 'rgba(0,0,0,0.8)';
+      t.style.color = '#fff';
+      t.style.borderRadius = '8px';
+      t.style.fontSize = '14px';
+      t.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+      t.style.zIndex = '9999';
+      t.style.opacity = '0';
+      t.style.pointerEvents = 'none';
+      t.style.transition = 'opacity 200ms ease';
+      document.body.appendChild(t);
+    }
+
+    window.showToast = function(msg){
+      t.textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(t._hideTimer);
+      t._hideTimer = setTimeout(()=>{ t.style.opacity = '0'; }, 1500);
+    };
+  })();
+
+  // Copy phone on click with toast
+  document.querySelectorAll('.copy-phone').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      const text = el.textContent || '';
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Phone copied to clipboard');
+      }).catch(() => {
+        showToast('Unable to copy');
+      });
+    });
+  });
 </script>
 </body>
 </html>

@@ -39,6 +39,7 @@
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Email</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Phone</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Section</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Method</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Balance Due</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Actions</th>
                 </tr>
@@ -50,6 +51,15 @@
                         <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.email %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.phone %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.contractedCorps ? 'Corps' : (m.contractedIndependent ? 'Independent' : '-') %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;">
+                          <% if (m.paymentMethod) { %>
+                            <span style="display:inline-block; padding:2px 6px; border-radius:10px; background:#f1f1f1; font-size:0.85em;">
+                              <%= m.paymentMethod === 'cash' ? 'Cash/Check' : 'Stripe' %>
+                            </span>
+                          <% } else { %>
+                            <span style="color:#888; font-size:0.85em;">—</span>
+                          <% } %>
+                        </td>
                         <td style="border-bottom:1px solid #eee; padding:6px;" class="owed-col"><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((m.owed || 0) / 100) %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;">
                           <a href="/view-forms/<%= m.id %>">Forms</a> •

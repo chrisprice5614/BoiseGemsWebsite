@@ -44,14 +44,17 @@
                 <br>
                 <br>
                 <div style="align-items: center; display: flex; gap: 8px;">
-                    <label for="read">I will be paying with a check/cash for the down payment.</label>
-                    <input type="checkbox" id="check" name="check" required/>
+                    <label for="pay_with_cash">Pay down payment with cash/check (no online payment)</label>
+                    <input type="checkbox" id="pay_with_cash" name="pay_with_cash" />
+                </div>
+                <div style="color:#555; font-size:0.9em; margin-top:6px;">
+                  If selected, your contract will be signed now and you can pay the down payment in cash/check later. You won't be sent to Stripe.
                 </div>
                 <br>
                 <br>
 
                 <div style="text-align: center;">
-                    <button>Sign &amp; Continue to Payment</button>
+                    <button id="signSubmitBtn">Sign &amp; Continue to Payment</button>
                 </div>
             </form>
         </div>
@@ -62,3 +65,17 @@
     </footer>
 </body>
 </html>
+
+<script>
+    (function(){
+        const cashCb = document.getElementById('pay_with_cash');
+        const btn = document.getElementById('signSubmitBtn');
+        if (cashCb && btn) {
+            const updateText = () => {
+                btn.textContent = cashCb.checked ? 'Sign Contract (Pay Cash/Check Later)' : 'Sign & Continue to Payment';
+            };
+            cashCb.addEventListener('change', updateText);
+            updateText();
+        }
+    })();
+</script>

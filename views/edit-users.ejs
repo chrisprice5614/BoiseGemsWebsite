@@ -144,7 +144,7 @@
                     <span style="color:#888;">—</span>
                   <% } %>
                 </p>
-                <p><b>Birthday: </b><%= new Date(thisUser.birthday + 86400000).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %></p>
+                <p><b>Birthday: </b><%= new Date(thisUser.birthday).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) %></p>
                 <p><b>Age: </b><%= Math.floor((Date.now() - thisUser.birthday) / 31557600000) %></p>
               </div>
               <div>

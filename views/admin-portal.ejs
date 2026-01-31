@@ -21,7 +21,7 @@
                     <br>
                     <p><b>Phone:</b> <%= member.phone %></p>
                     <br>
-                    <p><b>Birthday:</b> <%= new Date(member.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
+                    <p><b>Birthday:</b> <%= new Date(member.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
                     <br>
                     <p><b>Email verified: </b>✅</p>
                     <br>

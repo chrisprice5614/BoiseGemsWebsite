@@ -7,7 +7,7 @@ const db = require("better-sqlite3")("data.db") //npm install better-sqlite3
 const body_parser = require("body-parser")
 const path = require('path');
 const node_fetch = require("node-fetch")
-const nodemailer = require("nodemailer")
+const FormData = require("form-data");
 const multer = require("multer")
 const sharp = require('sharp');
 const fs = require("fs");
@@ -269,28 +269,25 @@ const processImageJpgOptional = async (req, res, next) => {
 
 //mailing function
 async function sendEmail(to, subject, html, attachments = []) {
-  if(!online)
-    return
+  if (!online) return;
 
-    let transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: {
-            user: process.env.MAILNAME,
-            pass: process.env.MAILSECRET
-        },
-        tls: {
-            rejectUnauthorized: false
-        }
-    });
+  const mailgunApiKey = process.env.MAILGUN_API_KEY;
+  const mailgunDomain = process.env.MAILGUN_DOMAIN;
+  const mailgunApiBase = process.env.MAILGUN_API_BASE || "https://api.mailgun.net/v3";
+  const fromAddress = process.env.MAILGUN_FROM || '"The Boise Gems" <theboisegems@' + mailgunDomain + ">";
 
+  if (!mailgunApiKey || !mailgunDomain) {
+    console.error("Mailgun env missing: MAILGUN_API_KEY or MAILGUN_DOMAIN");
+    return;
+  }
 
-    let info = await transporter.sendMail({
-        from: '"The Boise Gems" <theboisegems@gmail.com>',
-        to: to,
-        subject: subject,
-        html: `
+  const form = new FormData();
+  form.append("from", fromAddress);
+  form.append("to", to);
+  form.append("subject", subject);
+  form.append(
+    "html",
+    `
         <!DOCTYPE html>
 <html>
 <head>
@@ -365,12 +362,30 @@ async function sendEmail(to, subject, html, attachments = []) {
   </table>
 </body>
 </html>
+        `
+  );
 
-        `,
-        attachments: attachments && attachments.length ? attachments : undefined
+  if (attachments && attachments.length) {
+    attachments.forEach((attachment) => {
+      if (!attachment) return;
+      form.append("attachment", attachment.content, {
+        filename: attachment.filename || "attachment",
+        contentType: attachment.contentType || "application/octet-stream",
+      });
+    });
+  }
 
-    })
-
+  try {
+    await axios.post(`${mailgunApiBase}/${mailgunDomain}/messages`, form, {
+      auth: {
+        username: "api",
+        password: mailgunApiKey,
+      },
+      headers: form.getHeaders(),
+    });
+  } catch (err) {
+    console.error("Mailgun send error:", err?.response?.data || err);
+  }
 }
 
 function slugify(text) {
@@ -2395,7 +2410,7 @@ app.post("/support/issue", mustBeLoggedInAny, supportUpload.array("screenshots",
       <p>${message.replace(/\n/g, "<br>")}</p>
     `;
 
-    await sendEmail("chris@chrispricemusic.net", "Boise Gems Website Issue", html, attachments);
+    await sendEmail("chrisprice5614@gmail.com", "Boise Gems Website Issue", html, attachments);
 
     return res.render("message", {
       message: "Thank you! Your issue has been submitted. We'll take a look as soon as possible."
@@ -4123,19 +4138,20 @@ app.post("/add-transaction/:id", mustBeAdmin, (req,res) => {
   
 
   const paid = req.body.payment * 100;
+  
+  // Always add the payment to the paid amount
+  const alreadyPaid = Number(child.paid) + paid;
+  
+  // If "Pay Towards Balance" is checked, also reduce what they owe
   if(req.body.tuition)
   {
-    const alreadyPaid = Number(child.paid) + paid;
-    const left = Number(child.owed)-paid;
-  
-
+    const left = Number(child.owed) - paid;
     const updateStatement = db.prepare("UPDATE users SET paid = ?, owed = ? WHERE id = ?")
     updateStatement.run(alreadyPaid, left, req.params.id)
   } else {
-    const alreadyPaid = Number(child.paid)
-
+    // Only update paid amount, don't touch owed
     const updateStatement = db.prepare("UPDATE users SET paid = ? WHERE id = ?")
-    updateStatement.run(alreadyPaid,req.params.id)
+    updateStatement.run(alreadyPaid, req.params.id)
   }
 
   const paidString = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(paid / 100);

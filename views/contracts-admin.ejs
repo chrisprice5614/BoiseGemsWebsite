@@ -11,7 +11,7 @@
 <main>
   <div style="margin:12px;">
     <h1>Contract PDFs</h1>
-    <p>Upload the official contract PDFs for Corps and Independent. These will be shown on the contract acceptance page instead of the long HTML.</p>
+    <p>Upload the official contract PDFs for Corps, Independent, and Affiliate. These will be shown on the contract acceptance page instead of the long HTML.</p>
 
     <form action="/contracts-admin" method="POST" enctype="multipart/form-data">
       <h2>Corps Contract</h2>
@@ -32,6 +32,16 @@
       <% } %>
       <label>Upload new Independent PDF</label>
       <input type="file" name="independent_pdf" accept="application/pdf">
+      <br><br>
+
+      <h2>Affiliate Contract</h2>
+      <% if (affiliateContract) { %>
+        <p>Current file: <a href="<%= affiliateContract.pdf_path %>" target="_blank">View PDF</a></p>
+      <% } else { %>
+        <p><i>No affiliate contract PDF uploaded yet.</i></p>
+      <% } %>
+      <label>Upload new Affiliate PDF</label>
+      <input type="file" name="affiliate_pdf" accept="application/pdf">
       <br><br>
 
       <div style="text-align:center;">

@@ -56,6 +56,29 @@
                   required
                 />
                 <br><br>
+
+                <label for="affiliate">Set Affiliate Fees in Dollars</label>
+                <input
+                  type="number"
+                  name="affiliate"
+                  step="0.01"
+                  autocomplete="off"
+                  value="<%= affiliateFees.amount/100 %>"
+                  required
+                />
+                <br><br>
+
+                <label for="affiliate_deposit">Affiliate Deposit (Down Payment) in Dollars</label>
+                <input
+                  type="number"
+                  name="affiliate_deposit"
+                  step="0.01"
+                  autocomplete="off"
+                  value="<%= (affiliateFees.deposit_amount || 5000)/100 %>"
+                  required
+                />
+                <br><br>
+
                 <div style="text-align: center;">
                     <button>Set Fees</button>
                 </div>

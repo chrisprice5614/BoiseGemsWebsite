@@ -19,6 +19,7 @@
             <option value="all">All Groups</option>
             <option value="corps">Corps</option>
             <option value="independent">Independent</option>
+            <option value="affiliate">Affiliate</option>
           </select>
           <label style="display:flex; align-items:center; gap:6px;"><input id="cm-only-owed" type="checkbox" /> Only owe > $0</label>
           <select id="cm-sort" style="padding:8px; border-radius:6px;">
@@ -46,11 +47,11 @@
               </thead>
               <tbody>
                 <% members.forEach(function(m) { %>
-                      <tr data-name="<%= (m.firstname + ' ' + m.lastname).toLowerCase() %>" data-email="<%= (m.email||'').toLowerCase() %>" data-phone="<%= (m.phone||'') %>" data-group="<%= m.contractedCorps ? 'corps' : (m.contractedIndependent ? 'independent' : 'none') %>" data-owed="<%= (m.owed || 0) %>">
+                      <tr data-name="<%= (m.firstname + ' ' + m.lastname).toLowerCase() %>" data-email="<%= (m.email||'').toLowerCase() %>" data-phone="<%= (m.phone||'') %>" data-group="<%= m.contractedAffiliate ? 'affiliate' : (m.contractedCorps ? 'corps' : (m.contractedIndependent ? 'independent' : 'none')) %>" data-owed="<%= (m.owed || 0) %>">
                         <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.firstname %> <%= m.lastname %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.email %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.phone %></td>
-                        <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.contractedCorps ? 'Corps' : (m.contractedIndependent ? 'Independent' : '-') %></td>
+                        <td style="border-bottom:1px solid #eee; padding:6px;"><%= m.contractedAffiliate ? 'Affiliate' : (m.contractedCorps ? 'Corps' : (m.contractedIndependent ? 'Independent' : '-')) %></td>
                         <td style="border-bottom:1px solid #eee; padding:6px;">
                           <% if (m.paymentMethod) { %>
                             <span style="display:inline-block; padding:2px 6px; border-radius:10px; background:#f1f1f1; font-size:0.85em;">

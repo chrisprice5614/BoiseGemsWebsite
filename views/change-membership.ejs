@@ -36,6 +36,13 @@
                 </select>
                 <br>
                 <br>
+                <label for="typeAffiliate">Enter new AFFILIATE membership for <%= thisUser.firstname %></label>
+                <select name="typeAffiliate" value="" required>
+                    <option value="auditionee">Auditionee</option>
+                    <option value="contracted" <% if(thisUser.contractedAffiliate) { %> selected="selected" <% } %>>Contracted</option>
+                </select>
+                <br>
+                <br>
                 <div style="text-align: center;">
                     <button>Change</button>
                 </div>

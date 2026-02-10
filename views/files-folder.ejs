@@ -116,7 +116,9 @@
               <strong>Who should see these files?</strong><br>
               <label><input type="radio" name="audience" value="corps" <%= scope === "corps" ? "checked" : "" %>> Corps contracted members only</label><br>
               <label><input type="radio" name="audience" value="independent" <%= scope === "indoor" ? "checked" : "" %>> BGI contracted members only</label><br>
-              <label><input type="radio" name="audience" value="both"> Both corps &amp; BGI contracted members</label><br>
+              <label><input type="radio" name="audience" value="affiliate"> Affiliate contracted members only</label><br>
+              <label><input type="radio" name="audience" value="both"> Corps &amp; BGI contracted members</label><br>
+              <label><input type="radio" name="audience" value="all_contracted"> All contracted members (corps, BGI, affiliate)</label><br>
               <label><input type="radio" name="audience" value="everyone"> Everyone in this section (contracted or not)</label>
             </p>
 
@@ -159,7 +161,7 @@
             <ul style="list-style: none; padding-left: 0;">
                   <% roster.forEach(function(m) { 
     const contracted = (scope === "corps"
-      ? m.contractedCorps
+      ? (m.contractedCorps || m.contractedAffiliate)
       : (m.indoorSection && m.indoorSection.trim() !== ""));
   %>
                 <li style="margin-bottom: 8px;">

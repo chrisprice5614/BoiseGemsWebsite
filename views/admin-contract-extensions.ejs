@@ -43,6 +43,8 @@
                     var groupLabel = "Independent";
                     if (ext.season && String(ext.season).includes("corps")) {
                       groupLabel = "Corps";
+                    } else if (ext.season && String(ext.season).includes("affiliate")) {
+                      groupLabel = "Affiliate";
                     }
                   %>
                   <tr>

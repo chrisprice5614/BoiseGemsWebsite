@@ -59,6 +59,7 @@
                 <option value="all" <%= memberFilter === "all" ? "selected" : "" %>>All</option>
                 <option value="corps" <%= memberFilter === "corps" ? "selected" : "" %>>Contracted Corps</option>
                 <option value="independent" <%= memberFilter === "independent" ? "selected" : "" %>>Contracted Independent</option>
+                <option value="affiliate" <%= memberFilter === "affiliate" ? "selected" : "" %>>Contracted Affiliate</option>
               </select>
             </div>
 
@@ -78,6 +79,7 @@
                 <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Section</th>
                 <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Corps</th>
                 <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Independent</th>
+                <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Affiliate</th>
                 <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Email</th>
                 <th style="text-align:left; border-bottom:1px solid #ccc; padding:6px;">Actions</th>
               </tr>
@@ -96,6 +98,9 @@
                   </td>
                   <td style="border-bottom:1px solid #eee; padding:6px;">
                     <%= m.contractedIndependent ? "✅" : "❌" %>
+                  </td>
+                  <td style="border-bottom:1px solid #eee; padding:6px;">
+                    <%= m.contractedAffiliate ? "✅" : "❌" %>
                   </td>
                   <td style="border-bottom:1px solid #eee; padding:6px;">
                     <%= m.email || "—" %>

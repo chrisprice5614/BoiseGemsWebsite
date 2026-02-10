@@ -53,6 +53,7 @@
             <option value="all" <%= memberf==="all" ? "selected" : "" %>>All</option>
             <option value="corps" <%= memberf==="corps" ? "selected" : "" %>>Corps</option>
             <option value="independent" <%= memberf==="independent" ? "selected" : "" %>>Independent</option>
+            <option value="affiliate" <%= memberf==="affiliate" ? "selected" : "" %>>Affiliate</option>
           </select>
         </div>
       </div>
@@ -198,6 +199,12 @@
             <div class="triple-to-single triple-to-single-mod">
               <div>
                 <p><b>Contracted Independent: </b><%= thisUser.contractedIndependent ? "✅" : "❌" %></p>
+              </div>
+            </div>
+
+            <div class="triple-to-single triple-to-single-mod">
+              <div>
+                <p><b>Contracted Affiliate: </b><%= thisUser.contractedAffiliate ? "✅" : "❌" %></p>
               </div>
             </div>
 

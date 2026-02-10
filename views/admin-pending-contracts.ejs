@@ -37,7 +37,7 @@
                     <small><%= req.member_email %></small>
                   </td>
                   <td>
-                    <%= req.group_type === "corps" ? "Corps" : "Independent" %>
+                    <%= req.group_type === "corps" ? "Corps" : (req.group_type === "affiliate" ? "Affiliate" : "Independent") %>
                   </td>
                   <td><%= req.bypass_fee ? "Yes" : "No" %></td>
                   <td>

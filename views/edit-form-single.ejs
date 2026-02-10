@@ -50,13 +50,14 @@
                         <option value="all" <%= (form.ensemble_type||"all")==="all" ? "selected" : "" %>>All members</option>
                         <option value="corps" <%= (form.ensemble_type||"")=="corps" ? "selected" : "" %>>Corps (contracted)</option>
                         <option value="independent" <%= (form.ensemble_type||"")=="independent" ? "selected" : "" %>>Independent (contracted)</option>
+                      <option value="affiliate" <%= (form.ensemble_type||"")=="affiliate" ? "selected" : "" %>>Affiliate (contracted)</option>
                     </select>
                 </div>
                 <div>
                     <label for="contracted">Contracted only?</label>
                     <input type="checkbox" name="contracted" id="contracted" <%= form.contracted ? "checked" : "" %> >
                     <small style="display:block; opacity:.8;">
-                        If you pick “Corps” or “Independent”, this will auto-enable.
+                      If you pick “Corps”, “Independent”, or “Affiliate”, this will auto-enable.
                     </small>
                 </div>
             </div>
@@ -104,7 +105,7 @@
     const chk = document.getElementById('contracted');
     function sync() {
       const v = (sel.value || '').toLowerCase();
-      if (v === 'corps' || v === 'independent') {
+      if (v === 'corps' || v === 'independent' || v === 'affiliate') {
         chk.checked = true;
         chk.disabled = true;
       } else {

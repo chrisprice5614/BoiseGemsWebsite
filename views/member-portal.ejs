@@ -126,11 +126,14 @@
                     <% if(member.contractedIndependent) {%>
                         <p style="text-align: center;">Contracted for <b>Boise Gems Independent</b></p>
                     <% } %>
+                                        <% if(member.contractedAffiliate) {%>
+                                                <p style="text-align: center;">Contracted for <b>Boise Gems Affiliate</b></p>
+                                        <% } %>
                     <% if(member.contractedCorps) {%>
                         <p style="text-align: center;">Contracted for <b>Boise Gems Drum & Bugle Corps</b></p>
                     <% } %>
                     <% 
-                      const isContracted = member.contractedIndependent || member.contractedCorps;
+                                            const isContracted = member.contractedIndependent || member.contractedCorps || member.contractedAffiliate;
                       let videoAuditionUrl = null;
                       if (!isContracted && member.section) {
                         if (member.section === "brass") {
@@ -218,6 +221,8 @@
 
                                 if (contract.season && contract.season.includes("independent")) {
                                     groupString = "Independent";
+                                } else if (contract.season && contract.season.includes("affiliate")) {
+                                    groupString = "Affiliate";
                                 }
 
                                 const dueMs = Number(contract.due_date || 0);

@@ -19,6 +19,7 @@
             <option value="all">All Groups</option>
             <option value="corps">Corps</option>
             <option value="independent">Independent</option>
+            <option value="affiliate">Affiliate</option>
           </select>
           <select id="ec-sort" style="padding:8px; border-radius:6px;">
             <option value="date-desc">Expired New → Old</option>
@@ -43,11 +44,18 @@
               </thead>
               <tbody>
                 <% extensions.forEach(function(ext) { %>
-                  <% var groupLabel = (ext.season && String(ext.season).includes('corps')) ? 'corps' : 'independent'; %>
+                  <% 
+                    var groupLabel = 'independent';
+                    if (ext.season && String(ext.season).includes('corps')) {
+                      groupLabel = 'corps';
+                    } else if (ext.season && String(ext.season).includes('affiliate')) {
+                      groupLabel = 'affiliate';
+                    }
+                  %>
                   <tr data-signer="<%= (ext.signerFirst + ' ' + ext.signerLast).toLowerCase() %>" data-signer-email="<%= (ext.signerEmail||'').toLowerCase() %>" data-child="<%= (ext.childFirst ? (ext.childFirst + ' ' + ext.childLast).toLowerCase() : '') %>" data-group="<%= groupLabel %>" data-due="<%= ext.due_date || 0 %>">
                     <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.signerFirst %> <%= ext.signerLast %><br/><small><%= ext.signerEmail %></small></td>
                     <td style="border-bottom:1px solid #eee; padding:6px;"><% if (ext.childFirst) { %><%= ext.childFirst %> <%= ext.childLast %><% } else { %><em>—</em><% } %></td>
-                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= groupLabel === 'corps' ? 'Corps' : 'Independent' %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= groupLabel === 'corps' ? 'Corps' : (groupLabel === 'affiliate' ? 'Affiliate' : 'Independent') %></td>
                     <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.due_date ? new Date(ext.due_date).toLocaleString() : '—' %></td>
                     <td style="border-bottom:1px solid #eee; padding:6px;">
                       <% const memberId = ext.child_id || ext.user_id; %>

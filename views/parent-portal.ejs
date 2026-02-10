@@ -83,11 +83,13 @@
                                             <div style="margin-top: 12px; text-align: center;">
                                                 <h3>Contract Offers for <%= child.firstname %></h3>
                                                 <% child.contractExtensions.forEach(function(ext) { 
-                                                    const isCorps = String(ext.season || '').includes('corps');
+                                                    const seasonLabel = String(ext.season || '');
+                                                    const isCorps = seasonLabel.includes('corps');
+                                                    const isAffiliate = seasonLabel.includes('affiliate');
                                                 %>
                                                 <p>
                                                     <b>
-                                                    <%= isCorps ? 'Drum & Bugle Corps' : 'Independent' %>
+                                                    <%= isCorps ? 'Drum & Bugle Corps' : (isAffiliate ? 'Affiliate' : 'Independent') %>
                                                     &mdash; Season <%= CURRENTSEASON %>
                                                     </b>
                                                     <br>

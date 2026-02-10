@@ -457,6 +457,11 @@ const createTables = db.transaction(() => {
         `
     ).run()
 
+    const affiliateFees = db.prepare("SELECT id FROM tuitionFees WHERE ensemble = ?").get("affiliate");
+    if (!affiliateFees) {
+      db.prepare("INSERT INTO tuitionFees (ensemble, amount) VALUES (?, ?)").run("affiliate", 55000);
+    }
+
     db.prepare(
         `
         CREATE TABLE IF NOT EXISTS allergies (
@@ -650,10 +655,16 @@ const createTables = db.transaction(() => {
         parent BOOL,
         img STRING,
         contractedCorps INTEGER,
-        contractedIndependent INTEGER
+        contractedIndependent INTEGER,
+        contractedAffiliate INTEGER
         )
         `
     ).run()
+
+    const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+    if (!userCols.includes("contractedAffiliate")) {
+      db.prepare("ALTER TABLE users ADD COLUMN contractedAffiliate INTEGER").run();
+    }
 
     db.prepare(
       `
@@ -855,10 +866,16 @@ const createTables = db.transaction(() => {
         size INTEGER,
         allow_corps INTEGER NOT NULL DEFAULT 0,
         allow_independent INTEGER NOT NULL DEFAULT 0,
+        allow_affiliate INTEGER NOT NULL DEFAULT 0,
         allow_noncontracted INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
       )
     `).run();
+
+    const fileItemCols = db.prepare("PRAGMA table_info(file_items)").all().map(c => c.name);
+    if (!fileItemCols.includes("allow_affiliate")) {
+      db.prepare("ALTER TABLE file_items ADD COLUMN allow_affiliate INTEGER NOT NULL DEFAULT 0").run();
+    }
 
     db.prepare(`
       CREATE TABLE IF NOT EXISTS folder_views (
@@ -913,12 +930,12 @@ if (!rsvpCols.includes("checked_in")) {
   db.prepare(`ALTER TABLE rsvp ADD COLUMN checked_in INTEGER DEFAULT 0`).run();
 }
 
-const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+const userColsPost = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
 
-if (!userCols.includes("indoorInstrument")) {
+if (!userColsPost.includes("indoorInstrument")) {
   db.prepare(`ALTER TABLE users ADD COLUMN indoorInstrument TEXT`).run();
 }
-if (!userCols.includes("indoorSection")) {
+if (!userColsPost.includes("indoorSection")) {
   db.prepare(`ALTER TABLE users ADD COLUMN indoorSection TEXT`).run();
 }
 
@@ -1083,11 +1100,11 @@ function migrateFormsTable(db) {
     WHERE ensemble_type IS NULL OR TRIM(ensemble_type) = ''
   `).run();
 
-  // contracted = 1 for corps/independent
+  // contracted = 1 for corps/independent/affiliate
   db.prepare(`
     UPDATE forms
     SET contracted = 1
-    WHERE LOWER(ensemble_type) IN ('corps','independent')
+    WHERE LOWER(ensemble_type) IN ('corps','independent','affiliate')
   `).run();
 
   // contracted = 0 for 'all' or null (defensive)
@@ -1109,15 +1126,15 @@ function migrateFormsTable(db) {
       SET ensemble_type = 'all'
       WHERE id = NEW.id AND (NEW.ensemble_type IS NULL OR TRIM(NEW.ensemble_type) = '');
 
-      -- contracted = 1 for corps/independent
+      -- contracted = 1 for corps/independent/affiliate
       UPDATE forms
       SET contracted = 1
-      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) IN ('corps','independent');
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) IN ('corps','independent','affiliate');
 
       -- contracted = 0 for 'all' or anything else
       UPDATE forms
       SET contracted = 0
-      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) NOT IN ('corps','independent');
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) NOT IN ('corps','independent','affiliate');
     END;
   `);
 
@@ -1130,15 +1147,15 @@ function migrateFormsTable(db) {
       SET ensemble_type = 'all'
       WHERE id = NEW.id AND (NEW.ensemble_type IS NULL OR TRIM(NEW.ensemble_type) = '');
 
-      -- contracted = 1 for corps/independent
+      -- contracted = 1 for corps/independent/affiliate
       UPDATE forms
       SET contracted = 1
-      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) IN ('corps','independent');
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) IN ('corps','independent','affiliate');
 
       -- contracted = 0 for 'all' or anything else
       UPDATE forms
       SET contracted = 0
-      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) NOT IN ('corps','independent');
+      WHERE id = NEW.id AND LOWER(COALESCE((SELECT ensemble_type FROM forms WHERE id = NEW.id), '')) NOT IN ('corps','independent','affiliate');
     END;
   `);
 }
@@ -1166,11 +1183,11 @@ function migrateFormsTable(db) {
     `).run();
   }
 
-  // ---- Contract PDFs (corps / independent) ----
+  // ---- Contract PDFs (corps / independent / affiliate) ----
   db.prepare(`
     CREATE TABLE IF NOT EXISTS contractPdfs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ensemble TEXT NOT NULL,            -- 'corps' or 'independent'
+      ensemble TEXT NOT NULL,            -- 'corps', 'independent', or 'affiliate'
       pdf_path TEXT NOT NULL,            -- /pdf/publicpdf/...
       uploaded_at INTEGER NOT NULL
     )
@@ -1302,9 +1319,10 @@ function buildFormsQueryForUser(user) {
 
   const wantCorps       = !!user?.contractedCorps;
   const wantIndependent = !!user?.contractedIndependent;
+  const wantAffiliate   = !!user?.contractedAffiliate;
 
   // 1) Not contracted to either group → only general "all", non-contracted, member forms
-  if (!wantCorps && !wantIndependent) {
+  if (!wantCorps && !wantIndependent && !wantAffiliate) {
     return {
       sql: `
         SELECT *
@@ -1353,6 +1371,16 @@ function buildFormsQueryForUser(user) {
     `;
   }
 
+  // Add affiliate contracted forms
+  if (wantAffiliate) {
+    sql += `
+        OR (
+          LOWER(ensemble_type) = 'affiliate'
+          AND COALESCE(contracted, 0) = 1
+        )
+    `;
+  }
+
   // Close the big AND ( ... ) and finish query
   sql += `
       )
@@ -1365,12 +1393,12 @@ function buildFormsQueryForUser(user) {
 
 function getRequiredFormsForUser(userId) {
   const user = db.prepare(`
-    SELECT id, contractedCorps, contractedIndependent
+    SELECT id, contractedCorps, contractedIndependent, contractedAffiliate
     FROM users
     WHERE id = ?
   `).get(userId);
 
-  const q = buildFormsQueryForUser(user || { contractedCorps: 0, contractedIndependent: 0 });
+  const q = buildFormsQueryForUser(user || { contractedCorps: 0, contractedIndependent: 0, contractedAffiliate: 0 });
 
   console.log("FORMS SQL:", q.sql);
   console.log("FORMS PARAMS:", q.params);
@@ -2482,9 +2510,11 @@ app.post("/change-membership/:id", mustBeAdmin, (req,res) => {
 
   const changeCorps = req.body.typeCorps;
   const changeIndependent = req.body.typeIndependent;
+  const changeAffiliate = req.body.typeAffiliate;
 
   let contractedCorps = 0;
   let contractedIndependent = 0;
+  let contractedAffiliate = 0;
 
   if(changeCorps == "contracted")
     contractedCorps = 1
@@ -2492,11 +2522,14 @@ app.post("/change-membership/:id", mustBeAdmin, (req,res) => {
   if(changeIndependent == "contracted")
     contractedIndependent = 1
 
-  const updateStatement = db.prepare("UPDATE users SET contractedCorps = ? , contractedIndependent = ? WHERE id = ?")
-  updateStatement.run(contractedCorps, contractedIndependent, userId)
+  if(changeAffiliate == "contracted")
+    contractedAffiliate = 1
+
+  const updateStatement = db.prepare("UPDATE users SET contractedCorps = ?, contractedIndependent = ?, contractedAffiliate = ? WHERE id = ?")
+  updateStatement.run(contractedCorps, contractedIndependent, contractedAffiliate, userId)
   
 
-  req.session.flashMessage = `${thisUser.firstname} has been changed to contracted for corps is ${changeCorps} and for Independent is ${changeIndependent}`
+  req.session.flashMessage = `${thisUser.firstname} has been changed to contracted for corps is ${changeCorps}, for Independent is ${changeIndependent}, and for Affiliate is ${changeAffiliate}`
 
 
   return res.redirect("/edit-users")
@@ -2547,6 +2580,9 @@ app.get("/accept-contract/:id", mustBeLoggedIn, ensureActiveContractExtension, (
   if (contractExtension.season.includes("corps")) {
     groupLabel = "Drum & Bugle Corps";
     ensemble = "corps";
+  } else if (contractExtension.season.includes("affiliate")) {
+    groupLabel = "Affiliate";
+    ensemble = "affiliate";
   }
 
   // Tuition + deposit info
@@ -2595,6 +2631,8 @@ app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
 
   if (contractExtension.season.includes("corps")) {
     group = "Drum & Bugle Corps";
+  } else if (contractExtension.season.includes("affiliate")) {
+    group = "Affiliate";
   }
 
   return res.render("sign-contract",{group, season: CURRENTSEASON, contractExtension})
@@ -2628,9 +2666,12 @@ app.post(
     const contractFilePath = path.join("private", "pdf", req.file.filename);
 
     // Determine ensemble type
-    const ensemble = contractExtension.season.includes("corps")
-      ? "corps"
-      : "independent";
+    let ensemble = "independent";
+    if (contractExtension.season.includes("corps")) {
+      ensemble = "corps";
+    } else if (contractExtension.season.includes("affiliate")) {
+      ensemble = "affiliate";
+    }
 
     const getTuitionStatement = db.prepare(
       "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
@@ -2646,6 +2687,10 @@ app.post(
       if (ensemble === "corps") {
         db.prepare(
           "UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
+        ).run(tuition.amount, memberId);
+      } else if (ensemble === "affiliate") {
+        db.prepare(
+          "UPDATE users SET contractedAffiliate = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
         ).run(tuition.amount, memberId);
       } else {
         db.prepare(
@@ -2684,7 +2729,7 @@ app.post(
             <p>Hi ${childRow.firstname},</p>
             <p>
               Your parent/guardian has signed your contract for the
-              ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : "Boise Gems Independent"}
+              ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : (ensemble === "affiliate" ? "Boise Gems Affiliate" : "Boise Gems Independent")}
               for the ${CURRENTSEASON} season.
             </p>
             <p>We’re excited to have you with us!</p>
@@ -2792,9 +2837,12 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     return res.redirect("/");
   }
 
-  const ensemble = contractExtension.season.includes("corps")
-    ? "corps"
-    : "independent";
+  let ensemble = "independent";
+  if (contractExtension.season.includes("corps")) {
+    ensemble = "corps";
+  } else if (contractExtension.season.includes("affiliate")) {
+    ensemble = "affiliate";
+  }
 
   // Who is the member this contract is actually FOR?
   const memberId = contractExtension.child_id || contractExtension.user_id;
@@ -2815,6 +2863,7 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   // Set contracted flags
   let updateFields = "";
   if (ensemble === "corps") updateFields = "contractedCorps = 1";
+  else if (ensemble === "affiliate") updateFields = "contractedAffiliate = 1";
   else updateFields = "contractedIndependent = 1";
 
   // Add tuition amount to owed
@@ -3077,6 +3126,8 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
   let welcomeMessage = "The Boise Gems Drum & Bugle Corps";
   if (group === "independent") {
     welcomeMessage = "Boise Gems Independent";
+  } else if (group === "affiliate") {
+    welcomeMessage = "Boise Gems Affiliate";
   }
 
   // Email goes to parent for minors, to member for adults
@@ -3265,6 +3316,8 @@ app.post("/admin/pending-contracts/:id/approve", mustBeAdmin, (req, res) => {
   let welcomeMessage = "The Boise Gems Drum & Bugle Corps";
   if (group === "independent") {
     welcomeMessage = "Boise Gems Independent";
+  } else if (group === "affiliate") {
+    welcomeMessage = "Boise Gems Affiliate";
   }
 
   let emailTarget = { email: member.email, firstname: member.firstname };
@@ -3377,8 +3430,9 @@ app.get("/view-forms/:id", mustBeAdmin, (req,res) => {
 app.get("/set-tuition", mustBeAdmin, (req,res) => {
   const corpsFees = db.prepare("SELECT * FROM tuitionFees WHERE ensemble = ?").get("corps")
   const independentFees = db.prepare("SELECT * FROM tuitionFees WHERE ensemble = ?").get("independent")
+  const affiliateFees = db.prepare("SELECT * FROM tuitionFees WHERE ensemble = ?").get("affiliate")
 
-  return res.render("set-tuition", {corpsFees, independentFees})
+  return res.render("set-tuition", {corpsFees, independentFees, affiliateFees})
 })
 
 app.post("/set-tuition", mustBeAdmin, (req, res) => {
@@ -3386,6 +3440,8 @@ app.post("/set-tuition", mustBeAdmin, (req, res) => {
   const independentAmount = Math.round(Number(req.body.independent || 0) * 100);
   const corpsDeposit      = Math.round(Number(req.body.corps_deposit || 0) * 100);
   const independentDeposit= Math.round(Number(req.body.independent_deposit || 0) * 100);
+  const affiliateAmount   = Math.round(Number(req.body.affiliate || 0) * 100);
+  const affiliateDeposit  = Math.round(Number(req.body.affiliate_deposit || 0) * 100);
 
   db.prepare(
     "UPDATE tuitionFees SET amount = ?, deposit_amount = ? WHERE ensemble = ?"
@@ -3394,6 +3450,10 @@ app.post("/set-tuition", mustBeAdmin, (req, res) => {
   db.prepare(
     "UPDATE tuitionFees SET amount = ?, deposit_amount = ? WHERE ensemble = ?"
   ).run(independentAmount, independentDeposit, "independent");
+
+  db.prepare(
+    "UPDATE tuitionFees SET amount = ?, deposit_amount = ? WHERE ensemble = ?"
+  ).run(affiliateAmount, affiliateDeposit, "affiliate");
 
   req.session.flashMessage = "Tuition fees updated!";
   return res.redirect("/admin-portal");
@@ -3568,6 +3628,8 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
     where.push("contractedCorps = 1");
   } else if (membership === "independent") {
     where.push("contractedIndependent = 1");
+  } else if (membership === "affiliate") {
+    where.push("contractedAffiliate = 1");
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -3655,6 +3717,8 @@ app.get("/staff/members", mustBeStaffOrAdmin, (req, res) => {
     where.push("contractedCorps = 1");
   } else if (membership === "independent") {
     where.push("contractedIndependent = 1");
+  } else if (membership === "affiliate") {
+    where.push("contractedAffiliate = 1");
   }
 
   const whereSql = where.length ? ("WHERE " + where.join(" AND ")) : "";
@@ -3665,7 +3729,8 @@ app.get("/staff/members", mustBeStaffOrAdmin, (req, res) => {
            email,
            section,
            contractedCorps,
-           contractedIndependent
+           contractedIndependent,
+           contractedAffiliate
     FROM users
     ${whereSql}
     ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
@@ -4263,12 +4328,12 @@ app.post(
     const content     = String(req.body.content || "").trim();
 
     let ensemble_type = String(req.body.ensemble_type || "all").trim().toLowerCase();
-    if (!["all", "corps", "independent"].includes(ensemble_type)) {
+    if (!["all", "corps", "independent", "affiliate"].includes(ensemble_type)) {
       ensemble_type = "all";
     }
 
     let contracted =
-      ensemble_type === "corps" || ensemble_type === "independent"
+      ensemble_type === "corps" || ensemble_type === "independent" || ensemble_type === "affiliate"
         ? 1
         : req.body.contracted
         ? 1
@@ -4354,10 +4419,10 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res)
 
   // NEW: ensemble_type & contracted (coerced)
   let ensemble_type  = String(req.body.ensemble_type || "all").trim().toLowerCase();
-  if (!["all", "corps", "independent"].includes(ensemble_type)) ensemble_type = "all";
+  if (!["all", "corps", "independent", "affiliate"].includes(ensemble_type)) ensemble_type = "all";
 
-  // If ensemble_type is corps/independent => contracted must be 1, else honor the checkbox
-  let contracted = (ensemble_type === "corps" || ensemble_type === "independent")
+  // If ensemble_type is corps/independent/affiliate => contracted must be 1, else honor the checkbox
+  let contracted = (ensemble_type === "corps" || ensemble_type === "independent" || ensemble_type === "affiliate")
     ? 1
     : (req.body.contracted ? 1 : 0);
 
@@ -4464,7 +4529,7 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
   const message = String(req.body.message || "").trim();
   const section = String(req.body.section || "all").trim();
   const membership = String(req.body.membership || "all").trim();
-  // "none" | "all" | "corps" | "independent"
+  // "none" | "all" | "corps" | "independent" | "affiliate"
   const extensionMode = String(req.body.extensionMode || "none")
     .trim()
     .toLowerCase();
@@ -4487,13 +4552,16 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
     where.push("CAST(SUBSTR(ce.season, 1, 4) AS INTEGER) = ?");
     params.push(CURRENTSEASON);
 
-    // Filter by corps vs independent extension
+    // Filter by corps vs independent vs affiliate extension
     if (extensionMode === "corps") {
       where.push("LOWER(ce.season) LIKE ?");
       params.push("%corps%");
     } else if (extensionMode === "independent") {
       where.push("LOWER(ce.season) LIKE ?");
       params.push("%independent%");
+    } else if (extensionMode === "affiliate") {
+      where.push("LOWER(ce.season) LIKE ?");
+      params.push("%affiliate%");
     }
 
     // Optional section filter (Brass, Guard, etc.)
@@ -4537,6 +4605,8 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
       where.push("contractedCorps = 1");
     } else if (membership === "independent") {
       where.push("contractedIndependent = 1");
+    } else if (membership === "affiliate") {
+      where.push("contractedAffiliate = 1");
     }
 
     where.push("email IS NOT NULL AND TRIM(email) <> ''");
@@ -4616,6 +4686,9 @@ app.post("/email-members", mustBeAdmin, (req, res) => {
     } else if (extensionMode === "independent") {
       where.push("LOWER(ce.season) LIKE ?");
       params.push("%independent%");
+    } else if (extensionMode === "affiliate") {
+      where.push("LOWER(ce.season) LIKE ?");
+      params.push("%affiliate%");
     }
 
     if (section !== "all") {
@@ -4656,6 +4729,8 @@ app.post("/email-members", mustBeAdmin, (req, res) => {
       where.push("contractedCorps = 1");
     } else if (membership === "independent") {
       where.push("contractedIndependent = 1");
+    } else if (membership === "affiliate") {
+      where.push("contractedAffiliate = 1");
     }
 
     where.push("email IS NOT NULL AND TRIM(email) <> ''");
@@ -5293,7 +5368,7 @@ app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
   const rows = db.prepare(
      `SELECT 
        u.id, u.firstname, u.lastname, u.email, u.phone, u.address, u.owed, 
-       u.contractedCorps AS contractedCorps, u.contractedIndependent AS contractedIndependent,
+      u.contractedCorps AS contractedCorps, u.contractedIndependent AS contractedIndependent, u.contractedAffiliate AS contractedAffiliate,
        (
          SELECT paymentMethod 
          FROM contractedMembers cm 
@@ -5302,7 +5377,7 @@ app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
          LIMIT 1
        ) AS paymentMethod
     FROM users u
-    WHERE u.contractedCorps = 1 OR u.contractedIndependent = 1
+    WHERE u.contractedCorps = 1 OR u.contractedIndependent = 1 OR u.contractedAffiliate = 1
      ORDER BY u.lastname, u.firstname`
   ).all();
 
@@ -5695,10 +5770,10 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
   const eventType = String(event.type || "").toLowerCase();
 
   // Check member contract status
-   const userRow =
+  const userRow =
     db
       .prepare(
-        "SELECT contractedCorps, contractedIndependent FROM users WHERE id = ?"
+        "SELECT contractedCorps, contractedIndependent, contractedAffiliate FROM users WHERE id = ?"
       )
       .get(req.user.userid) || {};
 
@@ -5709,7 +5784,8 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
         `
         SELECT
           MAX(COALESCE(contractedCorps, 0))       AS anyCorps,
-          MAX(COALESCE(contractedIndependent, 0)) AS anyIndependent
+          MAX(COALESCE(contractedIndependent, 0)) AS anyIndependent,
+          MAX(COALESCE(contractedAffiliate, 0))   AS anyAffiliate
         FROM users
         WHERE parentId = ?
         `
@@ -5720,6 +5796,8 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
     !!(userRow.contractedCorps || childContracts.anyCorps);
   const isIndependentContracted =
     !!(userRow.contractedIndependent || childContracts.anyIndependent);
+  const isAffiliateContracted =
+    !!(userRow.contractedAffiliate || childContracts.anyAffiliate);
 
   // RULES:
   // 1) Corps contracted => free RSVP for "experience camp" and "camp"
@@ -5727,6 +5805,9 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
 
   // 2) Independent contracted => free RSVP for "BGI Audition" and "BGI Camp"
   const bgiFreeTypes = ["bgi audition", "bgi camp"];
+
+  // 3) Affiliate contracted => add event types here if needed
+  const affiliateFreeTypes = [];
 
   let isFreeForThisUser = false;
   let freeReason = "";
@@ -5741,6 +5822,12 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
     isFreeForThisUser = true;
     freeReason =
       "Contracted independent members (or their parents) do not pay for this BGI event.";
+  }
+
+  if (isAffiliateContracted && affiliateFreeTypes.includes(eventType)) {
+    isFreeForThisUser = true;
+    freeReason =
+      "Contracted affiliate members (or their parents) do not pay for this event.";
   }
 
   // If user qualifies for free RSVP based on contract + event type
@@ -6097,9 +6184,16 @@ app.get("/contracts-admin", mustBeAdmin, (req, res) => {
     )
     .get("independent");
 
+  const affiliateContract = db
+    .prepare(
+      "SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    .get("affiliate");
+
   res.render("contracts-admin", {
     corpsContract,
     independentContract,
+    affiliateContract,
   });
 });
 
@@ -6109,6 +6203,7 @@ app.post(
   pdfUpload.fields([
     { name: "corps_pdf", maxCount: 1 },
     { name: "independent_pdf", maxCount: 1 },
+    { name: "affiliate_pdf", maxCount: 1 },
   ]),
   (req, res) => {
     const now = Date.now();
@@ -6127,6 +6222,14 @@ app.post(
       db.prepare(
         "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
       ).run("independent", pdfPath, now);
+    }
+
+    if (req.files && req.files["affiliate_pdf"] && req.files["affiliate_pdf"][0]) {
+      const file = req.files["affiliate_pdf"][0];
+      const pdfPath = `/pdf/publicpdf/${file.filename}`;
+      db.prepare(
+        "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
+      ).run("affiliate", pdfPath, now);
     }
 
     req.session.flashMessage = "Contract PDFs updated.";
@@ -6440,7 +6543,7 @@ app.post("/admin-rsvps/:eventId/email/:userId", mustBeAdmin, async (req, res) =>
 
 
 app.get("/admin-forms", mustBeAdmin, (req, res) => {
-  const membership = String(req.query.membership || "all").toLowerCase(); // all|corps|independent
+  const membership = String(req.query.membership || "all").toLowerCase(); // all|corps|independent|affiliate
   const sectionFilter = String(req.query.section || "").trim();
 
   const where = ["1=1"];
@@ -6450,6 +6553,8 @@ app.get("/admin-forms", mustBeAdmin, (req, res) => {
     where.push("contractedCorps = 1");
   } else if (membership === "independent") {
     where.push("contractedIndependent = 1");
+  } else if (membership === "affiliate") {
+    where.push("contractedAffiliate = 1");
   }
 
   if (sectionFilter) {
@@ -6461,7 +6566,7 @@ app.get("/admin-forms", mustBeAdmin, (req, res) => {
     .prepare(
       `
       SELECT id, firstname, lastname, section, instrument,
-             contractedCorps, contractedIndependent
+             contractedCorps, contractedIndependent, contractedAffiliate
       FROM users
       WHERE ${where.join(" AND ")}
       ORDER BY lastname, firstname
@@ -6789,6 +6894,7 @@ function getSectionRoster(section, scope) {
       instrument,
       contractedCorps,
       contractedIndependent,
+      contractedAffiliate,
       img,
       indoorSection,
       indoorInstrument
@@ -6804,9 +6910,10 @@ function getSectionRoster(section, scope) {
 
 
 function buildVisibilityFlags(audience) {
-  // audience: 'corps', 'independent', 'both', 'everyone'
+  // audience: 'corps', 'independent', 'affiliate', 'both', 'all_contracted', 'everyone'
   let allow_corps = 0;
   let allow_independent = 0;
+  let allow_affiliate = 0;
   let allow_noncontracted = 0;
 
   switch (audience) {
@@ -6816,13 +6923,22 @@ function buildVisibilityFlags(audience) {
     case "independent":
       allow_independent = 1;
       break;
+    case "affiliate":
+      allow_affiliate = 1;
+      break;
     case "both":
       allow_corps = 1;
       allow_independent = 1;
       break;
+    case "all_contracted":
+      allow_corps = 1;
+      allow_independent = 1;
+      allow_affiliate = 1;
+      break;
     case "everyone":
       allow_corps = 1;
       allow_independent = 1;
+      allow_affiliate = 1;
       allow_noncontracted = 1;
       break;
     default:
@@ -6830,13 +6946,14 @@ function buildVisibilityFlags(audience) {
       allow_independent = 1;
   }
 
-  return { allow_corps, allow_independent, allow_noncontracted };
+  return { allow_corps, allow_independent, allow_affiliate, allow_noncontracted };
 }
 
 function canUserSeeFileItem(userRow, fileRow) {
   if (!userRow) return false;
   const isCorps = !!userRow.contractedCorps;
   const isInd = !!userRow.contractedIndependent;
+  const isAffiliate = !!userRow.contractedAffiliate;
 
   if (fileRow.allow_noncontracted) {
     // Everyone can see
@@ -6846,6 +6963,7 @@ function canUserSeeFileItem(userRow, fileRow) {
   // Contracted only
   if (fileRow.allow_corps && isCorps) return true;
   if (fileRow.allow_independent && isInd) return true;
+  if (fileRow.allow_affiliate && isAffiliate) return true;
 
   // Edge case: both but user not contracted in either => no
   return false;
@@ -6907,7 +7025,7 @@ app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
   if (ctx.section) {
     const rosterRows = db.prepare(`
       SELECT id, firstname, lastname, section, instrument, img,
-             contractedCorps, contractedIndependent
+              contractedCorps, contractedIndependent, contractedAffiliate
       FROM users
       WHERE LOWER(section) = LOWER(?)
         AND (parent IS NULL OR parent = 0)
@@ -6925,6 +7043,7 @@ app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
       instrument: r.instrument,
       contractedCorps: !!r.contractedCorps,
       contractedIndependent: !!r.contractedIndependent,
+      contractedAffiliate: !!r.contractedAffiliate,
       hasViewed: viewedSet.has(r.id)
     }));
   }
@@ -7000,7 +7119,7 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
   const folder = ctx.folder;
 
   const audience = String(req.body.audience || "corps").toLowerCase();
-  const { allow_corps, allow_independent, allow_noncontracted } = buildVisibilityFlags(audience);
+  const { allow_corps, allow_independent, allow_affiliate, allow_noncontracted } = buildVisibilityFlags(audience);
 
   // Titles can be provided as one-per-line
   const titlesText = String(req.body.titlesText || "")
@@ -7018,10 +7137,10 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
     INSERT INTO file_items (
       folder_id, uploader_id, title, original_name, stored_path,
       mime_type, size,
-      allow_corps, allow_independent, allow_noncontracted,
+      allow_corps, allow_independent, allow_affiliate, allow_noncontracted,
       created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   req.files.forEach((file, idx) => {
@@ -7038,6 +7157,7 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
       file.size,
       allow_corps,
       allow_independent,
+      allow_affiliate,
       allow_noncontracted,
       now
     );
@@ -7078,14 +7198,18 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
       where += " AND contractedCorps = 1";
     } else if (audience === "independent") {
       where += " AND contractedIndependent = 1";
+    } else if (audience === "affiliate") {
+      where += " AND contractedAffiliate = 1";
     } else if (audience === "both") {
       where += " AND (contractedCorps = 1 OR contractedIndependent = 1)";
+    } else if (audience === "all_contracted") {
+      where += " AND (contractedCorps = 1 OR contractedIndependent = 1 OR contractedAffiliate = 1)";
     } else if (audience === "everyone") {
       // no contract filter
     }
 
     const rows = db.prepare(`
-      SELECT firstname, lastname, email, contractedCorps, contractedIndependent
+      SELECT firstname, lastname, email, contractedCorps, contractedIndependent, contractedAffiliate
       FROM users
       WHERE ${where}
     `).all(...params);

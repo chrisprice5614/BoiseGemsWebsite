@@ -18,6 +18,7 @@
           <option value="all" <%= membership==="all" ? "selected" : "" %>>All</option>
           <option value="corps" <%= membership==="corps" ? "selected" : "" %>>Corps</option>
           <option value="independent" <%= membership==="independent" ? "selected" : "" %>>Independent</option>
+          <option value="affiliate" <%= membership==="affiliate" ? "selected" : "" %>>Affiliate</option>
         </select>
       </label>
 
@@ -48,7 +49,8 @@
              const finished = r.requiredCount > 0 && r.missingCount === 0;
              let memberLabel = "None";
              if (u.contractedCorps) memberLabel = "Corps";
-             if (u.contractedIndependent) memberLabel = "Independent";
+               if (u.contractedIndependent) memberLabel = "Independent";
+               if (u.contractedAffiliate) memberLabel = "Affiliate";
         %>
           <tr>
             <td><%= u.firstname %> <%= u.lastname %></td>

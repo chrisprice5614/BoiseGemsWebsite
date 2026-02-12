@@ -8,6 +8,61 @@
   <style>
     /* Scoped only to this page */
     .cal { font-size: 14px; }
+    .cal .ical-wrap { position: relative; display: inline-block; margin: 0 0 10px 0; }
+    .cal .ical-toggle {
+      border: 1px solid #2a2c33;
+      background: #1b1b1d;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .cal .ical-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      z-index: 30;
+      min-width: 260px;
+      max-width: min(92vw, 320px);
+      border: 1px solid #2a2c33;
+      background: #141519;
+      border-radius: 10px;
+      box-shadow: 0 14px 28px rgba(0,0,0,.42);
+      padding: 10px;
+      display: none;
+    }
+    .cal .ical-menu.active { display: block; }
+    .cal .ical-title { color: #d7d9de; font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; margin: 0 0 8px; }
+    .cal .ical-options { display: grid; gap: 6px; max-height: 240px; overflow: auto; margin-bottom: 10px; }
+    .cal .ical-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #f0f1f4;
+      font-size: 13px;
+      padding: 4px 2px;
+      border-radius: 6px;
+    }
+    .cal .ical-option:hover { background: rgba(255,255,255,.06); }
+    .cal .ical-option input { margin: 0; }
+    .cal .ical-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .cal .ical-actions { display: flex; justify-content: space-between; gap: 8px; }
+    .cal .ical-actions button {
+      border: 1px solid #2a2c33;
+      background: #1b1b1d;
+      color: #fff;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      text-transform: none;
+      box-shadow: none;
+      text-shadow: none;
+    }
+    .cal .ical-actions button:hover { background: #26282e; color: #fff; }
+
     .cal .key { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:8px 0 12px 0; }
     .cal .key .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#1b1b1d; color:#fff; }
     .cal .key .swatch { width:10px; height:10px; border-radius:2px; display:inline-block; }
@@ -36,6 +91,7 @@
     .feat-title { margin:0; font-size:18px; font-weight:700; line-height:1.25; }
     .feat-desc {
       color:#3d3e40; font-size:14px; line-height:1.45;
+      line-clamp:2;
       display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
     }
     .feat-meta { display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:#535458; font-size:13.5px; }
@@ -74,6 +130,9 @@
     .cal .event.type-performance     { border-left-color:#5c6bc0; background:linear-gradient(90deg, rgba(92,107,192,.18), transparent); }
     .cal .event.type-fundraiser      { border-left-color:#ef6c00; background:linear-gradient(90deg, rgba(239,108,0,.18), transparent); }
     .cal .event.type-spring-training { border-left-color:#9e9d24; background:linear-gradient(90deg, rgba(158,157,36,.18), transparent); }
+    .cal .event.type-bgi-audition    { border-left-color:#ec407a; background:linear-gradient(90deg, rgba(236,64,122,.18), transparent); }
+    .cal .event.type-bgi-camp        { border-left-color:#26c6da; background:linear-gradient(90deg, rgba(38,198,218,.18), transparent); }
+    .cal .event.type-bgi-performance { border-left-color:#7e57c2; background:linear-gradient(90deg, rgba(126,87,194,.18), transparent); }
     .cal .event.type-other           { border-left-color:#eeaaee; background:linear-gradient(90deg, rgba(238,170,238,.18), transparent); }
 
     .cal .evt-label { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -129,9 +188,22 @@
 </head>
 <body>
 <header><%- include("includes/header") %></header>
+<script id="calendar-events-json" type="application/json"><%- JSON.stringify(events || []).replace(/</g, '\\u003c') %></script>
 
 <main>
   <div class="cal" style="padding: 4px;">
+    <div class="ical-wrap">
+      <button type="button" class="ical-toggle" id="ical-toggle">Export iCal ▾</button>
+      <div class="ical-menu" id="ical-menu" aria-hidden="true">
+        <p class="ical-title">Choose event categories</p>
+        <div class="ical-options" id="ical-options"></div>
+        <div class="ical-actions">
+          <button type="button" id="ical-check-all">Select All</button>
+          <button type="button" id="ical-download">Download .ics</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Legend / Key -->
     <div class="key">
       <span class="chip"><span class="swatch" style="background:#43a047"></span>Camp</span>
@@ -347,5 +419,220 @@
 </main>
 
 <footer><%- include("includes/footer") %></footer>
+<script>
+  (() => {
+    const rawEventsJson = document.getElementById('calendar-events-json')?.textContent || '[]';
+    const eventsData = JSON.parse(rawEventsJson);
+
+    const typeColorMap = {
+      'camp': '#43a047',
+      'experience camp': '#26a69a',
+      'performance': '#5c6bc0',
+      'fundraiser': '#ef6c00',
+      'spring training': '#9e9d24',
+      'bgi audition': '#ec407a',
+      'bgi camp': '#26c6da',
+      'bgi performance': '#7e57c2',
+      'other': '#eeaaee'
+    };
+    const orderedTypes = [
+      'camp',
+      'experience camp',
+      'performance',
+      'fundraiser',
+      'spring training',
+      'bgi audition',
+      'bgi camp',
+      'bgi performance',
+      'other'
+    ];
+
+    const normalizeType = (value) => String(value || '').trim().toLowerCase();
+    const dateOrNull = (value) => {
+      if (!value) return null;
+      const dt = new Date(value);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const toMountainLocalStamp = (value) => {
+      if (!value) return null;
+      const raw = String(value).trim();
+      const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+      if (!match) return null;
+
+      const year = match[1];
+      const month = match[2];
+      const day = match[3];
+      const hour = match[4] || '00';
+      const minute = match[5] || '00';
+      const second = match[6] || '00';
+
+      return `${year}${month}${day}T${hour}${minute}${second}`;
+    };
+
+    const allTypesSet = new Set(eventsData.map(e => normalizeType(e.type)).filter(Boolean));
+    orderedTypes.forEach(t => allTypesSet.add(t));
+    const categoryTypes = Array.from(allTypesSet).sort((a, b) => {
+      const ai = orderedTypes.indexOf(a);
+      const bi = orderedTypes.indexOf(b);
+      const ar = ai === -1 ? 999 : ai;
+      const br = bi === -1 ? 999 : bi;
+      return ar !== br ? ar - br : a.localeCompare(b);
+    });
+
+    const toggleBtn = document.getElementById('ical-toggle');
+    const menu = document.getElementById('ical-menu');
+    const optionsRoot = document.getElementById('ical-options');
+    const checkAllBtn = document.getElementById('ical-check-all');
+    const downloadBtn = document.getElementById('ical-download');
+
+    if (!toggleBtn || !menu || !optionsRoot || !checkAllBtn || !downloadBtn) return;
+
+    optionsRoot.innerHTML = categoryTypes.map((type) => {
+      const color = typeColorMap[type] || '#666';
+      const label = type.replace(/\b\w/g, (m) => m.toUpperCase());
+      return `
+        <label class="ical-option">
+          <input type="checkbox" class="ical-type" value="${type}" checked>
+          <span class="ical-dot" style="background:${color}"></span>
+          <span>${label}</span>
+        </label>
+      `;
+    }).join('');
+
+    const getCheckedTypes = () => {
+      return Array.from(document.querySelectorAll('.ical-type:checked')).map((node) => node.value);
+    };
+
+    const escapeIcalText = (value) => {
+      return String(value || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\r?\n/g, '\\n');
+    };
+
+    const toIcalTimestamp = (value) => {
+      const dt = dateOrNull(value);
+      if (!dt) return null;
+      const year = dt.getUTCFullYear();
+      const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(dt.getUTCDate()).padStart(2, '0');
+      const hour = String(dt.getUTCHours()).padStart(2, '0');
+      const min = String(dt.getUTCMinutes()).padStart(2, '0');
+      const sec = String(dt.getUTCSeconds()).padStart(2, '0');
+      return `${year}${month}${day}T${hour}${min}${sec}Z`;
+    };
+
+    const makeUid = (event) => {
+      const base = event.slug || `${event.title || 'event'}-${event.datetime || Date.now()}`;
+      return `${String(base).replace(/\s+/g, '-').toLowerCase()}@boisegems.org`;
+    };
+
+    const buildIcs = (selectedTypes) => {
+      const selectedSet = new Set(selectedTypes.map(normalizeType));
+      const filtered = eventsData.filter((event) => selectedSet.has(normalizeType(event.type)));
+      const dtStamp = toIcalTimestamp(new Date().toISOString());
+
+      const rows = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Boise Gems//Calendar Export//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'X-WR-TIMEZONE:America/Denver',
+        'BEGIN:VTIMEZONE',
+        'TZID:America/Denver',
+        'X-LIC-LOCATION:America/Denver',
+        'BEGIN:DAYLIGHT',
+        'TZOFFSETFROM:-0700',
+        'TZOFFSETTO:-0600',
+        'TZNAME:MDT',
+        'DTSTART:19700308T020000',
+        'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+        'END:DAYLIGHT',
+        'BEGIN:STANDARD',
+        'TZOFFSETFROM:-0600',
+        'TZOFFSETTO:-0700',
+        'TZNAME:MST',
+        'DTSTART:19701101T020000',
+        'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+        'END:STANDARD',
+        'END:VTIMEZONE'
+      ];
+
+      filtered.forEach((event) => {
+        const start = toMountainLocalStamp(event.datetime);
+        if (!start) return;
+        const end = toMountainLocalStamp(event.endtime) || start;
+
+        rows.push('BEGIN:VEVENT');
+        rows.push(`UID:${escapeIcalText(makeUid(event))}`);
+        rows.push(`DTSTAMP:${dtStamp}`);
+        rows.push(`DTSTART;TZID=America/Denver:${start}`);
+        rows.push(`DTEND;TZID=America/Denver:${end}`);
+        rows.push(`SUMMARY:${escapeIcalText(event.title || 'Boise Gems Event')}`);
+
+        if (event.description || event.desc) {
+          rows.push(`DESCRIPTION:${escapeIcalText(event.description || event.desc)}`);
+        }
+        if (event.location) {
+          rows.push(`LOCATION:${escapeIcalText(event.location)}`);
+        }
+        if (event.type) {
+          rows.push(`CATEGORIES:${escapeIcalText(event.type)}`);
+        }
+
+        rows.push('END:VEVENT');
+      });
+
+      rows.push('END:VCALENDAR');
+      return rows.join('\r\n');
+    };
+
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('active');
+      menu.setAttribute('aria-hidden', menu.classList.contains('active') ? 'false' : 'true');
+    });
+
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => {
+      menu.classList.remove('active');
+      menu.setAttribute('aria-hidden', 'true');
+    });
+
+    checkAllBtn.addEventListener('click', () => {
+      const checkboxes = Array.from(document.querySelectorAll('.ical-type'));
+      const shouldCheckAll = checkboxes.some((input) => !input.checked);
+      checkboxes.forEach((input) => { input.checked = shouldCheckAll; });
+      checkAllBtn.textContent = shouldCheckAll ? 'Clear All' : 'Select All';
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const selected = getCheckedTypes();
+      if (!selected.length) {
+        alert('Choose at least one category to export.');
+        return;
+      }
+
+      const ics = buildIcs(selected);
+      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const date = new Date();
+      const yy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+
+      link.href = url;
+      link.download = `boise-gems-calendar-${yy}${mm}${dd}.ics`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+  })();
+</script>
 </body>
 </html>

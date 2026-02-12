@@ -6197,6 +6197,158 @@ app.get("/contracts-admin", mustBeAdmin, (req, res) => {
   });
 });
 
+const csvEscape = (value) => {
+  if (value === null || value === undefined) return '""';
+  const normalized = String(value).replace(/\r?\n/g, " ").replace(/"/g, '""');
+  return `"${normalized}"`;
+};
+
+const formatBirthdayHuman = (timestamp) => {
+  const millis = Number(timestamp);
+  if (!Number.isFinite(millis) || millis <= 0) return "";
+  return new Date(millis).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+};
+
+app.get("/contracts-admin/export-contracts.csv", mustBeAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      firstname,
+      lastname,
+      birthday,
+      phone,
+      email,
+      section,
+      instrument,
+      contractedCorps,
+      contractedIndependent,
+      contractedAffiliate
+    FROM users
+    WHERE contractedCorps = 1 OR contractedIndependent = 1 OR contractedAffiliate = 1
+  `).all();
+
+  const groupOrder = { Corps: 0, Independent: 1, Affiliate: 2 };
+
+  const decorated = rows.map((row) => {
+    let contractedBy = "";
+    if (row.contractedCorps) contractedBy = "Corps";
+    else if (row.contractedIndependent) contractedBy = "Independent";
+    else if (row.contractedAffiliate) contractedBy = "Affiliate";
+
+    return {
+      contractedBy,
+      firstname: row.firstname || "",
+      lastname: row.lastname || "",
+      birthday: formatBirthdayHuman(row.birthday),
+      phone: row.phone || "",
+      email: row.email || "",
+      section: row.section || "",
+      instrument: row.instrument || ""
+    };
+  });
+
+  decorated.sort((a, b) => {
+    const aGroup = groupOrder[a.contractedBy] ?? 999;
+    const bGroup = groupOrder[b.contractedBy] ?? 999;
+    if (aGroup !== bGroup) return aGroup - bGroup;
+
+    const ln = a.lastname.localeCompare(b.lastname, "en", { sensitivity: "base" });
+    if (ln !== 0) return ln;
+    return a.firstname.localeCompare(b.firstname, "en", { sensitivity: "base" });
+  });
+
+  const lines = [
+    [
+      "Contracted By",
+      "First Name",
+      "Last Name",
+      "Date of Birth",
+      "Phone Number",
+      "Email",
+      "Section",
+      "Instrument"
+    ].join(",")
+  ];
+
+  decorated.forEach((row) => {
+    lines.push([
+      csvEscape(row.contractedBy),
+      csvEscape(row.firstname),
+      csvEscape(row.lastname),
+      csvEscape(row.birthday),
+      csvEscape(row.phone),
+      csvEscape(row.email),
+      csvEscape(row.section),
+      csvEscape(row.instrument)
+    ].join(","));
+  });
+
+  const csv = lines.join("\r\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="contracts-${Date.now()}.csv"`);
+  return res.send(csv);
+});
+
+app.get("/contracts-admin/export-emergency.csv", mustBeAdmin, (req, res) => {
+  const users = db.prepare(`
+    SELECT id, firstname, lastname, birthday, phone, email
+    FROM users
+    ORDER BY lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
+  `).all();
+
+  const contactRows = db.prepare(`
+    SELECT user_id, name, phone, email
+    FROM emergencyContacts
+    ORDER BY user_id ASC, id ASC
+  `).all();
+
+  const contactsByUser = new Map();
+  contactRows.forEach((contact) => {
+    if (!contactsByUser.has(contact.user_id)) contactsByUser.set(contact.user_id, []);
+    contactsByUser.get(contact.user_id).push(contact);
+  });
+
+  const lines = [
+    [
+      "First Name",
+      "Last Name",
+      "Date of Birth",
+      "Phone Number",
+      "Email",
+      "Emergency Contacts"
+    ].join(",")
+  ];
+
+  users.forEach((userRow) => {
+    const contacts = contactsByUser.get(userRow.id) || [];
+    const allEmergencyInfo = contacts.length
+      ? contacts
+          .map((contact) => {
+            const pieces = [contact.name || "", contact.phone || "", contact.email || ""].filter(Boolean);
+            return pieces.join(" | ");
+          })
+          .join(" || ")
+      : "";
+
+    lines.push([
+      csvEscape(userRow.firstname || ""),
+      csvEscape(userRow.lastname || ""),
+      csvEscape(formatBirthdayHuman(userRow.birthday)),
+      csvEscape(userRow.phone || ""),
+      csvEscape(userRow.email || ""),
+      csvEscape(allEmergencyInfo)
+    ].join(","));
+  });
+
+  const csv = lines.join("\r\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="emergency-${Date.now()}.csv"`);
+  return res.send(csv);
+});
+
 app.post(
   "/contracts-admin",
   mustBeAdmin,
@@ -6729,43 +6881,133 @@ app.post("/staff/reorder", mustBeAdmin, (req, res) => {
   res.redirect("/staff-admin");
 });
 
-app.get("/about", (req, res) => {
-  const staff = db.prepare(`
+const getStaffForAboutPages = () => {
+  return db.prepare(`
     SELECT id, first, last, position, category, bio, image, slug, sort_order
     FROM staff
     ORDER BY category COLLATE NOCASE, sort_order ASC, last COLLATE NOCASE
   `).all();
+};
 
-  const corpsStaff = [];
-  const bgiStaff   = [];
+const normalizeStaffText = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
-  // Split into Corps vs BGI based on category/position containing "BGI"
-  staff.forEach((s) => {
-    const cat = String(s.category || "");
-    const pos = String(s.position || "");
+const getCombinedStaffText = (s) =>
+  `${normalizeStaffText(s.category)} ${normalizeStaffText(s.position)}`.trim();
 
-    const isBGI = /bgi/i.test(cat) || /bgi/i.test(pos);
+const matchesAnyWord = (text, words) => words.some((word) => text.includes(word));
 
-    if (isBGI) {
-      bgiStaff.push(s);
-    } else {
-      corpsStaff.push(s);
+const buildStaffSections = (staff, sectionDefs) => {
+  return sectionDefs
+    .map((section) => ({
+      title: section.title,
+      staff: staff.filter(section.match)
+    }))
+    .filter((section) => section.staff.length > 0);
+};
+
+const getBaseStaffSectionDefs = () => [
+  {
+    title: "Director",
+    match: (s) => matchesAnyWord(getCombinedStaffText(s), ["director"])
+  },
+  {
+    title: "Admin",
+    match: (s) => matchesAnyWord(getCombinedStaffText(s), ["admin"])
+  }
+];
+
+app.get("/our-history-about", (req, res) => {
+  const staff = getStaffForAboutPages();
+
+  const staffSections = buildStaffSections(staff, [
+    ...getBaseStaffSectionDefs(),
+    {
+      title: "Board",
+      match: (s) => {
+        const text = getCombinedStaffText(s);
+        return text.includes("board") && !text.includes("advisory");
+      }
+    },
+    {
+      title: "Advisory Board",
+      match: (s) => {
+        const text = getCombinedStaffText(s);
+        return text.includes("advisory");
+      }
     }
+  ]);
+
+  res.render("our-history-about", { staffSections });
+});
+
+app.get("/boise-gems-corps-about", (req, res) => {
+  const staff = getStaffForAboutPages();
+  const nonBGIStaff = staff.filter((s) => !getCombinedStaffText(s).includes("bgi"));
+
+  const staffSections = buildStaffSections(nonBGIStaff, [
+    ...getBaseStaffSectionDefs(),
+    {
+      title: "Design",
+      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["design"])
+    },
+    {
+      title: "Brass",
+      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["brass"])
+    },
+    {
+      title: "Percussion",
+      match: (s) => {
+        const text = getCombinedStaffText(s);
+        return text.includes("percussion") && !text.includes("front ensemble");
+      }
+    },
+    {
+      title: "Front Ensemble",
+      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["front ensemble"])
+    },
+    {
+      title: "Color Guard",
+      match: (s) => {
+        const text = getCombinedStaffText(s);
+        return text.includes("color guard") || text.includes("colorguard");
+      }
+    },
+    {
+      title: "Visual",
+      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["visual"])
+    }
+  ]);
+
+  res.render("boise-gems-corps-about", { staffSections });
+});
+
+app.get("/boise-gems-independent", (req, res) => {
+  const staff = getStaffForAboutPages();
+  const baseSections = buildStaffSections(staff, getBaseStaffSectionDefs());
+
+  const bgiCategoryMap = new Map();
+  staff.forEach((s) => {
+    const category = String(s.category || "").trim();
+    if (!/^bgi\b/i.test(category)) return;
+
+    if (!bgiCategoryMap.has(category)) bgiCategoryMap.set(category, []);
+    bgiCategoryMap.get(category).push(s);
   });
 
-  const groupedCorps = corpsStaff.reduce((acc, s) => {
-    const key = s.category || "Staff";
-    (acc[key] ||= []).push(s);
-    return acc;
-  }, {});
+  const bgiSections = Array.from(bgiCategoryMap.entries()).map(([title, categoryStaff]) => ({
+    title,
+    staff: categoryStaff
+  }));
 
-  const groupedBGI = bgiStaff.reduce((acc, s) => {
-    const key = s.category || "Staff";
-    (acc[key] ||= []).push(s);
-    return acc;
-  }, {});
+  res.render("boise-gems-independent", { staffSections: [...baseSections, ...bgiSections] });
+});
 
-  res.render("about", { groupedCorps, groupedBGI });
+app.get("/about", (req, res) => {
+  res.redirect("/our-history-about");
 });
 
 

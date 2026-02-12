@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Boise Gems Drum & Bugle Corps — About</title>
+  <%- include("includes/head") %>
+  <meta name="description" content="About Boise Gems Drum & Bugle Corps, program information, and staff.">
+  <link rel="canonical" href="https://boisegems.org/boise-gems-corps-about">
+
+  <style>
+    .about-page { --pad: 12px; }
+    .about-hero {
+      position: relative;
+      min-height: 48vh;
+      background: #111 center/cover no-repeat;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    .about-hero::before {
+      content: "";
+      position: absolute; inset: 0;
+      background: url('/img/photos/boise-gems-11.jpg') center/cover no-repeat;
+      filter: brightness(.68);
+    }
+    .about-hero::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,.1) 0%, rgba(0,0,0,.52) 100%);
+    }
+    .about-hero__content { position: relative; width: min(100%, 980px); margin: 0 var(--pad); color: #fff; text-align: center; }
+    .about-hero__title { margin: 0 0 10px; font-size: clamp(28px, 5vw, 44px); color: #fff; }
+    .about-hero__text  { margin: 0 auto; max-width: 760px; font-size: clamp(15px, 2.6vw, 19px); line-height: 1.6; color: #fff; }
+
+    .about-section { margin: 20px var(--pad); }
+    .about-wrap { margin: 0 auto; width: min(100%, 980px); }
+    .about-section h2 { margin: 0 0 10px; font-size: clamp(22px, 3.5vw, 30px); }
+    .about-prose p { margin: 10px 0; line-height: 1.75; font-size: 16px; }
+
+    .staff-block { margin-top: 14px; }
+    .staff-grid { display: grid; grid-template-columns: repeat(auto-fill, 240px); justify-content: center; gap: 14px; }
+    .staff-card {
+      border-radius: 14px; overflow: hidden;
+      border: 1px solid #eee; background: #fff;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .staff-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,.08); border-color: #e6e6e6; }
+    .staff-media { aspect-ratio: 4/3; background: #f1f1f1 center/cover no-repeat; }
+    .staff-meta { padding: 12px; }
+    .staff-name { margin: 0 0 2px; font-weight: 700; font-size: 18px; line-height: 1.25; }
+    .staff-role { margin: 0; font-size: 14px; opacity: .75; }
+    .staff-category { margin: 22px 0 10px; font-weight: 800; font-size: 16px; letter-spacing: .2px; opacity: .9; }
+    .staff-link { display: block; color: inherit; text-decoration: none; height: 100%; }
+
+    @media (max-width: 520px) {
+      .staff-grid { grid-template-columns: repeat(auto-fill, 180px); gap: 12px; }
+    }
+  </style>
+</head>
+<body class="about-page" style="background:#fafafa;">
+<header><%- include("includes/header") %></header>
+
+<section class="about-hero">
+  <div class="about-hero__content">
+    <div class="about-hero__card">
+    <h1 class="about-hero__title">Boise Gems Drum &amp; Bugle Corps</h1>
+    <p class="about-hero__text">A youth-focused marching arts experience built on excellence, education, and community impact.</p>
+  </div>
+  </div>
+</section>
+
+<section class="about-section">
+  <div class="about-wrap about-prose">
+    <h2>Corps Program</h2>
+    <p>The Boise Gems Drum and Bugle Corps provides a high-level educational and performance environment for members seeking growth in music, movement, and leadership. We focus on improving musicianship, fostering teamwork, and developing skills that will benefit members both on and off the field.</p>
+    <p>With there being no corps in Idaho prior to our founding, we knew we had the opportunity to create something truly special for the local community and aspiring performers.</p>
+    <p>We choose the best of the best for staff and design, ensuring that we can provide an exceptional experience for our members.</p>
+  </div>
+</section>
+
+<section class="about-section">
+  <div class="about-wrap">
+    <h2>Shows</h2>
+  </div>
+</section>
+
+<a href="/shows/2025-the-animated" class="no-decor">
+  <div class="video-wrapper">
+    <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+      <source src="/vid/2025.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+
+    <div class="video-header">
+      <h1 style="color: var(--light-half); font-size: clamp(3rem, 5vw, 1rem); text-decoration: none;">2025</h1>
+      <img src="/img/shows/2025/animatedtitle.png" alt="Ghost Stallion logo" style="max-width: 80%;">
+    </div>
+  </div>
+</a>
+
+<a href="/shows/2024-ghost-stallion" class="no-decor">
+  <div class="video-wrapper">
+    <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+      <source src="/vid/2024.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+
+    <div class="video-header">
+      <h1 style="color: var(--light-half); font-size: clamp(1rem, 5vw, 3rem); text-decoration: none;">2024</h1>
+      <img src="/img/shows/2024/ghosttitle.png" alt="Ghost Stallion logo" style="max-width: 80%;">
+    </div>
+  </div>
+</a>
+
+<a href="/shows/2023-esto-perpetua" class="no-decor">
+  <div class="video-wrapper">
+    <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+      <source src="/vid/2023.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+
+    <div class="video-header">
+      <h1 style="color: var(--light-half); font-size: clamp(1rem, 5vw, 3rem); text-decoration: none;">2023</h1>
+      <h1 style="color: var(--light-half); font-size: clamp(2rem, 5vw, 5rem); text-decoration: none; font-weight: 700; text-shadow: 0px 0px 8px #fff;">Esto Perpetua</h1>
+    </div>
+  </div>
+</a>
+
+<section class="about-section">
+  <div class="about-wrap">
+    <h2>Staff</h2>
+
+    <% if (staffSections && staffSections.length) { %>
+      <% staffSections.forEach(section => { %>
+        <h3 class="staff-category"><%= section.title %></h3>
+        <div class="staff-block">
+          <div class="staff-grid">
+            <% section.staff.forEach(s => {
+              const imgUrl = s.image ? ("/img/publicupload/" + s.image) : "/img/ui/gem.png";
+              const href = s.slug ? ("/staff/" + s.slug) : ("/staff/" + s.id);
+            %>
+              <article class="staff-card card">
+                <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">
+                  <div class="staff-media" style="background-image:url('<%= imgUrl %>');"></div>
+                  <div class="staff-meta">
+                    <h4 class="staff-name"><%= s.first %> <%= s.last %></h4>
+                    <p class="staff-role"><%= s.position %></p>
+                  </div>
+                </a>
+              </article>
+            <% }); %>
+          </div>
+        </div>
+      <% }); %>
+    <% } else { %>
+      <p>No staff available right now.</p>
+    <% } %>
+  </div>
+</section>
+
+<script>
+  const videos = document.querySelectorAll('.video-wrapper video')
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+
+  if (isMobile) {
+    videos.forEach(v => { v.play(), v.style.filter = "brightness(1)" })
+  } else {
+    videos.forEach(v => {
+      v.pause()
+      const parent = v.parentElement
+      parent.addEventListener('mouseenter', () => { v.play(), v.style.filter = "brightness(1)" })
+      parent.addEventListener('mouseleave', () => { v.pause(), v.style.filter = "brightness(0.7)" })
+    })
+  }
+</script>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

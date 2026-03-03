@@ -1,0 +1,60 @@
+<div class="shirt-size-section" style="margin: 8px 0; padding: 10px; border-radius: 8px; background:#f5f5f5;">
+  <h3 style="margin-top:0; margin-bottom:8px;">T Shirt Size</h3>
+  <p class="shirt-size-saved" style="display:none; color: green; font-weight: 700; margin: 0 0 8px 0;">Shirt size saved</p>
+
+  <select id="shirtSizeSelect" class="shirt-size-select" style="margin-top: 6px; min-width: 180px;">
+    <option value="" <%= !member.shirtSize ? "selected" : "" %>>Not chosen</option>
+    <option value="XS" <%= member.shirtSize === "XS" ? "selected" : "" %>>XS</option>
+    <option value="S" <%= member.shirtSize === "S" ? "selected" : "" %>>S</option>
+    <option value="M" <%= member.shirtSize === "M" ? "selected" : "" %>>M</option>
+    <option value="L" <%= member.shirtSize === "L" ? "selected" : "" %>>L</option>
+    <option value="XL" <%= member.shirtSize === "XL" ? "selected" : "" %>>XL</option>
+    <option value="XXL" <%= member.shirtSize === "XXL" ? "selected" : "" %>>XXL</option>
+    <option value="XXXL" <%= member.shirtSize === "XXXL" ? "selected" : "" %>>XXXL</option>
+  </select>
+  <br>
+  <br>
+  <button type="button" class="shirt-size-save" style="margin-left: 8px;">Okay</button>
+</div>
+
+<script>
+(function() {
+  const root = document.currentScript.previousElementSibling;
+  if (!root || !root.classList.contains('shirt-size-section')) return;
+
+  const select = root.querySelector('.shirt-size-select');
+  const saveBtn = root.querySelector('.shirt-size-save');
+  const status = root.querySelector('.shirt-size-saved');
+
+  if (!select || !saveBtn || !status) return;
+
+  saveBtn.addEventListener('click', async function() {
+    saveBtn.disabled = true;
+
+    try {
+      const response = await fetch('/api/shirt-size', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ shirtSize: select.value })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        if (typeof showMessage === 'function') showMessage('Unable to save shirt size');
+        return;
+      }
+
+      status.textContent = 'Shirt size saved';
+      status.style.display = 'block';
+      if (typeof showMessage === 'function') showMessage('Shirt size saved');
+    } catch (err) {
+      if (typeof showMessage === 'function') showMessage('Unable to save shirt size');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+})();
+</script>

@@ -665,6 +665,9 @@ const createTables = db.transaction(() => {
     if (!userCols.includes("contractedAffiliate")) {
       db.prepare("ALTER TABLE users ADD COLUMN contractedAffiliate INTEGER").run();
     }
+    if (!userCols.includes("shirtSize")) {
+      db.prepare("ALTER TABLE users ADD COLUMN shirtSize TEXT").run();
+    }
 
     db.prepare(
       `
@@ -1916,6 +1919,30 @@ app.post("/member-portal/indoor", mustBeMember, (req, res) => {
 
   req.session.flashMessage = "Boise Gems Indoor preference updated.";
   return res.redirect("/member-portal");
+});
+
+const SHIRT_SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+
+function normalizeShirtSize(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw) return null;
+  return SHIRT_SIZE_OPTIONS.includes(raw) ? raw : null;
+}
+
+app.post("/api/shirt-size", mustBeLoggedInAny, (req, res) => {
+  if (req.parent) {
+    return res.status(403).json({ ok: false, message: "Parents cannot update shirt size here." });
+  }
+
+  const shirtSize = normalizeShirtSize(req.body.shirtSize);
+
+  db.prepare("UPDATE users SET shirtSize = ? WHERE id = ?").run(shirtSize, req.user.userid);
+
+  return res.json({
+    ok: true,
+    shirtSize: shirtSize || "Not chosen",
+    message: "Shirt size saved"
+  });
 });
 
 
@@ -6203,6 +6230,97 @@ const csvEscape = (value) => {
   return `"${normalized}"`;
 };
 
+const MEMBER_EXPORT_COLUMN_OPTIONS = {
+  firstname: "First Name",
+  lastname: "Last Name",
+  email: "Email",
+  phone: "Phone",
+  section: "Section",
+  instrument: "Instrument",
+  shirtSize: "Shirt Size",
+  contractedCorps: "Contracted Corps",
+  contractedIndependent: "Contracted Independent",
+  contractedAffiliate: "Contracted Affiliate",
+  staff: "Staff",
+  paid: "Paid (USD)",
+  owed: "Owed (USD)"
+};
+
+function parseCheckboxFlag(raw) {
+  return raw === "on" || raw === "1" || raw === 1 || raw === true || raw === "true";
+}
+
+function toDollarsString(cents) {
+  const numeric = Number(cents || 0);
+  return (numeric / 100).toFixed(2);
+}
+
+function buildMemberExportRows(selectedGroups, selectedFields) {
+  const users = db.prepare(`
+    SELECT
+      id,
+      firstname,
+      lastname,
+      email,
+      phone,
+      section,
+      instrument,
+      shirtSize,
+      contractedCorps,
+      contractedIndependent,
+      contractedAffiliate,
+      staff,
+      parent,
+      paid,
+      owed
+    FROM users
+    ORDER BY lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
+  `).all();
+
+  return users
+    .filter((row) => {
+      if (row.parent) return false;
+
+      const corps = !!row.contractedCorps;
+      const independent = !!row.contractedIndependent;
+      const affiliate = !!row.contractedAffiliate;
+      const staff = !!row.staff;
+      const uncontracted = !corps && !independent && !affiliate && !staff;
+
+      return (
+        (selectedGroups.corps && corps) ||
+        (selectedGroups.independent && independent) ||
+        (selectedGroups.affiliate && affiliate) ||
+        (selectedGroups.staff && staff) ||
+        (selectedGroups.uncontracted && uncontracted)
+      );
+    })
+    .map((row) => {
+      const output = {};
+      selectedFields.forEach((field) => {
+        if (field === "shirtSize") {
+          output[field] = row.shirtSize || "Not chosen";
+          return;
+        }
+        if (
+          field === "contractedCorps" ||
+          field === "contractedIndependent" ||
+          field === "contractedAffiliate" ||
+          field === "staff"
+        ) {
+          output[field] = row[field] ? "Yes" : "No";
+          return;
+        }
+        if (field === "paid" || field === "owed") {
+          output[field] = toDollarsString(row[field]);
+          return;
+        }
+        output[field] = row[field] || "";
+      });
+      return output;
+    });
+}
+
 const formatBirthdayHuman = (timestamp) => {
   const millis = Number(timestamp);
   if (!Number.isFinite(millis) || millis <= 0) return "";
@@ -6346,6 +6464,97 @@ app.get("/contracts-admin/export-emergency.csv", mustBeAdmin, (req, res) => {
   const csv = lines.join("\r\n");
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="emergency-${Date.now()}.csv"`);
+  return res.send(csv);
+});
+
+app.get("/admin/export-member-info", mustBeAdmin, (req, res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+
+  const selectedGroups = {
+    corps: true,
+    independent: true,
+    affiliate: true,
+    staff: true,
+    uncontracted: true
+  };
+
+  const selectedFields = ["firstname", "lastname", "email", "section", "instrument", "shirtSize"];
+
+  return res.render("admin-export-members", {
+    member,
+    selectedGroups,
+    selectedFields,
+    rows: [],
+    hasResults: false,
+    columnOptions: MEMBER_EXPORT_COLUMN_OPTIONS
+  });
+});
+
+app.post("/admin/export-member-info", mustBeAdmin, (req, res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+
+  const selectedGroups = {
+    corps: parseCheckboxFlag(req.body.group_corps),
+    independent: parseCheckboxFlag(req.body.group_independent),
+    affiliate: parseCheckboxFlag(req.body.group_affiliate),
+    staff: parseCheckboxFlag(req.body.group_staff),
+    uncontracted: parseCheckboxFlag(req.body.group_uncontracted)
+  };
+
+  const selectedFieldsRaw = Array.isArray(req.body.export_fields)
+    ? req.body.export_fields
+    : (req.body.export_fields ? [req.body.export_fields] : []);
+
+  const selectedFields = selectedFieldsRaw.filter((field) => Object.prototype.hasOwnProperty.call(MEMBER_EXPORT_COLUMN_OPTIONS, field));
+
+  const normalizedFields = selectedFields.length
+    ? selectedFields
+    : ["firstname", "lastname", "email"];
+
+  const rows = buildMemberExportRows(selectedGroups, normalizedFields);
+
+  return res.render("admin-export-members", {
+    member,
+    selectedGroups,
+    selectedFields: normalizedFields,
+    rows,
+    hasResults: true,
+    columnOptions: MEMBER_EXPORT_COLUMN_OPTIONS
+  });
+});
+
+app.post("/admin/export-member-info/csv", mustBeAdmin, (req, res) => {
+  const selectedGroups = {
+    corps: parseCheckboxFlag(req.body.group_corps),
+    independent: parseCheckboxFlag(req.body.group_independent),
+    affiliate: parseCheckboxFlag(req.body.group_affiliate),
+    staff: parseCheckboxFlag(req.body.group_staff),
+    uncontracted: parseCheckboxFlag(req.body.group_uncontracted)
+  };
+
+  const selectedFieldsRaw = Array.isArray(req.body.export_fields)
+    ? req.body.export_fields
+    : (req.body.export_fields ? [req.body.export_fields] : []);
+
+  const selectedFields = selectedFieldsRaw.filter((field) => Object.prototype.hasOwnProperty.call(MEMBER_EXPORT_COLUMN_OPTIONS, field));
+
+  const normalizedFields = selectedFields.length
+    ? selectedFields
+    : ["firstname", "lastname", "email"];
+
+  const rows = buildMemberExportRows(selectedGroups, normalizedFields);
+
+  const headerLine = normalizedFields
+    .map((field) => csvEscape(MEMBER_EXPORT_COLUMN_OPTIONS[field]))
+    .join(",");
+
+  const bodyLines = rows.map((row) => {
+    return normalizedFields.map((field) => csvEscape(row[field] || "")).join(",");
+  });
+
+  const csv = [headerLine, ...bodyLines].join("\r\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="member-info-${Date.now()}.csv"`);
   return res.send(csv);
 });
 

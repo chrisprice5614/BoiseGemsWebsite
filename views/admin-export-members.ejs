@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Boise Gems | Export Member Info</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="margin: 12px;">
+    <h1>Export Member Info</h1>
+    <p>Select who to include, then choose which fields to preview and export.</p>
+
+    <form action="/admin/export-member-info" method="POST" style="padding: 12px; border-radius: 10px; background: #dfdfdf; box-shadow: 2px 2px 6px rgba(0,0,0,0.2);">
+      <h3 style="margin-top: 0;">1) Select members</h3>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px;">
+        <label><input type="checkbox" name="group_corps" <%= selectedGroups.corps ? "checked" : "" %> /> Contracted Corps</label>
+        <label><input type="checkbox" name="group_independent" <%= selectedGroups.independent ? "checked" : "" %> /> Contracted Independent</label>
+        <label><input type="checkbox" name="group_affiliate" <%= selectedGroups.affiliate ? "checked" : "" %> /> Contracted Affiliate</label>
+        <label><input type="checkbox" name="group_staff" <%= selectedGroups.staff ? "checked" : "" %> /> Staff</label>
+        <label><input type="checkbox" name="group_uncontracted" <%= selectedGroups.uncontracted ? "checked" : "" %> /> Uncontracted</label>
+      </div>
+
+      <h3>2) Select fields to export</h3>
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px;">
+        <% Object.keys(columnOptions).forEach(function(key) { %>
+          <label>
+            <input
+              type="checkbox"
+              name="export_fields"
+              value="<%= key %>"
+              <%= selectedFields.includes(key) ? "checked" : "" %>
+            />
+            <%= columnOptions[key] %>
+          </label>
+        <% }) %>
+      </div>
+
+      <button type="submit">Preview</button>
+      <a href="/admin-portal" style="margin-left: 10px;">Back to Admin Portal</a>
+    </form>
+
+    <% if (hasResults) { %>
+      <div style="margin-top: 16px; padding: 12px; border-radius: 10px; background: #f4f4f4; box-shadow: 2px 2px 6px rgba(0,0,0,0.15);">
+        <h3 style="margin-top: 0;">Preview (<%= rows.length %> rows)</h3>
+
+        <% if (!rows.length) { %>
+          <p>No members matched your selected checkmarks.</p>
+        <% } else { %>
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr>
+                  <% selectedFields.forEach(function(field) { %>
+                    <th style="text-align:left; border-bottom:1px solid #bbb; padding: 8px;"><%= columnOptions[field] %></th>
+                  <% }) %>
+                </tr>
+              </thead>
+              <tbody>
+                <% rows.forEach(function(row) { %>
+                  <tr>
+                    <% selectedFields.forEach(function(field) { %>
+                      <td style="padding: 8px; border-bottom: 1px solid #ddd;"><%= row[field] %></td>
+                    <% }) %>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+
+        <form action="/admin/export-member-info/csv" method="POST" style="margin-top: 12px;">
+          <input type="hidden" name="group_corps" value="<%= selectedGroups.corps ? '1' : '0' %>" />
+          <input type="hidden" name="group_independent" value="<%= selectedGroups.independent ? '1' : '0' %>" />
+          <input type="hidden" name="group_affiliate" value="<%= selectedGroups.affiliate ? '1' : '0' %>" />
+          <input type="hidden" name="group_staff" value="<%= selectedGroups.staff ? '1' : '0' %>" />
+          <input type="hidden" name="group_uncontracted" value="<%= selectedGroups.uncontracted ? '1' : '0' %>" />
+          <% selectedFields.forEach(function(field) { %>
+            <input type="hidden" name="export_fields" value="<%= field %>" />
+          <% }) %>
+          <button type="submit">Export to CSV</button>
+        </form>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

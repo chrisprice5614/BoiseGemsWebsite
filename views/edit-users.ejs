@@ -170,6 +170,14 @@
 
             <div class="triple-to-single triple-to-single-mod">
               <div>
+                <p><b>Shirt Size: </b><%= thisUser.shirtSize || "Not chosen" %></p>
+              </div>
+              <div></div>
+              <div></div>
+            </div>
+
+            <div class="triple-to-single triple-to-single-mod">
+              <div>
                 <p><b>Due: </b>
                   <span><%= new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format((thisUser.owed||0) / 100) %></span>
                 </p>

@@ -15,6 +15,8 @@
                 <div style="margin: 4px">
                     <h1>Hello, <%= user.firstname %> <%= user.lastname %></h1>
                     <br>
+                    <%- include("includes/shirt-size-section") %>
+                    <br>
                     <p><b>Email:</b> <%= member.email %></p>
                     <br>
                     <p><b>Address:</b> <%= member.address %></p>
@@ -72,6 +74,8 @@
                     <a href="/contracts-admin/export-contracts.csv"><button>Export Contracts CSV</button></a>
                     <br><br>
                     <a href="/contracts-admin/export-emergency.csv"><button>Export Emergency CSV</button></a>
+                    <br><br>
+                    <a href="/admin/export-member-info"><button>Export Member Info</button></a>
                     <br><br>
                     <a href="/admin/expired-contracts"><button>Expired Contracts</button></a>
                     <br><br>

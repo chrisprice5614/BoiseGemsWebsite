@@ -1,4 +1,4 @@
-require("dotenv").config() // Makes it so we can access .env file
+﻿require("dotenv").config() // Makes it so we can access .env file
 const jwt = require("jsonwebtoken")//npm install jsonwebtoken dotenv
 const bcrypt = require("bcrypt") //npm install bcrypt
 const cookieParser = require("cookie-parser")//npm install cookie-parser
@@ -45,7 +45,7 @@ function sendChrisStripeTransfer(chrisCutCents, source) {
       description: `3% share from ${source || "transaction"}`,
     })
     .then(() => {
-      // Transfer created successfully – nothing else to do here.
+      // Transfer created successfully â€“ nothing else to do here.
     })
     .catch((err) => {
       console.error("Failed to create Chris 3% transfer:", err);
@@ -76,7 +76,7 @@ function ensureActiveContractExtension(req, res, next) {
   const ageMs = Date.now() - createdAt;
 
   if (!createdAt || ageMs > CONTRACT_EXTENSION_TTL_MS) {
-    // Extension expired → delete it and tell the user
+    // Extension expired â†’ delete it and tell the user
     db.prepare("DELETE FROM contractExtension WHERE id = ?").run(id);
     req.session.flashMessage = "This contract extension has expired. Please contact staff to request a new contract.";
     return res.redirect("/member-portal");
@@ -352,7 +352,7 @@ async function sendEmail(to, subject, html, attachments = []) {
           <!-- Footer -->
           <tr>
             <td align="center" style="font-size: 12px; color: #999999; padding-top: 32px;">
-              © 2025 Boise Gems Drum & Bugle Corps ·
+              Â© 2025 Boise Gems Drum & Bugle Corps Â·
               <a href="https://www.boisegems.org/" style="color: #999999; text-decoration: underline;">www.boisegems.org</a>
             </td>
           </tr>
@@ -959,11 +959,54 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
     ).run();
   }
 
-  // NEW: child_id for “contract for child, signed by parent”
+  // NEW: child_id for â€œcontract for child, signed by parentâ€
   if (!contractExtCols.includes("child_id")) {
     db.prepare(
       "ALTER TABLE contractExtension ADD COLUMN child_id INTEGER"
     ).run();
+  }
+
+  // donor_list: comma-separated names editable by admins, shown on /donate
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS donor_list (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      names TEXT NOT NULL DEFAULT ''
+    )
+  `).run();
+  const dlRow = db.prepare("SELECT id FROM donor_list WHERE id = 1").get();
+  if (!dlRow) {
+    db.prepare("INSERT INTO donor_list (id, names) VALUES (1, '')").run();
+  }
+
+  // volunteer_needs: single editable text block for admins
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS volunteer_needs (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      needs TEXT NOT NULL DEFAULT ''
+    )
+  `).run();
+  const vnRow = db.prepare("SELECT id FROM volunteer_needs WHERE id = 1").get();
+  if (!vnRow) {
+    db.prepare("INSERT INTO volunteer_needs (id, needs) VALUES (1, '')").run();
+  }
+
+  // volunteer_contacts: form submissions from the volunteer page
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS volunteer_contacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      firstname TEXT NOT NULL,
+      lastname TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+
+  // donations: add hide_from_list flag for admin control
+  const donationCols = db.prepare("PRAGMA table_info(donations)").all().map(c => c.name);
+  if (!donationCols.includes("hide_from_list")) {
+    db.prepare("ALTER TABLE donations ADD COLUMN hide_from_list INTEGER NOT NULL DEFAULT 0").run();
   }
 
 })
@@ -1324,7 +1367,7 @@ function buildFormsQueryForUser(user) {
   const wantIndependent = !!user?.contractedIndependent;
   const wantAffiliate   = !!user?.contractedAffiliate;
 
-  // 1) Not contracted to either group → only general "all", non-contracted, member forms
+  // 1) Not contracted to either group â†’ only general "all", non-contracted, member forms
   if (!wantCorps && !wantIndependent && !wantAffiliate) {
     return {
       sql: `
@@ -1558,7 +1601,7 @@ app.post("/register-parent", (req, res) => {
   const salt = bcrypt.genSaltSync(10);
   password = bcrypt.hashSync(password, salt);
 
-  // ✅ Instantly verified = 1, no emailsecret/userVerify row
+  // âœ… Instantly verified = 1, no emailsecret/userVerify row
   const addParent = db.prepare(
     "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
   );
@@ -1576,7 +1619,7 @@ app.post("/register-parent", (req, res) => {
   );
   const parentId = newParent.lastInsertRowid;
 
-  // ✅ Auto-login just like /login
+  // âœ… Auto-login just like /login
   const ourTokenValue = jwt.sign(
     {
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
@@ -1598,7 +1641,7 @@ app.post("/register-parent", (req, res) => {
     maxAge: 1000 * 60 * 60 * 24,
   });
 
-  // ✅ Welcome email instead of verify email
+  // âœ… Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
@@ -1708,7 +1751,7 @@ app.post("/register-member", (req, res) => {
     .hashSync(firstname + Date.now().toString(), salt)
     .replace(/[^a-zA-Z0-9]/g, "");
 
-  // ✅ Instantly verified = 1, no userVerify insert
+  // âœ… Instantly verified = 1, no userVerify insert
   const addMember = db.prepare(
     "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
   );
@@ -1733,7 +1776,7 @@ app.post("/register-member", (req, res) => {
   );
   addPermissions.run(newMemberId);
 
-  // ✅ Auto-login
+  // âœ… Auto-login
   const ourTokenValue = jwt.sign(
     {
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
@@ -1755,7 +1798,7 @@ app.post("/register-member", (req, res) => {
     maxAge: 1000 * 60 * 60 * 24,
   });
 
-  // ✅ Welcome email instead of verify email
+  // âœ… Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
@@ -1795,6 +1838,22 @@ app.get("/login", (req,res) => {
     return res.redirect("/")
   res.render("login")
 })
+
+// Quick duplicate-check used by the registration wizard
+app.get("/check-registration", (req, res) => {
+  const email = String(req.query.email || "").trim().toLowerCase();
+  const phone = String(req.query.phone || "").trim();
+  const result = {};
+  if (email) {
+    const row = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    result.emailTaken = !!row;
+  }
+  if (phone) {
+    const row = db.prepare("SELECT id FROM users WHERE phone = ?").get(phone);
+    result.phoneTaken = !!row;
+  }
+  res.json(result);
+});
 
 app.get("/register", (req,res) => {
   if(req.user)
@@ -1860,7 +1919,7 @@ app.get("/member-portal", mustBeMember, (req,res) => {
 });
 
 app.get("/member-transactions", mustBeMember, (req, res) => {
-  // Logged-in member’s own record
+  // Logged-in memberâ€™s own record
   const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
   const thisUser = getUserStatement.get(req.user.userid);
 
@@ -1886,7 +1945,7 @@ app.get("/parent/transactions/:childId", mustBeParent, (req, res) => {
   const thisUser = getChild.get(childId, req.user.userid);
 
   if (!thisUser) {
-    // Not your kid, or doesn’t exist
+    // Not your kid, or doesnâ€™t exist
     return res.redirect("/parent-portal");
   }
 
@@ -2282,7 +2341,7 @@ app.post("/login", (req, res) => {
     return res.render("login", { errors });
   }
 
-  // ❌ old check removed:
+  // âŒ old check removed:
   // if(userInQuestion.verified == false) { ... }
 
   const matchOrNot = bcrypt.compareSync(
@@ -2759,7 +2818,7 @@ app.post(
               ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : (ensemble === "affiliate" ? "Boise Gems Affiliate" : "Boise Gems Independent")}
               for the ${CURRENTSEASON} season.
             </p>
-            <p>We’re excited to have you with us!</p>
+            <p>Weâ€™re excited to have you with us!</p>
           `;
           sendEmail(
             childRow.email,
@@ -2770,7 +2829,7 @@ app.post(
       }
 
       const redirectTarget = isMinorContract ? "/parent-portal" : "/member-portal";
-      req.session.flashMessage = "Contract signed successfully — cash/check selected. No online payment required. Welcome to Boise Gems!";
+      req.session.flashMessage = "Contract signed successfully â€” cash/check selected. No online payment required. Welcome to Boise Gems!";
       return res.redirect(redirectTarget);
     }
 
@@ -2981,7 +3040,7 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
           ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : "Boise Gems Independent"}
           for the ${CURRENTSEASON} season.
         </p>
-        <p>We’re excited to have you with us!</p>
+        <p>Weâ€™re excited to have you with us!</p>
       `;
       sendEmail(
         childRow.email,
@@ -3044,7 +3103,7 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
 
   const parentId = thisUser.parentId || null;
 
-  // 🚫 NEW: block sending contracts to minors with no parent attached
+  // ðŸš« NEW: block sending contracts to minors with no parent attached
   if (isMinor && !parentId) {
     req.session.flashMessage = `${thisUser.firstname} ${thisUser.lastname} is a minor and does not have a parent attached. Please add a parent account before sending a contract.`;
     return res.redirect(req.get("Referer") || "/admin-portal");
@@ -3088,7 +3147,7 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
       return res.redirect(req.get("Referer") || "/member-portal");
     }
 
-    // No existing pending → create a new pending contract extension
+    // No existing pending â†’ create a new pending contract extension
     db.prepare(
       `
       INSERT INTO pendingContractExtension
@@ -4570,7 +4629,7 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
   let recipients = [];
 
   if (extensionMode !== "none") {
-    // 🔹 EXACT SAME FILTER AS /email-members (bulk send) for contractExtension
+    // ðŸ”¹ EXACT SAME FILTER AS /email-members (bulk send) for contractExtension
     const now = Date.now();
     const where = ["ce.due_date IS NOT NULL", "ce.due_date >= ?"];
     const params = [now];
@@ -4619,7 +4678,7 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
         name: `${r.firstname || ""} ${r.lastname || ""}`.trim(),
       }));
   } else {
-    // 🔹 Normal members list (no contract-extension filter)
+    // ðŸ”¹ Normal members list (no contract-extension filter)
     const where = [];
     const params = [];
 
@@ -4658,7 +4717,7 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
       }));
   }
 
-  // ✅ Preview just returns the list; no email sent here
+  // âœ… Preview just returns the list; no email sent here
   return res.json({ ok: true, recipients });
 });
 
@@ -4859,7 +4918,7 @@ app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
     });
 });
 
-// Success route — finalize payment
+// Success route â€” finalize payment
 app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
   const getPotential = db.prepare(
     "SELECT * FROM potential_payment WHERE id = ? AND parent_id = ?"
@@ -4999,7 +5058,7 @@ app.post("/make-payment", mustBeLoggedIn, (req, res) => {
 });
 
 
-// Success route — finalize payment for the user
+// Success route â€” finalize payment for the user
 app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
   const getPotential = db.prepare(
     "SELECT * FROM potential_payment WHERE id = ? AND user_id = ?"
@@ -5102,9 +5161,67 @@ app.post(
   }
 );
 
-app.get("/donate", (req,res) => {
-  return res.render("donate")
-})
+app.get("/donate", (req, res) => {
+  const dlRow = db.prepare("SELECT names FROM donor_list WHERE id = 1").get();
+  const rawNames = dlRow ? (dlRow.names || "") : "";
+  const donorNames = rawNames
+    .split(",")
+    .map(n => n.trim())
+    .filter(n => n.length > 0);
+  return res.render("donate", { donorNames });
+});
+
+// GET /volunteer
+app.get("/volunteer", (req, res) => {
+  const vnRow = db.prepare("SELECT needs FROM volunteer_needs WHERE id = 1").get();
+  return res.render("volunteer", { needs: vnRow ? vnRow.needs : "" });
+});
+
+// POST /volunteer - save volunteer contact form
+app.post("/volunteer", (req, res) => {
+  const firstname = String(req.body.firstname || "").trim();
+  const lastname  = String(req.body.lastname  || "").trim();
+  const email     = String(req.body.email     || "").trim();
+  const phone     = String(req.body.phone     || "").trim();
+  const message   = String(req.body.message   || "").trim();
+  if (!firstname || !lastname || !email || !phone || !message) {
+    return res.status(400).send("All fields are required.");
+  }
+  db.prepare(
+    "INSERT INTO volunteer_contacts (firstname, lastname, email, phone, message, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(firstname, lastname, email, phone, message, Date.now());
+  req.session.flashMessage = "Thanks! We'll get back to you soon.";
+  return res.redirect("/volunteer");
+});
+
+// GET /admin/volunteer-needs
+app.get("/admin/volunteer-needs", mustBeAdmin, (req, res) => {
+  const vnRow = db.prepare("SELECT needs FROM volunteer_needs WHERE id = 1").get();
+  const contacts = db.prepare("SELECT * FROM volunteer_contacts ORDER BY created_at DESC").all();
+  return res.render("admin-volunteer-needs", { needs: vnRow ? vnRow.needs : "", contacts });
+});
+
+// POST /admin/volunteer-needs
+app.post("/admin/volunteer-needs", mustBeAdmin, (req, res) => {
+  const needs = String(req.body.needs || "").trim();
+  db.prepare("UPDATE volunteer_needs SET needs = ? WHERE id = 1").run(needs);
+  req.session.flashMessage = "Volunteer needs updated.";
+  return res.redirect("/admin/volunteer-needs");
+});
+
+// GET /admin/donors
+app.get("/admin/donors", mustBeAdmin, (req, res) => {
+  const dlRow = db.prepare("SELECT names FROM donor_list WHERE id = 1").get();
+  return res.render("admin-donors", { names: dlRow ? (dlRow.names || "") : "" });
+});
+
+// POST /admin/donors
+app.post("/admin/donors", mustBeAdmin, (req, res) => {
+  const names = String(req.body.names || "").trim();
+  db.prepare("UPDATE donor_list SET names = ? WHERE id = 1").run(names);
+  req.session.flashMessage = "Donor list updated.";
+  return res.redirect("/admin/donors");
+});
 
 // POST /donate - create potential donation and redirect to Stripe Checkout
 app.post("/donate", async (req, res) => {
@@ -5285,7 +5402,7 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     const totalString = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(potential.total_charge / 100);
 
     const title = `Donation by ${potential.name}`;
-    const description = `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "—"}`;
+    const description = `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "â€”"}`;
 
     const insertHistory = db.prepare(
       "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
@@ -5293,7 +5410,7 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     // user_id NULL because donor may not be a member
     insertHistory.run(title, description, potential.total_charge, "Stripe", Date.now(), null);
 
-    addChrisShare(potential.total_charge, `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "—"}`);
+    addChrisShare(potential.total_charge, `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "â€”"}`);
 
     // delete potential_donation row (prevent reuse)
     const deletePotential = db.prepare("DELETE FROM potential_donation WHERE id = ?");
@@ -5315,8 +5432,8 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     `;
 
     // sendEmail function expected to exist
-    sendEmail(potential.email, "Thank you for your donation — Boise Gems", emailBody);
-    sendEmail(MasterEmail, "Donation Received", `Donation received: ${title} — ${totalString}`);
+    sendEmail(potential.email, "Thank you for your donation â€” Boise Gems", emailBody);
+    sendEmail(MasterEmail, "Donation Received", `Donation received: ${title} â€” ${totalString}`);
 
     // redirect donor to a thank-you page
     return res.redirect("/donate/thank-you");
@@ -5390,7 +5507,7 @@ app.post("/change-address", mustBeLoggedInAny, (req, res) => {
 });
 
 
-// Admin — view all contracted members and balances
+// Admin â€” view all contracted members and balances
 app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
   const rows = db.prepare(
      `SELECT 
@@ -5411,7 +5528,7 @@ app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
   return res.render('admin-contracted-members', { members: rows });
 });
 
-// Admin — view expired contract extensions
+// Admin â€” view expired contract extensions
 app.get('/admin/expired-contracts', mustBeAdmin, (req, res) => {
   const now = Date.now();
   const rows = db.prepare(
@@ -5427,7 +5544,7 @@ app.get('/admin/expired-contracts', mustBeAdmin, (req, res) => {
   return res.render('admin-expired-contracts', { extensions: rows });
 });
 
-// Admin — delete a contract extension
+// Admin â€” delete a contract extension
 app.post('/admin/contract-extension/:id/delete', mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
   db.prepare('DELETE FROM contractExtension WHERE id = ?').run(id);
@@ -5672,7 +5789,7 @@ app.get("/event/:slug", (req, res) => {
     rsvps,
     reservedSelf,
     meta: {
-      title: `${event.title} — Boise Gems`,
+      title: `${event.title} â€” Boise Gems`,
       description: desc,
       url,
       image: img
@@ -5975,7 +6092,7 @@ function stripHtml(s = "") {
 }
 function excerpt(s, n = 160) {
   const t = stripHtml(s);
-  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+  return t.length > n ? t.slice(0, n - 1) + "â€¦" : t;
 }
 
 // PUBLIC: list
@@ -6059,6 +6176,50 @@ app.post("/news/new", mustBeAdmin, imageUpload.single("hero"), processImageJpg, 
   return res.redirect("/news-admin");
 });
 
+// ADMIN: upload a single inline image for the news editor (returns JSON)
+app.post("/news/upload-image", mustBeAdmin, imageUpload.single("image"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No image provided" });
+  try {
+    const meta = await sharp(req.file.buffer).metadata();
+    const longSide = Math.max(meta.width || 320, meta.height || 320);
+    const scale = longSide > 320 ? 320 / longSide : 1;
+    const w = Math.round((meta.width || 320) * scale);
+    const h = Math.round((meta.height || 320) * scale);
+
+    const customName = generateCustomFilename() + ".webp";
+    const outputPath = path.join(__dirname, "public", "img", "publicupload", customName);
+    await sharp(req.file.buffer)
+      .resize(w, h)
+      .webp({ quality: 85 })
+      .toFile(outputPath);
+
+    res.json({ url: `/img/publicupload/${customName}`, filename: customName });
+  } catch (err) {
+    console.error("News image upload error:", err);
+    res.status(500).json({ error: "Image processing failed" });
+  }
+});
+
+// ADMIN: list available images for the editor gallery
+app.get("/news/images", mustBeAdmin, (req, res) => {
+  const dirs = [
+    { dir: path.join(__dirname, "public", "img", "publicupload"), base: "/img/publicupload/" },
+    { dir: path.join(__dirname, "public", "img", "photos"),       base: "/img/photos/"       },
+    { dir: path.join(__dirname, "public", "img", "shows"),        base: "/img/shows/"        },
+  ];
+  const images = [];
+  dirs.forEach(({ dir, base }) => {
+    try {
+      fs.readdirSync(dir).forEach(f => {
+        if (/\.(jpe?g|png|gif|webp|avif|svg)$/i.test(f)) {
+          images.push({ url: base + encodeURIComponent(f), name: f, dir: base });
+        }
+      });
+    } catch (_) {}
+  });
+  res.json(images);
+});
+
 // ADMIN: edit
 app.get("/news/:id/edit", mustBeAdmin, (req, res) => {
   const post = db.prepare(`SELECT * FROM news WHERE id = ?`).get(Number(req.params.id));
@@ -6127,7 +6288,7 @@ app.get("/news/:slug", (req, res) => {
   res.render("news-detail", {
     post,
     meta: {
-      title: `${post.title} — Boise Gems`,
+      title: `${post.title} â€” Boise Gems`,
       description: desc,
       url,
       image: img
@@ -6888,7 +7049,7 @@ app.post("/admin-rsvps/:eventId/email/:userId", mustBeAdmin, async (req, res) =>
     <p>You can finish your RSVP and payment here:</p>
     <p><a href="${eventUrl}">${eventUrl}</a></p>
     <p>If you believe you've already paid, you can ignore this email or contact us so we can double-check.</p>
-    <p>– Boise Gems</p>
+    <p>â€“ Boise Gems</p>
   `;
 
   try {
@@ -7231,13 +7392,13 @@ app.get("/staff/:slug", (req, res) => {
 
   const base = "https://boisegems.org";
   const img  = s.image ? `${base}${s.image}` : `${base}/img/ui/gem.png`;
-  const title = `${s.first} ${s.last} — ${s.position} | Boise Gems`;
+  const title = `${s.first} ${s.last} â€” ${s.position} | Boise Gems`;
 
   res.render("staff-show", {
     s,
     meta: {
       title,
-      description: s.bio?.slice(0, 160) || `${s.first} ${s.last} — ${s.position}`,
+      description: s.bio?.slice(0, 160) || `${s.first} ${s.last} â€” ${s.position}`,
       image: img,
       url: `${base}/staff/${s.slug}`
     }
@@ -7294,7 +7455,7 @@ app.post("/whistleblower", async (req, res) => {
       <p><small>User-Agent: ${ua}</small></p>
     `;
 
-    await sendEmail(MasterEmail, "Whistleblower Report — Boise Gems", html);
+    await sendEmail(MasterEmail, "Whistleblower Report â€” Boise Gems", html);
 
     return res.render("message", {
       message: "Thank you. Your whistleblower report has been submitted and will be investigated."
@@ -7420,7 +7581,7 @@ function canUserSeeFileItem(userRow, fileRow) {
   return false;
 }
 
-// Files home — choose Corps vs Indoor (2026)
+// Files home â€” choose Corps vs Indoor (2026)
 app.get("/files", mustBeLoggedInAny, (req, res) => {
   res.render("files-root", {
     user: req.user
@@ -7617,7 +7778,7 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
   // Reset views for this folder (new stuff to see)
   db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(folder.id);
 
-  // ✅ No emails here anymore – just go back to the folder
+  // âœ… No emails here anymore â€“ just go back to the folder
   res.redirect(`/files/folder/${folder.id}`);
 });
 
@@ -7641,7 +7802,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
   }
 
   try {
-    // Build who we’re emailing
+    // Build who weâ€™re emailing
     let where = "LOWER(section) = LOWER(?) AND (parent IS NULL OR parent = 0)";
     const params = [ctx.section];
 
@@ -7671,7 +7832,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
     }
 
     const scopeLabel = ctx.scope === "corps" ? "Corps" : "Independent";
-    const subject = `New files uploaded — ${scopeLabel} ${ctx.section} (${ctx.year})`;
+    const subject = `New files uploaded â€” ${scopeLabel} ${ctx.section} (${ctx.year})`;
 
     // Build breadcrumb-style path for email text
     const chain2 = getFolderWithAncestors(folder.id);
@@ -7686,7 +7847,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
 
     let sentCount = 0;
 
-    // ✅ Send separate emails (NOT joined together)
+    // âœ… Send separate emails (NOT joined together)
     for (const r of rows) {
       if (!r.email) continue;
       const fullName = `${r.firstname || ""} ${r.lastname || ""}`.trim() || "there";
@@ -7739,7 +7900,7 @@ app.post("/files/item/:id/delete", mustBeStaffOrAdmin, (req, res) => {
   return res.redirect(`/files/folder/${folderId}`);
 });
 
-// Year view — show sections under Corps/Indoor for 2026
+// Year view â€” show sections under Corps/Indoor for 2026
 app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
   const scope = (req.params.scope || "").toLowerCase();
   const year = parseInt(req.params.year, 10) || 2026;
@@ -7849,7 +8010,7 @@ app.post("/admin/callbacks", mustBeStaffOrAdmin, async (req, res) => {
       const html = `
         <p>Hi ${fullName},</p>
         <p>${messageHtml}</p>
-        <p>— Boise Gems Staff</p>
+        <p>â€” Boise Gems Staff</p>
       `;
 
       await sendEmail(r.email, subject, html);

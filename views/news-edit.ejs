@@ -5,30 +5,465 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Edit: <%= post.title %> — Boise Gems</title>
   <%- include("includes/head") %>
+  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css"/>
+  <style>
+    .ne-wrap { margin: 0; padding: 12px 12px 48px; }
+    .ne-card {
+      background-color: var(--light-half);
+      border: #777 solid 2px;
+      border-radius: 8px;
+      box-shadow: 0px 3px 6px rgba(0,0,0,0.6), inset 0px 3px 8px rgba(255,255,255,1), inset 0px -3px 4px rgba(0,0,0,0.3);
+      padding: 24px 20px;
+      margin-top: 16px;
+    }
+    .ne-card h1 { color: var(--dark-full); margin-bottom: 20px; }
+    .ne-field { margin-bottom: 16px; }
+    .ne-field small { color: var(--dark-quarter); font-size: .8rem; }
+    /* reset global form box when nested inside ne-card */
+    .ne-card form { background:transparent; border:none; box-shadow:none; margin:0; padding:0; }
+    /* labels inside card don't need the global 5% left-margin */
+    .ne-card label { margin-left: 0; }
+    .ne-hero-preview { margin-top: 8px; display: flex; align-items: center; gap: 12px; }
+    .ne-hero-preview img {
+      width: 80px; height: 80px; object-fit: cover;
+      border-radius: 6px; border: 2px solid #aaa;
+    }
+    /* mode tabs */
+    .ne-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .ne-tab-btn {
+      padding: 6px 20px; border-radius: 4px;
+      border: 2px solid #aaa; background: var(--light-quarter);
+      color: var(--dark-half); cursor: pointer; font-weight: 600; font-size: .88rem;
+      transition: all .15s;
+      box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+    }
+    .ne-tab-btn.active, .ne-tab-btn:hover {
+      background: var(--primary-color); border-color: var(--secondary-color); color: var(--light-full);
+    }
+    /* image toolbar */
+    .ne-imgbar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+    .ne-imgbar-btn {
+      padding: 6px 14px;
+      background-color: var(--primary-color);
+      border-radius: 0px; color: var(--light-half); border: none;
+      text-transform: uppercase; font-weight: 600; font-size: .8rem;
+      cursor: pointer; transition: all 80ms ease-in;
+      box-shadow: 0px 3px 6px rgba(0,0,0,0.6), inset 0px 3px 3px rgba(255,255,255,0.2), inset 0px -3px 3px rgba(0,0,0,0.05);
+      text-shadow: 0px 1px 3px rgba(0,0,0,0.6);
+    }
+    .ne-imgbar-btn:hover { background-color: var(--secondary-color); }
+    #img-upload-spinner, #img-upload-spinner-html { display:none; font-size:.82rem; color: var(--dark-quarter); font-style:italic; }
+    /* HTML textarea */
+    #html-editor {
+      font-family: "Courier New", monospace !important;
+      font-size: .9rem !important;
+      min-height: 360px;
+      resize: vertical;
+    }
+    /* EasyMDE — explicit light-mode overrides */
+    .EasyMDEContainer .editor-toolbar {
+      background: var(--light-full);
+      border-color: #bbb;
+    }
+    .EasyMDEContainer .editor-toolbar button {
+      color: var(--dark-half) !important;
+      background: var(--light-quarter);
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .EasyMDEContainer .editor-toolbar button:hover,
+    .EasyMDEContainer .editor-toolbar button.active {
+      background: var(--primary-color) !important;
+      color: var(--light-full) !important;
+      border-color: var(--secondary-color);
+    }
+    .EasyMDEContainer .editor-toolbar i.separator {
+      border-color: #bbb;
+    }
+    .EasyMDEContainer .CodeMirror {
+      background: var(--light-full);
+      color: var(--dark-full);
+      border-color: #bbb;
+      min-height: 320px;
+      font-size: .95rem;
+    }
+    .EasyMDEContainer .editor-preview,
+    .EasyMDEContainer .editor-preview-side {
+      background: var(--light-half);
+      color: var(--dark-full);
+      border-color: #bbb;
+    }
+    .EasyMDEContainer .editor-preview img,
+    .EasyMDEContainer .editor-preview-side img { max-width:100%; border-radius:4px; }
+    /* gallery modal */
+    .gal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.6); z-index: 1000;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .gal-backdrop.open { display: flex; }
+    .gal-modal {
+      background: var(--light-full); border: #777 solid 2px; border-radius: 8px;
+      box-shadow: 0px 6px 20px rgba(0,0,0,0.6);
+      width: 100%; max-width: 780px; max-height: 88vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .gal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 2px solid #ccc; flex-shrink: 0;
+      background: var(--light-half);
+    }
+    .gal-header h2 { margin:0; font-size:1.1rem; color: var(--dark-full); }
+    .gal-close {
+      background:none; border:none; color: var(--dark-quarter);
+      font-size:1.6rem; cursor:pointer; line-height:1; padding:0; transition:color .12s;
+    }
+    .gal-close:hover { color: var(--secondary-color); }
+    .gal-search { padding:10px 16px; border-bottom:1px solid #ccc; flex-shrink:0; background: var(--light-half); }
+    .gal-search input { margin:0; width:100%; max-width:100%; }
+    .gal-body { overflow-y:auto; padding:14px 16px; flex:1; background: var(--light-quarter); }
+    .gal-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
+    .gal-thumb {
+      aspect-ratio:1; border-radius:6px; overflow:hidden; cursor:pointer;
+      border:2px solid #bbb; transition:border-color .14s,transform .12s;
+      position:relative; background:var(--light-half);
+      box-shadow:0 2px 6px rgba(0,0,0,0.25);
+    }
+    .gal-thumb:hover { border-color:var(--primary-color); transform:scale(1.04); }
+    .gal-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .gal-thumb span {
+      display:block; position:absolute; bottom:0; left:0; right:0;
+      background:rgba(0,0,0,.55); color:#fff; font-size:.6rem;
+      padding:3px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .gal-empty, .gal-loading { color:var(--dark-quarter); font-size:.9rem; text-align:center; padding:36px 0; }
+    .ne-actions { display:flex; gap:12px; margin-top:16px; flex-wrap:wrap; align-items:center; }
+    .ne-actions a { font-size:1rem; }
+    /* preview card */
+    .ne-preview-card {
+      background-color: var(--light-full);
+      border: #777 solid 2px;
+      border-radius: 8px;
+      box-shadow: 0px 3px 6px rgba(0,0,0,0.6), inset 0px 3px 8px rgba(255,255,255,1), inset 0px -3px 4px rgba(0,0,0,0.3);
+      padding: 24px 20px;
+      margin-top: 20px;
+    }
+    .ne-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #ccc;
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+    }
+    .ne-preview-header h2 { margin: 0; color: var(--dark-full); font-size: 1.1rem; }
+    .ne-preview-body { line-height: 1.7; color: var(--dark-half); }
+    .ne-preview-body img { max-width: 100%; border-radius: 6px; margin: 10px 0; }
+    .ne-preview-body h1, .ne-preview-body h2, .ne-preview-body h3,
+    .ne-preview-body h4, .ne-preview-body h5 { color: var(--dark-full); margin: 14px 0 6px; }
+    .ne-preview-body p { margin-bottom: 10px; }
+    .ne-preview-body ul, .ne-preview-body ol { padding-left: 24px; margin-bottom: 10px; }
+    .ne-preview-body blockquote {
+      border-left: 4px solid var(--primary-color);
+      margin: 8px 0; padding: 6px 14px;
+      background: var(--light-half);
+      color: var(--dark-quarter);
+      font-style: italic;
+    }
+    .ne-preview-body pre {
+      background: var(--light-quarter);
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+      font-family: "Courier New", monospace;
+      font-size: .88rem;
+    }
+    .ne-preview-body code {
+      background: var(--light-quarter);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: "Courier New", monospace;
+      font-size: .9em;
+    }
+    .ne-preview-empty { color: var(--dark-quarter); font-style: italic; text-align: center; padding: 24px 0; }
+    @media(max-width:520px){ .ne-card { padding:14px 10px; } }
+  </style>
 </head>
 <body>
 <header><%- include("includes/header") %></header>
 <main>
-  <section style="margin:12px">
+<div class="ne-wrap">
+  <div class="ne-card">
     <h1>Edit Post</h1>
-    <form action="/news/<%= post.id %>/edit" method="POST" enctype="multipart/form-data">
-      <label>Title</label><br/>
-      <input type="text" name="title" required style="width:100%" value="<%= post.title %>"/><br><br>
 
-      <label>Hero Image (leave blank to keep current)</label><br/>
-      <input type="file" name="hero" accept="image/*"/><br>
-      <% if (post.hero) { %>
-        <small>Current: /img/publicupload/<%= post.hero %></small><br>
-      <% } %>
-      <br>
+    <form id="ne-form" action="/news/<%= post.id %>/edit" method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="html" id="ne-html-hidden"/>
 
-      <label>Content (HTML)</label><br/>
-      <textarea name="html" rows="16" required style="width:100%"><%= post.html %></textarea><br><br>
+      <div class="ne-field">
+        <label>Title</label>
+        <input type="text" name="title" required value="<%= post.title %>"/>
+      </div>
 
-      <button type="submit">Save</button>
+      <div class="ne-field">
+        <label>Hero Image <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to keep current)</span></label>
+        <input type="file" name="hero" accept="image/*"/>
+        <% if (post.hero) { %>
+        <div class="ne-hero-preview">
+          <img src="/img/publicupload/<%= post.hero %>" alt="Current hero"/>
+          <small>Current: <%= post.hero %></small>
+        </div>
+        <% } %>
+      </div>
+
+      <div class="ne-tabs" role="tablist">
+        <button type="button" class="ne-tab-btn"        id="tab-md"   onclick="setMode('md')">⬡ Markdown</button>
+        <button type="button" class="ne-tab-btn active" id="tab-html" onclick="setMode('html')">&#60;/&#62; HTML</button>
+      </div>
+
+      <!-- Markdown editor (starts hidden, defaults to HTML for existing content) -->
+      <div id="md-panel" style="display:none">
+        <div class="ne-imgbar">
+          <button type="button" class="ne-imgbar-btn" onclick="triggerImgUpload()" title="Upload a new image and insert it">
+            ↑ Upload Image
+          </button>
+          <button type="button" class="ne-imgbar-btn" onclick="openGallery()" title="Pick from already-uploaded images">
+            ⊞ Insert Existing
+          </button>
+          <span id="img-upload-spinner">Uploading…</span>
+        </div>
+        <input type="file" id="img-file-input" accept="image/*" style="display:none" onchange="handleImgUpload(this)"/>
+        <textarea id="md-editor"></textarea>
+      </div>
+
+      <!-- Raw HTML editor -->
+      <div id="html-panel">
+        <div class="ne-imgbar">
+          <button type="button" class="ne-imgbar-btn" onclick="triggerImgUploadHtml()" title="Upload a new image — URL copied to clipboard">
+            ↑ Upload Image
+          </button>
+          <button type="button" class="ne-imgbar-btn" onclick="openGallery()" title="Pick from already-uploaded images">
+            ⊞ Insert Existing
+          </button>
+          <span id="img-upload-spinner-html">Uploading…</span>
+        </div>
+        <input type="file" id="img-file-input-html" accept="image/*" style="display:none" onchange="handleImgUploadHtml(this)"/>
+        <div class="ne-field">
+          <label>Content (HTML)</label>
+          <textarea id="html-editor" rows="20"><%- post.html %></textarea>
+        </div>
+      </div>
+
+      <div class="ne-actions">
+        <button type="submit">Save Changes</button>
+        <a href="/news-admin">Cancel</a>
+      </div>
     </form>
-  </section>
+</div>
+
+<!-- Live Preview -->
+<div class="ne-preview-card">
+  <div class="ne-preview-header">
+    <h2>Preview</h2>
+    <small id="ne-preview-mode-label" style="color:var(--dark-quarter)">HTML</small>
+  </div>
+  <div class="ne-preview-body" id="ne-preview-body">
+    <p class="ne-preview-empty">Loading preview…</p>
+  </div>
+</div>
+
+</div><!-- /.ne-wrap -->
+<div class="gal-backdrop" id="gal-backdrop" onclick="backdropClick(event)">
+  <div class="gal-modal">
+    <div class="gal-header">
+      <h2>Insert Existing Image</h2>
+      <button class="gal-close" onclick="closeGallery()">&#x2715;</button>
+    </div>
+    <div class="gal-search">
+      <input type="text" id="gal-search-input" placeholder="Search by filename…" oninput="filterGallery(this.value)"/>
+    </div>
+    <div class="gal-body">
+      <div class="gal-grid" id="gal-grid">
+        <p class="gal-loading">Loading images…</p>
+      </div>
+    </div>
+  </div>
+</div>
 </main>
 <footer><%- include("includes/footer") %></footer>
+
+<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+/* ── EasyMDE ─────────────────────────────────────────────────── */
+const mde = new EasyMDE({
+  element: document.getElementById('md-editor'),
+  autofocus: false,
+  spellChecker: false,
+  placeholder: 'Write your post content in Markdown…',
+  status: ['lines','words'],
+  toolbar: [
+    'bold','italic','strikethrough','|',
+    'heading-1','heading-2','heading-3','|',
+    'unordered-list','ordered-list','quote','|',
+    'link','table','horizontal-rule','|',
+    'preview','side-by-side','fullscreen','guide'
+  ]
+});
+
+/* ── Mode switching ──────────────────────────────────────────── */
+let currentMode = 'html';
+function setMode(m) {
+  currentMode = m;
+  document.getElementById('md-panel').style.display   = m === 'md'   ? '' : 'none';
+  document.getElementById('html-panel').style.display = m === 'html' ? '' : 'none';
+  document.getElementById('tab-md').classList.toggle('active',   m === 'md');
+  document.getElementById('tab-html').classList.toggle('active', m === 'html');
+  document.getElementById('ne-preview-mode-label').textContent = m === 'md' ? 'Markdown' : 'HTML';
+  updatePreview();
+}
+
+/* ── Live Preview ────────────────────────────────────────────── */
+function updatePreview() {
+  const body = document.getElementById('ne-preview-body');
+  let html = '';
+  if (currentMode === 'md') {
+    html = marked.parse(mde.value() || '');
+  } else {
+    html = document.getElementById('html-editor').value || '';
+  }
+  body.innerHTML = html.trim() ? html : '<p class="ne-preview-empty">Start typing to see a preview…</p>';
+}
+
+/* ── Form submit ─────────────────────────────────────────────── */
+document.getElementById('ne-form').addEventListener('submit', function(e) {
+  let html = '';
+  if (currentMode === 'md') {
+    html = marked.parse(mde.value());
+  } else {
+    html = document.getElementById('html-editor').value;
+  }
+  if (!html.trim()) {
+    e.preventDefault();
+    alert('Content is required.');
+    return;
+  }
+  document.getElementById('ne-html-hidden').value = html;
+});
+
+/* ── Image upload (Markdown mode) ───────────────────────────── */
+function triggerImgUpload() {
+  document.getElementById('img-file-input').value = '';
+  document.getElementById('img-file-input').click();
+}
+
+async function handleImgUpload(input) {
+  if (!input.files.length) return;
+  const spinner = document.getElementById('img-upload-spinner');
+  spinner.style.display = 'inline';
+  const fd = new FormData();
+  fd.append('image', input.files[0]);
+  try {
+    const resp = await fetch('/news/upload-image', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.url) {
+      const alt = input.files[0].name.replace(/\.[^.]+$/, '') || 'image';
+      insertMD(`![${alt}](${data.url})`);
+      allImages = [];
+    } else { alert('Upload failed: ' + (data.error || 'unknown')); }
+  } catch(err) { alert('Upload error: ' + err.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+function insertMD(text) {
+  const cm = mde.codemirror;
+  const doc = cm.getDoc();
+  const cursor = doc.getCursor();
+  const line = doc.getLine(cursor.line) || '';
+  doc.replaceRange((line.trim() ? '\n' : '') + text + '\n', cursor);
+  cm.focus();
+}
+
+/* ── Image upload (HTML mode) ───────────────────────────────── */
+function triggerImgUploadHtml() {
+  document.getElementById('img-file-input-html').value = '';
+  document.getElementById('img-file-input-html').click();
+}
+
+async function handleImgUploadHtml(input) {
+  if (!input.files.length) return;
+  const spinner = document.getElementById('img-upload-spinner-html');
+  spinner.style.display = 'inline';
+  const fd = new FormData();
+  fd.append('image', input.files[0]);
+  try {
+    const resp = await fetch('/news/upload-image', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.url) {
+      insertHTMLTag(`<img src="${data.url}" alt="${input.files[0].name.replace(/\.[^.]+$/,'')}" style="max-width:100%;border-radius:6px;"/>`);
+      allImages = [];
+    } else { alert('Upload failed: ' + (data.error || 'unknown')); }
+  } catch(err) { alert('Upload error: ' + err.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+function insertHTMLTag(tag) {
+  const ta = document.getElementById('html-editor');
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  ta.value = ta.value.slice(0, start) + '\n' + tag + '\n' + ta.value.slice(end);
+  ta.selectionStart = ta.selectionEnd = start + tag.length + 2;
+  ta.focus();
+}
+
+/* ── Gallery modal ───────────────────────────────────────────── */
+let allImages = [];
+
+async function openGallery() {
+  document.getElementById('gal-backdrop').classList.add('open');
+  document.getElementById('gal-search-input').value = '';
+  if (!allImages.length) {
+    try {
+      const resp = await fetch('/news/images');
+      allImages = await resp.json();
+    } catch(e) { allImages = []; }
+  }
+  renderGallery(allImages);
+}
+
+function closeGallery() { document.getElementById('gal-backdrop').classList.remove('open'); }
+function backdropClick(e) { if (e.target === e.currentTarget) closeGallery(); }
+function filterGallery(q) {
+  const lq = q.toLowerCase();
+  renderGallery(q ? allImages.filter(i => i.name.toLowerCase().includes(lq)) : allImages);
+}
+
+function renderGallery(imgs) {
+  const grid = document.getElementById('gal-grid');
+  if (!imgs.length) { grid.innerHTML = '<p class="gal-empty">No images found.</p>'; return; }
+  grid.innerHTML = imgs.map(img => {
+    const safeName = img.name.replace(/'/g,"\\'");
+    const safeUrl  = img.url.replace(/'/g,"\\'");
+    return `<div class="gal-thumb" onclick="insertGalleryImage('${safeUrl}','${safeName}')">
+      <img src="${img.url}" alt="${img.name}" loading="lazy"/>
+      <span>${img.name}</span>
+    </div>`;
+  }).join('');
+}
+
+function insertGalleryImage(url, name) {
+  const alt = name.replace(/\.[^.]+$/, '');
+  if (currentMode === 'md') {
+    insertMD(`![${alt}](${url})`);
+  } else {
+    insertHTMLTag(`<img src="${url}" alt="${alt}" style="max-width:100%;border-radius:6px;"/>`);
+  }
+  closeGallery();
+}
+
+/* ── Wire up live preview ────────────────────────────────────── */
+mde.codemirror.on('change', updatePreview);
+document.getElementById('html-editor').addEventListener('input', updatePreview);
+updatePreview();
+</script>
 </body>
 </html>

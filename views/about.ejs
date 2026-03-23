@@ -11,92 +11,13 @@
   <meta property="og:title" content="About — Boise Gems">
   <meta property="og:description" content="Mission, history, and staff of the Boise Gems.">
 
-  <style>
-    .about-page { --pad: 12px; }
-    .about-hero {
-      position: relative;
-      min-height: 52vh;
-      background: #111 center/cover no-repeat;
-      display: grid;
-      place-items: center;
-      overflow: hidden;
-    }
-    .about-hero::before {
-      content: "";
-      position: absolute; inset: 0;
-      background: url('/img/photos/boise-gems-17.jpg') center/cover no-repeat;
-      filter: brightness(.65);
-      transform: scale(1.03);
-    }
-    .about-hero::after {
-      content: "";
-      position: absolute; inset: 0;
-      background: linear-gradient(180deg, rgba(0,0,0,.1) 0%, rgba(0,0,0,.5) 100%);
-    }
-    .about-hero__content {
-      position: relative; width: min(100%, 960px);
-      margin: 0 var(--pad); color: #fff; text-align: center;
-    }
-    .about-hero__card {
-      display: inline-block; text-align: left;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.18);
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-      border-radius: 14px; padding: 18px 16px;
-      box-shadow: 0 8px 30px rgba(0,0,0,.25);
-    }
-    .about-hero__title { margin: 0 0 8px; font-size: clamp(26px, 4.5vw, 40px); line-height: 1.15; }
-    .about-hero__text  { margin: 0; font-size: clamp(14px, 2.5vw, 18px); line-height: 1.6; color: #fff; }
+  <!-- styles moved to styles.css -->
 
-    .about-section { margin: 20px var(--pad); }
-    .about-wrap { margin: 0 auto; width: min(100%, 980px); }
-    .about-section h2 { margin: 0 0 10px; font-size: clamp(22px, 3.5vw, 30px); }
-    .about-prose p { margin: 10px 0; line-height: 1.75; font-size: 16px; }
-
-    /* Staff grid — fixed card width so singles don't stretch */
-    .staff-block { margin-top: 14px; }
-    .staff-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, 240px); /* fixed card width */
-      justify-content: center; /* center the row */
-      gap: 14px;
-    }
-    .staff-card {
-      border-radius: 14px; overflow: hidden;
-      border: 1px solid #eee; background: #fff;
-      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-    }
-    .staff-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 24px rgba(0,0,0,.08);
-      border-color: #e6e6e6;
-    }
-    .staff-media { aspect-ratio: 4/3; background: #f1f1f1 center/cover no-repeat; }
-    .staff-meta { padding: 12px; }
-    .staff-name { margin: 0 0 2px; font-weight: 700; font-size: 18px; line-height: 1.25; }
-    .staff-role { margin: 0; font-size: 14px; opacity: .75; }
-
-    .staff-category {
-      margin: 22px 0 10px;
-      font-weight: 800;
-      font-size: 16px;
-      letter-spacing: .2px;
-      opacity: .9;
-      text-transform: none;
-    }
-
-    .staff-link { display: block; color: inherit; text-decoration: none; height: 100%; }
-
-    @media (max-width: 520px) {
-      /* On very small screens, allow 2-up by shrinking card width a bit */
-      .staff-grid { grid-template-columns: repeat(auto-fill, 180px); gap: 12px; }
-    }
-  </style>
 </head>
 <body class="about-page" style="background:#fafafa;">
 <header><%- include("includes/header") %></header>
 
-<section class="about-hero">
+<section class="about-hero hero-about">
   <div class="about-hero__content">
     <div class="about-hero__card">
       <h1 class="about-hero__title" style="color:#fff;">Our Mission</h1>

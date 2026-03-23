@@ -1,103 +1,103 @@
-<html lang="en">
+﻿<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems</title>
+    <title>Admin Portal – Boise Gems</title>
     <%- include("includes/head") %>
+    <!-- styles moved to styles.css -->
 </head>
 <body>
     <header>
         <%- include("includes/header") %>
     </header>
     <main>
-        <div style="margin: 12px;">
-            <div class="duple-to-single">
-                <div style="margin: 4px">
-                    <h1>Hello, <%= user.firstname %> <%= user.lastname %></h1>
-                    <br>
-                    <%- include("includes/shirt-size-section") %>
-                    <br>
-                    <p><b>Email:</b> <%= member.email %></p>
-                    <br>
-                    <p><b>Address:</b> <%= member.address %></p>
-                    <br>
-                    <p><b>Phone:</b> <%= member.phone %></p>
-                    <br>
-                    <p><b>Birthday:</b> <%= new Date(member.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
-                    <br>
-                    <p><b>Email verified: </b>✅</p>
-                    <br>
+        <div style="padding: 24px 20px;">
+            <div class="admin-top">
+                <div>
+                    <h1>Admin Portal</h1>
+                    <p style="margin-top: 4px; color: #666;">Welcome back, <b><%= user.firstname %> <%= user.lastname %></b></p>
                 </div>
-                <div style="margin: 4px; text-align: center;">
-                    <h2 style="text-align: center;">Admin Actions</h2>
-                    <br>
-                    <br>
-                    <a href="/edit-users"><button>Edit Users</button></a>
-                    <br>
-                    <br>
-                    <a href="/edit-forms"><button>Edit Forms</button></a>
-                    <br>
-                    <br>
-                    <a href="/pay-history"><button>Pay History</button></a>
-                    <br>
-                    <br>
-                    <a href="/set-tuition"><button>Set Tuition Fees</button></a>
-                    <br>
-                    <br>
-                    <a href="/events-admin"><button>Events</button></a>
-                    <br>
-                    <br>
-                    <a href="/set-materials"><button>Set Audition Materials</button></a>
-                    <br>
-                    <br>
-                    <a href="/news-admin"><button>News</button></a>
-                    <br><br>
-                    <a href="/staff-admin"><button>Staff</button></a>
-                    <br><br>
-                     <a href="/edit-forms"><button>Edit Forms</button></a>
-                    <br>
-                    <br>
-                    <a href="/pay-history"><button>Pay History</button></a>
-                    <br>
-                    <br>
-                    <a href="/email-members"><button>Bulk Email</button></a>
-                    <br>
-                    <br>
-                    <a href="/contracts-admin"><button>Contracts</button></a>
-                    <br><br>
-                    <a href="/admin/pending-contracts"><button>Pending Contracts</button></a>
-                    <br><br>
-                    <a href="/admin/contract-extensions"><button>Contract Extensions</button></a>
-                    <br><br>
-                    <a href="/admin/contracted-members"><button>Contracted Members</button></a>
-                    <br><br>
-                    <a href="/contracts-admin/export-contracts.csv"><button>Export Contracts CSV</button></a>
-                    <br><br>
-                    <a href="/contracts-admin/export-emergency.csv"><button>Export Emergency CSV</button></a>
-                    <br><br>
-                    <a href="/admin/export-member-info"><button>Export Member Info</button></a>
-                    <br><br>
-                    <a href="/admin/expired-contracts"><button>Expired Contracts</button></a>
-                    <br><br>
-                    <a href="/admin-rsvps"><button>RSVPs & Forms</button></a>
-                    <br><br>
-                    <a href="/admin-forms"><button>Forms Completion</button></a>
-                    <br><br>
-                    <a href="/files"><button>Music &amp; Files</button></a>
-                    <br><br>
-                    <a href="/support/issue"><button>Submit Website Issue</button></a>
-                    <br><br>
-                    <a href="/admin/callbacks"><button>Extend Callback</button></a>
-                    <br><br>
-                      <% if (user && user.email && user.email.toLowerCase() === "austinmoldenhauer@gmail.com") { %>
-                        <a href="/admin/chris-payment">Chris Payment</a>
-                    <% } %>
-                    <% if (user && user.email && user.email.toLowerCase() === "chris@chrispricemusic.net") { %>
-                        <a href="/admin/chris-payment">Chris Payment</a>
-                    <% } %>
+                <div>
+                    <%- include("includes/shirt-size-section") %>
                 </div>
             </div>
-            <br>
+
+            <div class="admin-info-card" style="margin-top: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 24px;">
+                    <p><b>Email:</b> <%= member.email %></p>
+                    <p><b>Phone:</b> <%= member.phone %></p>
+                    <p><b>Address:</b> <%= member.address %></p>
+                    <p><b>Birthday:</b> <%= new Date(member.birthday).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).replace(/(\d{1,2})(,)/, "$1th$2") %></p>
+                    <p><b>Email verified:</b> ✅</p>
+                </div>
+            </div>
+
+            <div class="portal-grid">
+
+                <div class="portal-section">
+                    <h3>👥 Members</h3>
+                    <div class="portal-btn-list">
+                        <a href="/edit-users"><button class="portal-btn">Edit Users</button></a>
+                        <a href="/pay-history"><button class="portal-btn">Payment History</button></a>
+                        <a href="/set-tuition"><button class="portal-btn">Set Tuition Fees</button></a>
+                        <a href="/email-members"><button class="portal-btn">Bulk Email</button></a>
+                        <a href="/admin/export-member-info"><button class="portal-btn">Export Member Info</button></a>
+                    </div>
+                </div>
+
+                <div class="portal-section">
+                    <h3>📋 Contracts</h3>
+                    <div class="portal-btn-list">
+                        <a href="/contracts-admin"><button class="portal-btn">Contracts</button></a>
+                        <a href="/admin/pending-contracts"><button class="portal-btn">Pending Contracts</button></a>
+                        <a href="/admin/contract-extensions"><button class="portal-btn">Contract Extensions</button></a>
+                        <a href="/admin/contracted-members"><button class="portal-btn">Contracted Members</button></a>
+                        <a href="/admin/expired-contracts"><button class="portal-btn">Expired Contracts</button></a>
+                        <a href="/admin/callbacks"><button class="portal-btn">Extend Callback</button></a>
+                        <a href="/contracts-admin/export-contracts.csv"><button class="portal-btn">Export Contracts CSV</button></a>
+                        <a href="/contracts-admin/export-emergency.csv"><button class="portal-btn">Export Emergency CSV</button></a>
+                    </div>
+                </div>
+
+                <div class="portal-section">
+                    <h3>📰 Content</h3>
+                    <div class="portal-btn-list">
+                        <a href="/news-admin"><button class="portal-btn">News</button></a>
+                        <a href="/staff-admin"><button class="portal-btn">Staff</button></a>
+                        <a href="/events-admin"><button class="portal-btn">Events</button></a>
+                        <a href="/set-materials"><button class="portal-btn">Audition Materials</button></a>
+                    </div>
+                </div>
+
+                <div class="portal-section">
+                    <h3>📁 Forms &amp; Files</h3>
+                    <div class="portal-btn-list">
+                        <a href="/edit-forms"><button class="portal-btn">Edit Forms</button></a>
+                        <a href="/admin-rsvps"><button class="portal-btn">RSVPs &amp; Forms</button></a>
+                        <a href="/admin-forms"><button class="portal-btn">Forms Completion</button></a>
+                        <a href="/files"><button class="portal-btn">Music &amp; Files</button></a>
+                    </div>
+                </div>
+
+                <div class="portal-section">
+                    <h3>🤝 Community</h3>
+                    <div class="portal-btn-list">
+                        <a href="/admin/volunteer-needs"><button class="portal-btn">Volunteer Needs</button></a>
+                        <a href="/admin/donors"><button class="portal-btn">Donor List</button></a>
+                    </div>
+                </div>
+
+                <div class="portal-section">
+                    <h3>⚙️ System</h3>
+                    <div class="portal-btn-list">
+                        <a href="/support/issue"><button class="portal-btn">Submit Website Issue</button></a>
+                        <% if (user && user.email && (user.email.toLowerCase() === "austinmoldenhauer@gmail.com" || user.email.toLowerCase() === "chris@chrispricemusic.net")) { %>
+                            <a href="/admin/chris-payment"><button class="portal-btn" style="background:#fff3cd;border-color:#ffc107;color:#5a4000;">Chris Payment</button></a>
+                        <% } %>
+                    </div>
+                </div>
+
+            </div>
         </div>
     </main>
     <footer>

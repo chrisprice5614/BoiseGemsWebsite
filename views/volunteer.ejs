@@ -1,0 +1,81 @@
+﻿<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volunteer – Boise Gems</title>
+    <%- include("includes/head") %>
+    <!-- styles moved to styles.css -->
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <!-- Hero Image -->
+        <% if (false) { /* set to true and update src once you add the image */ %>
+            <img src="/img/volunteer-hero.jpg" alt="Volunteers helping the Gems" class="volunteer-hero">
+        <% } else { %>
+            <div class="volunteer-hero-placeholder">
+                <span>Volunteer with the Gems</span>
+            </div>
+        <% } %>
+
+        <div class="vol-section">
+            <h1>Volunteer</h1>
+            <br>
+            <p>The Gems are always in need of helping hands. Serve meals, fix props, transport items, and donate your talents to a group of hard working performers. Every bit of help is always appreciated!</p>
+
+            <!-- Volunteer Needs Card -->
+             <% if (needs && needs.trim()) { %>
+            <div class="vol-card">
+                <h2>We are especially looking for...</h2>
+                    <p class="vol-needs-text"><%= needs %></p>
+            </div>
+            <% } %>
+
+            <!-- Flash message -->
+            <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+                <div class="flash-success"><%= flashMessage %></div>
+            <% } %>
+
+            <!-- Contact Form -->
+            <div class="vol-card" style="margin-top: 32px;">
+                <h2>Get Involved</h2>
+                <br>
+                <form action="/volunteer" method="POST" class="vol-form">
+                    <div class="vol-row">
+                        <div class="vol-field">
+                            <label for="firstname">First Name</label>
+                            <input type="text" id="firstname" name="firstname" required placeholder="Jane">
+                        </div>
+                        <div class="vol-field">
+                            <label for="lastname">Last Name</label>
+                            <input type="text" id="lastname" name="lastname" required placeholder="Doe">
+                        </div>
+                    </div>
+                    <div class="vol-row">
+                        <div class="vol-field">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" name="email" required placeholder="jane@example.com">
+                        </div>
+                        <div class="vol-field">
+                            <label for="phone">Phone Number</label>
+                            <input type="tel" id="phone" name="phone" required placeholder="(208) 555-0100">
+                        </div>
+                    </div>
+                    <div class="vol-field">
+                        <label for="message">How would you like to volunteer?</label>
+                        <textarea id="message" name="message" required placeholder="Tell us how you'd like to help..."></textarea>
+                    </div>
+                    <div style="text-align: center; margin-top: 8px;">
+                        <button type="submit">Submit</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

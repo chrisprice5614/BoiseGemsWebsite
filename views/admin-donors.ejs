@@ -1,0 +1,52 @@
+﻿<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donor List – Admin</title>
+    <%- include("includes/head") %>
+    <!-- styles moved to styles.css -->
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 24px;">
+            <a href="/admin-portal">&larr; Admin Portal</a>
+            <h1 style="margin-top: 12px;">Donor List</h1>
+            <p style="margin-top: 8px; color: #555;">
+                Type donor names separated by commas. They will appear as a grid on the public
+                <a href="/donate">/donate</a> page.
+            </p>
+
+            <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+                <div class="flash-box"><%= flashMessage %></div>
+            <% } %>
+
+            <form action="/admin/donors" method="POST" style="margin-top: 20px;">
+                <label for="names" style="margin-left: 0; display: block; margin-bottom: 6px; font-weight: 600;">
+                    Donor Names (comma-separated)
+                </label>
+                <textarea id="names" name="names" rows="6" style="width: 100%; box-sizing: border-box; margin-left: 0;" placeholder="Jane Smith, John Doe, The Anderson Family, ..."><%= names %></textarea>
+                <div style="margin-top: 14px;">
+                    <button type="submit">Save Donor List</button>
+                </div>
+            </form>
+
+            <% if (names && names.trim()) { %>
+            <hr style="margin: 28px 0 20px;">
+            <h2>Preview</h2>
+            <p style="color: #555; font-size: 0.9rem; margin-bottom: 4px;">This is how the names will appear on the donate page.</p>
+            <div class="donor-preview">
+                <% names.split(",").map(n => n.trim()).filter(n => n).forEach(name => { %>
+                    <div class="donor-chip"><%= name %></div>
+                <% }) %>
+            </div>
+            <% } %>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

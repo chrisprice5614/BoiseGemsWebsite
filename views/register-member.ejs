@@ -2,266 +2,276 @@
     placeholders = {firstname: "", lastname: "", birthday: "", address: "", phone: "", email: "", section: "", instrument: ""}
 } %>
 
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems | Member Registration</title>
-    <%- include("includes/head") %>
-</head>
-<body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-        <div style="padding: 8px">
-            <br>
-            <% if(errors.length) { %>
-                <% errors.forEach(error => { %>
-                    <div class="error">
-                        <%= error %>
-                    </div>
-                <% }) %>
-            <% } %>
-            <h1>Register as a Auditionee/Member/Staff</h1>
-            <br>
-                <form action="/register-member" method="POST">
-                    <label for="firstname">First Name</label>
-                    <input type="text" name="firstname" autocomplete="off" placeholder="John" value="<%= placeholders.firstname %>" required/>
-                    <br>
-                    <br>
-                    <label for="lastname">Last Name</label>
-                    <input type="text" name="lastname" autocomplete="off" placeholder="Doe" value="<%= placeholders.lastname %>" required/>
-                    <br>
-                    <br>
-                    <label for="phone">Phone Number</label>
-                    <input type="phone" name="phone" autocomplete="off" placeholder="(208) 555 - 5555" id="phoneNumber" value="<%= placeholders.phone %>" required/>
-                    <br>
-                    <br>
-                    <label for="email">Email</label>
-                    <input type="email" name="email" autocomplete="off" placeholder="John@email.com" value="<%= placeholders.email %>" required/>
-                    <br>
-                    <br>
-                    <label for="address">Address</label>
-                    <input type="text" name="address" autocomplete="off" placeholder="1234 E Fakestreet, Meridian, Idaho" value="<%= placeholders.address %>" required/>
-                    <br>
-                    <br>
-                    <label for="birthday">Your birthday</label>
-                    <input type="date" name="birthday" autocomplete="off" value="<%= placeholders.birthday ? new Date(placeholders.birthday).toISOString().slice(0,10) : '' %>" required/>
-                    <br>
-                    <br>
-                    <label for="section" >Section</label>
-                    <select name="section" id="sectionSelect" onchange="sectionChange()">
-                        <% sectionOptions = ["Brass", "Drumline", "Front Ensemble", "Guard", "Drum Major", "Staff"] %>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boise Gems | Member Registration</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" type="image/x-icon" href="/img/ui/favicon.ico" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; min-height: 100dvh; }
 
-                        <% sectionOptions.forEach( option => { %>
-                            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-                            <% optionLower = option.toLowerCase(); %>
-                            <option value="<%= optionLower %>" <% if(placeholders.section == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                                
-                        <% }) %>
-                    </select>
-                    <br>
-                    <br>
-
-                    <div id="instrumentChange">
-                        
-                    </div>
-                    <br>
-                    
-                    <label for="password">Password</label>
-                    <input type="password" name="password" autocomplete="off" required/>
-                    <br>
-                    <br>
-                    <label for="passwordRetype">Retype Password</label>
-                    <input type="password" name="passwordRetype" autocomplete="off" required/>
-                    <br>
-                    <br>
-                    <div style="text-align: center;">
-                        <button>Register</button>
-                    </div>
-                </form>
-            <br>
-            <p style="padding: 8px">Already have an account? <a href="/login">Login here</a>!</p>
-        </div>
-    </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
-
-<script>
-
-    htmlDrumline = `
-    <label for="instrument">Instrument</label>
-    <select name="instrument" id="instrumentSelect">
-        <% sectionOptions = ["Snare", "Quads", "Bass", "Cymbals"] %>
-
-        <% sectionOptions.forEach( option => { %>
-            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-            <% optionLower = option.toLowerCase(); %>
-            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                             
-        <% }) %>
-    </select>
-    <br>
-    `
-
-    htmlBrass = `
-    <label for="instrument">Instrument</label>
-    <select name="instrument" id="instrumentSelect">
-        <% sectionOptions = ["Trumpet", "Mellophone", "Baritone", "Tuba"] %>
-
-        <% sectionOptions.forEach( option => { %>
-            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-            <% optionLower = option.toLowerCase(); %>
-            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                              
-        <% }) %>
-    </select>
-    <br>
-    `
-
-    htmlFront = `
-    <label for="instrument">Instrument</label>
-    <select name="instrument" id="instrumentSelect">
-        <% sectionOptions = ["Vibraphone", "Marimba", "Xylo/Glock", "Rack", "Bass", "Synth"] %>
-
-        <% sectionOptions.forEach( option => { %>
-            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-            <% optionLower = option.toLowerCase(); %>
-            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                               
-        <% }) %>
-    </select>
-    <br>
-    `
-
-    htmlGuard = `
-    <label for="instrument">Position</label>
-    <select name="instrument" id="instrumentSelect">
-        <% sectionOptions = ["Guard"] %>
-
-        <% sectionOptions.forEach( option => { %>
-            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-            <% optionLower = option.toLowerCase(); %>
-            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                                 
-        <% }) %>
-    </select>
-    <br>
-    `
-
-    htmlDrumMajor = `
-    <label for="instrument">Position</label>
-    <select name="instrument" id="instrumentSelect">
-        <% sectionOptions = ["Drum Major"] %>
-
-        <% sectionOptions.forEach( option => { %>
-            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-            <% optionLower = option.toLowerCase(); %>
-            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                              
-        <% }) %>
-    </select>
-    <br>
-    `
-
-    htmlStaff = `
-    <label for="instrument">Position</label>
-    <select name="instrument" id="instrumentSelect">
-        <% sectionOptions = ["Visual","Brass","Drumline","Media","Front Ensemble","Guard","Design","Admin","Director"] %>
-
-        <% sectionOptions.forEach( option => { %>
-            <% optionParsed = option.toLowerCase().replace(/\s/g, ''); %>
-            <% optionLower = option.toLowerCase(); %>
-            <option value="<%= optionLower %>" <% if(placeholders.instrument == optionLower) { %> selected="selected" <% } %>><%= option %></option>
-                                
-        <% }) %>
-    </select>
-    <br>
-    `
-
-    function sectionChange() {
-        const sectionElement = document.getElementById('sectionSelect');
-        const instrumentElement = document.getElementById('instrumentChange');
-
-        if(sectionElement.value == "brass")
-            instrumentElement.innerHTML = htmlBrass;
-
-        if(sectionElement.value == "drumline")
-            instrumentElement.innerHTML = htmlDrumline;
-
-        if(sectionElement.value == "front ensemble")
-            instrumentElement.innerHTML = htmlFront;
-
-        if(sectionElement.value == "guard")
-            instrumentElement.innerHTML = htmlGuard;
-
-        if(sectionElement.value == "drum major")
-            instrumentElement.innerHTML = htmlDrumMajor;
-
-        if(sectionElement.value == "staff")
-            instrumentElement.innerHTML = htmlStaff;
-        
-        
-        // Perform other actions based on the new value
+    .bg {
+      min-height: 100dvh;
+      background:
+        radial-gradient(ellipse at 12% 20%, rgba(157,118,187,.82) 0%, transparent 52%),
+        radial-gradient(ellipse at 88%  8%, rgba(72,22,130,.90)   0%, transparent 46%),
+        radial-gradient(ellipse at 70% 85%, rgba(67,30,201,.48)   0%, transparent 54%),
+        radial-gradient(ellipse at  4% 88%, rgba(140,100,180,.65) 0%, transparent 44%),
+        radial-gradient(ellipse at 92% 62%, rgba(96,67,125,.72)   0%, transparent 48%),
+        radial-gradient(ellipse at 48% 48%, rgba(255,255,255,.50) 0%, transparent 62%),
+        radial-gradient(ellipse at 30% 70%, rgba(180,140,210,.50) 0%, transparent 40%),
+        #ddd0f0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px 48px;
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    .reg-card {
+      background: rgba(255,255,255,.90);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid rgba(255,255,255,.74);
+      border-radius: 22px;
+      box-shadow: 0 12px 48px rgba(72,22,130,.22), 0 2px 10px rgba(0,0,0,.09);
+      width: 100%;
+      max-width: 480px;
+      padding: 40px 40px 32px;
+    }
 
-        const instrumentElement = document.getElementById('instrumentChange');
-        const defaultSection = '<%= placeholders.section %>'
+    .reg-logo {
+      display: block;
+      width: 60px;
+      height: auto;
+      margin: 0 auto 12px;
+      filter: drop-shadow(0 2px 10px rgba(96,67,125,.30));
+    }
 
-        instrumentElement.innerHTML = htmlBrass;
+    .reg-title {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #35166a;
+      margin-bottom: 4px;
+    }
 
-        if(defaultSection == "brass")
-            instrumentElement.innerHTML = htmlBrass;
+    .reg-subtitle {
+      text-align: center;
+      color: #7858a0;
+      font-size: .88rem;
+      margin-bottom: 24px;
+    }
 
-        if(defaultSection == "guard")
-            instrumentElement.innerHTML = htmlGuard;
+    .error-box {
+      background: #fdeaea;
+      border: 1.5px solid #f5a0a0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #b02020;
+      font-size: .88rem;
+      margin-bottom: 10px;
+    }
 
-        if(defaultSection == "drumline")
-            instrumentElement.innerHTML = htmlDrumline;
+    .field-group { margin-bottom: 16px; }
 
-        if(defaultSection == "staff")
-            instrumentElement.innerHTML = htmlStaff;
+    .field-group label {
+      display: block;
+      font-size: .84rem;
+      font-weight: 600;
+      color: #4a2e7a;
+      margin-bottom: 5px;
+    }
 
-        if(defaultSection == "front ensemble")
-            instrumentElement.innerHTML = htmlFront;
+    .field-group input,
+    .field-group select {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #c8b4e0;
+      border-radius: 11px;
+      font-size: .95rem;
+      background: rgba(255,255,255,.93);
+      color: #1a1030;
+      outline: none;
+      transition: border-color 180ms, box-shadow 180ms;
+      font-family: inherit;
+    }
 
-        if(defaultSection == "drum major")
-            instrumentElement.innerHTML = htmlDrumMajor;
+    .field-group input:focus,
+    .field-group select:focus {
+      border-color: #9d76bb;
+      box-shadow: 0 0 0 3.5px rgba(157,118,187,.22);
+    }
 
-        const phoneInput = document.getElementById("phoneNumber");
+    .submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, #9d76bb 0%, #5c3d80 100%);
+      color: #fff;
+      border: none;
+      border-radius: 11px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 180ms, transform 100ms;
+      box-shadow: 0 4px 16px rgba(80,35,130,.26);
+      font-family: inherit;
+    }
 
-        phoneInput.addEventListener("input", (e) => {
-            let value = e.target.value;
+    .submit-btn:hover  { opacity: .87; }
+    .submit-btn:active { transform: scale(.98); }
 
-            value = value.replace(/\D/g, '');
+    .reg-links {
+      text-align: center;
+      margin-top: 20px;
+      font-size: .87rem;
+      color: #7858a0;
+      border-top: 1px solid rgba(157,118,187,.18);
+      padding-top: 16px;
+    }
 
-            if (value.length > 10) {
-                value = value.slice(0,10)
-            }
+    .reg-links a {
+      color: #5c3d80;
+      font-weight: 600;
+      text-decoration: none;
+    }
 
-            if(value.length > 6) {
-                value = `(${value.slice(0,3)}) ${value.slice(3,6)}-${value.slice(6)}`
-            } else if (value.length > 3) {
-                value = `(${value.slice(0,3)}) ${value.slice(3)}`
-            }else if (value.length > 0) {
-                value = `(${value}`;
-            }
+    .reg-links a:hover { text-decoration: underline; }
 
-            e.target.value = value;
-        })
+    @media (max-width: 520px) {
+      .reg-card { padding: 28px 20px 24px; }
+    }
+  </style>
+</head>
+<body>
+<div class="bg">
+  <div class="reg-card">
 
-        phoneInput.addEventListener('keypress', (e) => {
-            if((!/\d/.test(e.key))) {
-                e.preventDefault();
-            }
-        })
-    });
+    <img class="reg-logo" src="/img/ui/gem.png" alt="Boise Gems" />
+    <h1 class="reg-title">Member Registration</h1>
+    <p class="reg-subtitle">Boise Gems — Auditionee / Member / Staff</p>
 
-    
+    <% if (errors && errors.length) { %>
+      <% errors.forEach(function(err) { %>
+        <div class="error-box"><%= err %></div>
+      <% }) %>
+    <% } %>
+
+    <form action="/register-member" method="POST">
+
+      <div class="field-group">
+        <label for="firstname">First Name</label>
+        <input type="text" name="firstname" placeholder="John" value="<%= placeholders.firstname %>" autocomplete="given-name" required />
+      </div>
+
+      <div class="field-group">
+        <label for="lastname">Last Name</label>
+        <input type="text" name="lastname" placeholder="Doe" value="<%= placeholders.lastname %>" autocomplete="family-name" required />
+      </div>
+
+      <div class="field-group">
+        <label for="phone">Phone Number</label>
+        <input type="tel" name="phone" id="phoneNumber" placeholder="(208) 555-5555" value="<%= placeholders.phone %>" autocomplete="tel" required />
+      </div>
+
+      <div class="field-group">
+        <label for="email">Email</label>
+        <input type="email" name="email" placeholder="john@email.com" value="<%= placeholders.email %>" autocomplete="email" required />
+      </div>
+
+      <div class="field-group">
+        <label for="address">Address</label>
+        <input type="text" name="address" placeholder="1234 E Fakestreet, Meridian, Idaho" value="<%= placeholders.address %>" autocomplete="street-address" required />
+      </div>
+
+      <div class="field-group">
+        <label for="birthday">Date of Birth</label>
+        <input type="date" name="birthday" value="<%= placeholders.birthday ? new Date(placeholders.birthday).toISOString().slice(0,10) : '' %>" required />
+      </div>
+
+      <div class="field-group">
+        <label for="section">Section</label>
+        <select name="section" id="sectionSelect" onchange="sectionChange()">
+          <% ["Brass","Drumline","Front Ensemble","Guard","Drum Major","Staff"].forEach(function(opt) { %>
+            <option value="<%= opt.toLowerCase() %>"
+              <%= placeholders.section === opt.toLowerCase() ? 'selected' : '' %>>
+              <%= opt %>
+            </option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div id="instrumentChange" class="field-group"></div>
+
+      <div class="field-group">
+        <label for="password">Password <small style="font-weight:400;color:#999;">(min 8 chars)</small></label>
+        <input type="password" name="password" autocomplete="new-password" required />
+      </div>
+
+      <div class="field-group">
+        <label for="passwordRetype">Confirm Password</label>
+        <input type="password" name="passwordRetype" autocomplete="new-password" required />
+      </div>
+
+      <button class="submit-btn" type="submit">Register</button>
+    </form>
+
+    <div class="reg-links">
+      Already have an account? <a href="/login">Login here</a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const INSTRUMENTS = {
+    brass:           ['Trumpet','Mellophone','Baritone','Tuba'],
+    drumline:        ['Snare','Quads','Bass','Cymbals'],
+    'front ensemble':['Vibraphone','Marimba','Xylo/Glock','Rack','Bass','Synth'],
+    guard:           ['Guard'],
+    'drum major':    ['Drum Major'],
+    staff:           ['Visual','Brass','Drumline','Media','Front Ensemble','Guard','Design','Admin','Director'],
+  };
+
+  function buildInstrumentSelect(section, selected) {
+    const list = INSTRUMENTS[section] || [];
+    return `<label>Instrument / Role</label><select name="instrument">` +
+      list.map(o => `<option value="${o.toLowerCase()}"${selected===o.toLowerCase()?' selected':''}>${o}</option>`).join('') +
+      `</select>`;
+  }
+
+  function sectionChange() {
+    const sec = document.getElementById('sectionSelect').value;
+    document.getElementById('instrumentChange').innerHTML = buildInstrumentSelect(sec, '');
+  }
+
+  // Init with placeholders
+  (function() {
+    const defaultSec = '<%= placeholders.section %>' || 'brass';
+    const defaultIns = '<%= placeholders.instrument %>'.toLowerCase();
+    document.getElementById('instrumentChange').innerHTML = buildInstrumentSelect(defaultSec, defaultIns);
+  })();
+
+  // Phone formatting — strips US country code (+1) that autofill may prepend
+  function normalizePhone(raw) {
+    let d = raw.replace(/\D/g, '');
+    if (d.length === 11 && d[0] === '1') d = d.slice(1);
+    return d.slice(0, 10);
+  }
+
+  const phoneInput = document.getElementById('phoneNumber');
+  phoneInput.addEventListener('input', e => {
+    const v = normalizePhone(e.target.value);
+    if      (v.length > 6) e.target.value = `(${v.slice(0,3)}) ${v.slice(3,6)}-${v.slice(6)}`;
+    else if (v.length > 3) e.target.value = `(${v.slice(0,3)}) ${v.slice(3)}`;
+    else if (v.length > 0) e.target.value = `(${v}`;
+    else                   e.target.value = '';
+  });
+  phoneInput.addEventListener('keypress', e => { if(!/[\d+]/.test(e.key)) e.preventDefault(); });
 </script>
 </body>
 </html>

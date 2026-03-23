@@ -1,0 +1,67 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volunteer Needs – Admin</title>
+    <%- include("includes/head") %>
+    <!-- styles moved to styles.css -->
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 24px;">
+            <a href="/admin-portal">&larr; Admin Portal</a>
+            <h1 style="margin-top: 12px;">Volunteer Needs</h1>
+            <p style="margin-top: 8px; color: #555;">This text appears on the public <a href="/volunteer">/volunteer</a> page under "We are especially looking for..."</p>
+
+            <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+                <div class="flash-box" style="margin-top: 16px;"><%= flashMessage %></div>
+            <% } %>
+
+            <form action="/admin/volunteer-needs" method="POST" style="margin-top: 16px;">
+                <label for="needs" style="margin-left: 0; display: block; margin-bottom: 6px; font-weight: 600;">Volunteer Needs Text</label>
+                <textarea id="needs" name="needs" rows="8" style="width: 100%; box-sizing: border-box; margin-left: 0;" placeholder="e.g. drivers, meal prep volunteers, prop crew..."><%= needs %></textarea>
+                <div style="margin-top: 12px;">
+                    <button type="submit">Save</button>
+                </div>
+            </form>
+
+            <hr style="margin: 32px 0;">
+            <h2>Volunteer Form Submissions</h2>
+            <% if (contacts && contacts.length > 0) { %>
+            <div style="overflow-x: auto;">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Submitted</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% contacts.forEach(c => { %>
+                        <tr>
+                            <td style="white-space: nowrap;"><%= new Date(c.created_at).toLocaleDateString('en-US') %></td>
+                            <td><%= c.firstname %> <%= c.lastname %></td>
+                            <td><a href="mailto:<%= c.email %>"><%= c.email %></a></td>
+                            <td><%= c.phone %></td>
+                            <td><%= c.message %></td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+            <% } else { %>
+                <p style="margin-top: 12px; color: #777;">No submissions yet.</p>
+            <% } %>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

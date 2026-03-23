@@ -1,106 +1,11 @@
-<html lang="en">
+﻿<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Boise Gems | Esto Perpetua</title>
     <%- include("includes/head") %>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <style>
-        #map { height: 50vh; width: 100%; }
-        body, html { margin: 0; padding: 0; }
-        /* --- Animated smokey background --- */
-/* Monochrome ambient drift background (no noise, no color) */
-/* Tunables for small areas */
-/* ========== Volumetric Smoke (No Perlin, No Images) ========== */
-.smoke-billow{
-  /* Quick knobs */
-  --smoke-speed-base: 34s;   /* slower = heavier */
-  --smoke-speed-wisp: 22s;   /* faster = livelier */
-  --smoke-contrast: 1.08;    /* 1.0–1.2 */
-  --smoke-bright: 0.09;      /* light lobes strength */
-  --smoke-dark:   0.28;      /* dark lobes strength */
-  --smoke-blur:   14px;      /* softness */
-
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  /* deep charcoal bed; stays strictly grayscale */
-  background: radial-gradient(160% 140% at 50% 60%, #1e1f22 0%, #131416 55%, #0c0d10 100%);
-  padding: 14px;
-  min-height: 280px;   /* “a little bigger” default; adjust freely */
-}
-
-/* --- Layer 1: dense rolling fog (billows) --- */
-.smoke-billow::before{
-  content:"";
-  position:absolute; inset:-12%;
-  z-index:-2;
-  filter: blur(var(--smoke-blur)) contrast(var(--smoke-contrast)) brightness(0.95);
-  opacity: 0.75;
-  background:
-    /* light lobes */
-    radial-gradient(45% 60% at 18% 28%, rgba(255,255,255,var(--smoke-bright)) 0%, rgba(255,255,255,0) 60%),
-    radial-gradient(55% 65% at 78% 32%, rgba(255,255,255,calc(var(--smoke-bright)*0.9)) 0%, rgba(255,255,255,0) 62%),
-    radial-gradient(60% 70% at 46% 78%, rgba(255,255,255,calc(var(--smoke-bright)*0.8)) 0%, rgba(255,255,255,0) 65%),
-    /* shadow troughs */
-    radial-gradient(55% 65% at 12% 70%, rgba(0,0,0,var(--smoke-dark)) 0%, rgba(0,0,0,0) 60%),
-    radial-gradient(50% 60% at 86% 68%, rgba(0,0,0,calc(var(--smoke-dark)*0.85)) 0%, rgba(0,0,0,0) 62%),
-    radial-gradient(40% 52% at 40% 40%, rgba(0,0,0,calc(var(--smoke-dark)*0.7)) 0%, rgba(0,0,0,0) 58%);
-  background-size: 140% 140%, 130% 130%, 150% 150%, 150% 150%, 140% 140%, 120% 120%;
-  background-position: 0% 0%, 100% 0%, 50% 100%, 0% 100%, 100% 100%, 50% 0%;
-  animation: smoke-billows var(--smoke-speed-base) ease-in-out infinite;
-}
-
-/* --- Layer 2: wide wisps that curl across the field --- */
-.smoke-billow::after{
-  content:"";
-  position:absolute; inset:-16%;
-  z-index:-1;
-  opacity: 0.55;
-  mix-blend-mode: screen; /* keeps it monochrome and airy */
-  filter: blur(18px) contrast(105%);
-  /* two broad bands that feel like rolling sheets of smoke */
-  background:
-    linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.04) 40%, rgba(255,255,255,0) 80%) 0/200% 200%,
-    linear-gradient(245deg, rgba(255,255,255,0) 10%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0) 90%) 0/220% 220%;
-  animation: smoke-wisps var(--smoke-speed-wisp) linear infinite;
-  /* soft vignette so edges don't distract at larger sizes */
-  -webkit-mask-image: radial-gradient(140% 120% at 50% 55%, #000 60%, rgba(0,0,0,0) 95%);
-          mask-image: radial-gradient(140% 120% at 50% 55%, #000 60%, rgba(0,0,0,0) 95%);
-}
-
-/* ------------ Motion ------------- */
-@keyframes smoke-billows{
-  0%{
-    transform: translate3d(0,0,0) scale(1.06);
-    background-position:   0% 0%, 100% 0%, 50% 100%, 0% 100%, 100% 100%, 50% 0%;
-  }
-  45%{
-    transform: translate3d(-2.5%, -1.5%, 0) scale(1.09);
-    background-position:  28% 14%, 74% 10%, 46% 88%, 12% 80%, 86% 84%, 40% 12%;
-  }
-  100%{
-    transform: translate3d(0,0,0) scale(1.06);
-    background-position:   0% 0%, 100% 0%, 50% 100%, 0% 100%, 100% 100%, 50% 0%;
-  }
-}
-
-@keyframes smoke-wisps{
-  0%   { transform: rotate(0.0001deg) translate3d(0,0,0) scale(1.04); background-position: 0% 0%, 100% 0%; }
-  50%  { transform: rotate(180deg)    translate3d(0,0,0) scale(1.05); background-position: 50% 40%, 50% 60%; }
-  100% { transform: rotate(360deg)    translate3d(0,0,0) scale(1.04); background-position: 100% 100%, 0% 100%; }
-}
-
-/* Accessibility: respect reduced motion */
-@media (prefers-reduced-motion: reduce){
-  .smoke-billow::before,
-  .smoke-billow::after{ animation: none !important; }
-}
-
-
-
-
-    </style>
+    <!-- styles moved to styles.css -->
 </head>
 <body>
     <header>

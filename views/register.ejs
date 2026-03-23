@@ -1,31 +1,783 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems | Login</title>
-    <%- include("includes/head") %>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boise Gems | Register</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" type="image/x-icon" href="/img/ui/favicon.ico" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+
+    /* ── Same abstract purple background ── */
+    .bg {
+      min-height: 100dvh;
+      background:
+        radial-gradient(ellipse at 12% 20%, rgba(157,118,187,.82) 0%, transparent 52%),
+        radial-gradient(ellipse at 88%  8%, rgba(72,22,130,.90)   0%, transparent 46%),
+        radial-gradient(ellipse at 70% 85%, rgba(67,30,201,.48)   0%, transparent 54%),
+        radial-gradient(ellipse at  4% 88%, rgba(140,100,180,.65) 0%, transparent 44%),
+        radial-gradient(ellipse at 92% 62%, rgba(96,67,125,.72)   0%, transparent 48%),
+        radial-gradient(ellipse at 48% 48%, rgba(255,255,255,.50) 0%, transparent 62%),
+        radial-gradient(ellipse at 30% 70%, rgba(180,140,210,.50) 0%, transparent 40%),
+        #ddd0f0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px 40px;
+    }
+
+    /* ── Card ── */
+    .reg-card {
+      background: rgba(255,255,255,.90);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid rgba(255,255,255,.74);
+      border-radius: 22px;
+      box-shadow:
+        0 12px 48px rgba(72,22,130,.22),
+        0 2px 10px rgba(0,0,0,.09);
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .card-header {
+      padding: 36px 40px 0;
+      text-align: center;
+    }
+
+    .reg-logo {
+      width: 62px;
+      height: auto;
+      margin: 0 auto 12px;
+      display: block;
+      filter: drop-shadow(0 2px 10px rgba(96,67,125,.30));
+    }
+
+    .reg-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #35166a;
+      margin-bottom: 4px;
+      letter-spacing: -.3px;
+    }
+
+    .reg-subtitle {
+      color: #7858a0;
+      font-size: .88rem;
+      margin-bottom: 0;
+    }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      padding: 20px 40px 0;
+    }
+
+    .progress-track {
+      height: 4px;
+      background: #e2d6f0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #9d76bb, #5c3d80);
+      border-radius: 4px;
+      transition: width 400ms cubic-bezier(.4,0,.2,1);
+    }
+
+    .progress-label {
+      font-size: .75rem;
+      color: #9070b0;
+      text-align: right;
+      margin-top: 5px;
+    }
+
+    /* ── Step viewport ── the overflow clip lives here ── */
+    .step-viewport {
+      position: relative;
+      overflow: hidden;
+      padding: 28px 40px 32px;
+    }
+
+    /* ── Individual steps ── */
+    .step {
+      width: 100%;
+      will-change: transform, opacity;
+    }
+
+    /* States driven by JS class toggling */
+    .step.is-hidden-right {
+      position: absolute;
+      top: 28px; left: 40px;
+      width: calc(100% - 80px);
+      transform: translateX(110%);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .step.is-hidden-left {
+      position: absolute;
+      top: 28px; left: 40px;
+      width: calc(100% - 80px);
+      transform: translateX(-110%);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .step.is-active {
+      position: relative;
+      transform: translateX(0);
+      opacity: 1;
+      pointer-events: auto;
+      transition: transform 380ms cubic-bezier(.4,0,.2,1), opacity 380ms;
+    }
+
+    /* Exiting steps also need the transition */
+    .step.is-exiting {
+      position: absolute;
+      top: 28px; left: 40px;
+      width: calc(100% - 80px);
+      pointer-events: none;
+      transition: transform 380ms cubic-bezier(.4,0,.2,1), opacity 380ms;
+    }
+
+    /* For initial hidden items, no transition on load */
+    .step.no-transition {
+      transition: none !important;
+    }
+
+    /* ── Step heading ── */
+    .step-heading {
+      font-size: 1.12rem;
+      font-weight: 700;
+      color: #35166a;
+      text-align: center;
+      margin-bottom: 22px;
+    }
+
+    .step-heading small {
+      display: block;
+      font-size: .8rem;
+      font-weight: 400;
+      color: #9070b0;
+      margin-top: 4px;
+    }
+
+    /* ── Account type choice cards ── */
+    .type-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 4px;
+    }
+
+    .type-btn {
+      border: 2px solid #c8b4e0;
+      border-radius: 16px;
+      background: rgba(255,255,255,.7);
+      padding: 24px 12px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 200ms, background 200ms, transform 120ms, box-shadow 200ms;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .type-btn:hover {
+      border-color: #9d76bb;
+      background: rgba(157,118,187,.10);
+      box-shadow: 0 4px 18px rgba(96,67,125,.14);
+    }
+
+    .type-btn:active { transform: scale(.96); }
+
+    .type-btn .tb-icon  { font-size: 2.4rem; margin-bottom: 10px; }
+    .type-btn .tb-label { font-size: .95rem; font-weight: 700; color: #35166a; }
+    .type-btn .tb-desc  { font-size: .76rem; color: #7858a0; margin-top: 5px; line-height: 1.3; }
+
+    /* ── Form fields ── */
+    .field-group { margin-bottom: 16px; }
+
+    .field-group label {
+      display: block;
+      font-size: .83rem;
+      font-weight: 600;
+      color: #4a2e7a;
+      margin-bottom: 5px;
+    }
+
+    .field-group input,
+    .field-group select {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #c8b4e0;
+      border-radius: 11px;
+      font-size: .95rem;
+      background: rgba(255,255,255,.93);
+      color: #1a1030;
+      outline: none;
+      transition: border-color 180ms, box-shadow 180ms;
+      font-family: inherit;
+      -webkit-appearance: auto;
+      appearance: auto;
+    }
+
+    .field-group input:focus,
+    .field-group select:focus {
+      border-color: #9d76bb;
+      box-shadow: 0 0 0 3.5px rgba(157,118,187,.22);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    /* ── Navigation row ── */
+    .nav-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+      align-items: center;
+    }
+
+    .btn-back {
+      padding: 11px 20px;
+      background: transparent;
+      border: 1.5px solid #c8b4e0;
+      border-radius: 11px;
+      color: #5c3d80;
+      font-size: .93rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 180ms, background 180ms;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+
+    .btn-back:hover {
+      border-color: #9d76bb;
+      background: rgba(157,118,187,.07);
+    }
+
+    .btn-next,
+    .btn-submit {
+      flex: 1;
+      padding: 12px;
+      background: linear-gradient(135deg, #9d76bb 0%, #5c3d80 100%);
+      color: #fff;
+      border: none;
+      border-radius: 11px;
+      font-size: .97rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: .2px;
+      transition: opacity 180ms, transform 100ms;
+      box-shadow: 0 4px 14px rgba(80,35,130,.26);
+      font-family: inherit;
+    }
+
+    .btn-next:hover,
+    .btn-submit:hover  { opacity: .87; }
+
+    .btn-next:active,
+    .btn-submit:active { transform: scale(.98); }
+
+    /* ── Card footer ── */
+    .card-footer {
+      padding: 0 40px 28px;
+      text-align: center;
+      font-size: .87rem;
+      color: #7858a0;
+      border-top: 1px solid rgba(157,118,187,.18);
+      padding-top: 18px;
+    }
+
+    .card-footer a {
+      color: #5c3d80;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .card-footer a:hover { text-decoration: underline; }
+
+    /* ── Validation shake ── */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-6px); }
+      40%       { transform: translateX(6px); }
+      60%       { transform: translateX(-4px); }
+      80%       { transform: translateX(4px); }
+    }
+
+    .field-group input.invalid,
+    .field-group select.invalid {
+      border-color: #e05050;
+      animation: shake 360ms ease;
+    }
+
+    /* ── Inline field error ── */
+    .field-error {
+      font-size: .78rem;
+      color: #c02020;
+      margin-top: 4px;
+      display: none;
+    }
+
+    .field-group input.invalid ~ .field-error,
+    .field-group select.invalid ~ .field-error {
+      display: block;
+    }
+
+    /* ── Neutralise global form / label / input rules ── */
+    #reg-form {
+      background: none;
+      border: none;
+      box-shadow: none;
+      margin: 0;
+      padding: 0;
+    }
+    .field-group label             { margin-left: 0; }
+    .field-group input,
+    .field-group select            { margin: 0; width: 100%; max-width: 100%; }
+    .btn-back, .btn-next,
+    .btn-submit                    { text-transform: none; font-size: .97rem; border-radius: 11px; box-shadow: none; text-shadow: none; }
+    .btn-back                      { background: transparent; color: #5c3d80; }
+    .btn-back:hover                { background: rgba(157,118,187,.07); color: #5c3d80; }
+
+    /* ── Responsive ── */
+    @media (max-width: 520px) {
+      .bg             { padding: 20px 12px 36px; }
+      .card-header    { padding: 28px 22px 0; }
+      .step-viewport  { padding: 22px 22px 26px; }
+      .card-footer    { padding: 14px 22px 22px; }
+      .progress-wrap  { padding: 16px 22px 0; }
+      .two-col        { grid-template-columns: 1fr; gap: 0; }
+      .type-grid      { gap: 10px; }
+      .type-btn       { padding: 18px 8px 14px; }
+      .step.is-hidden-right,
+      .step.is-exiting,
+      .step.is-hidden-left { left: 22px; width: calc(100% - 44px); }
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-        <div style="padding: 8px">
-            <br>
-            <h1>Register</h1>
-            <br>
-            <div style="text-align: center;">
-                <a href="/register-member"><button>I am a member/auditionee/staff</button></a>
-                <br>
-                <br>
-                <a href="/register-parent"><button>I am a parent/guardian</button></a>
+<div class="bg">
+  <div class="reg-card">
+
+    <!-- Header -->
+    <div class="card-header">
+      <img class="reg-logo" src="/img/ui/gem.png" alt="Boise Gems" />
+      <h1 class="reg-title">Create Account</h1>
+      <p class="reg-subtitle">Let's get you set up</p>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-wrap">
+      <div class="progress-track">
+        <div class="progress-fill" id="prog-fill" style="width:0%"></div>
+      </div>
+      <div class="progress-label" id="prog-label">Step 1 of …</div>
+    </div>
+
+    <!-- Hidden real form — action is set by JS before submit -->
+    <form id="reg-form" action="/register-member" method="POST">
+
+      <!-- Slider viewport -->
+      <div class="step-viewport" id="step-viewport">
+
+        <!-- ═══ STEP 0 — Account type ═══ -->
+        <div class="step is-active" id="step-0">
+          <p class="step-heading">
+            Are you registering as a parent?
+            <small>Choose the option that describes you best</small>
+          </p>
+          <div class="type-grid">
+            <div class="type-btn" onclick="chooseType('member')" role="button" tabindex="0">
+              <div class="tb-icon">👟</div>
+              <div class="tb-label">No, I'm a Member</div>
+              <div class="tb-desc">Auditionee, performer, or staff</div>
             </div>
-            <br>
-            <p style="padding: 8px">Already have an account? <a href="/login">Login here</a>!</p>
+            <div class="type-btn" onclick="chooseType('parent')" role="button" tabindex="0">
+              <div class="tb-icon">👨‍👩‍👧‍👦</div>
+              <div class="tb-label">Yes, I'm a Parent</div>
+              <div class="tb-desc">Registering as a parent / guardian</div>
+            </div>
+          </div>
         </div>
-    </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+
+        <!-- ═══ STEP 1 — Name ═══ -->
+        <div class="step is-hidden-right no-transition" id="step-1">
+          <p class="step-heading">What's your name?</p>
+          <div class="two-col">
+            <div class="field-group">
+              <label for="firstname">First Name</label>
+              <input type="text" id="firstname" name="firstname" placeholder="John" autocomplete="given-name" />
+              <span class="field-error">Required</span>
+            </div>
+            <div class="field-group">
+              <label for="lastname">Last Name</label>
+              <input type="text" id="lastname" name="lastname" placeholder="Doe" autocomplete="family-name" />
+              <span class="field-error">Required</span>
+            </div>
+          </div>
+          <div class="nav-row">
+            <button type="button" class="btn-back" onclick="goBack()">← Back</button>
+            <button type="button" class="btn-next" onclick="goNext()">Continue →</button>
+          </div>
+        </div>
+
+        <!-- ═══ STEP 2 — Contact ═══ -->
+        <div class="step is-hidden-right no-transition" id="step-2">
+          <p class="step-heading">
+            How can we reach you?
+            <small>We'll only use this for important updates</small>
+          </p>
+          <div class="field-group">
+            <label for="email">Email Address</label>
+            <input type="email" id="email" name="email" placeholder="john@email.com" autocomplete="email" />
+            <span class="field-error">Please enter a valid email</span>
+          </div>
+          <div class="field-group">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" name="phone" placeholder="(208) 555-5555" autocomplete="tel" />
+            <span class="field-error">Required</span>
+          </div>
+          <div class="nav-row">
+            <button type="button" class="btn-back" onclick="goBack()">← Back</button>
+            <button type="button" class="btn-next" onclick="goNext()">Continue →</button>
+          </div>
+        </div>
+
+        <!-- ═══ STEP 3 — Address + Birthday ═══ -->
+        <div class="step is-hidden-right no-transition" id="step-3">
+          <p class="step-heading">A little more info</p>
+          <div class="field-group">
+            <label for="address">Home Address</label>
+            <input type="text" id="address" name="address" placeholder="1234 E Fakestreet, Meridian, ID" autocomplete="street-address" />
+            <span class="field-error">Required</span>
+          </div>
+          <div class="field-group">
+            <label for="birthday">Date of Birth</label>
+            <input type="date" id="birthday" name="birthday" />
+            <span class="field-error">Required</span>
+          </div>
+          <div class="nav-row">
+            <button type="button" class="btn-back" onclick="goBack()">← Back</button>
+            <button type="button" class="btn-next" onclick="goNext()">Continue →</button>
+          </div>
+        </div>
+
+        <!-- ═══ STEP 4m — Section + Instrument (member only) ═══ -->
+        <div class="step is-hidden-right no-transition" id="step-4m">
+          <p class="step-heading">
+            Your section &amp; role
+            <small>You can change this later</small>
+          </p>
+          <div class="field-group">
+            <label for="section">Section</label>
+            <select id="section" name="section" onchange="updateInstruments()">
+              <option value="brass">Brass</option>
+              <option value="drumline">Drumline</option>
+              <option value="front ensemble">Front Ensemble</option>
+              <option value="guard">Guard</option>
+              <option value="drum major">Drum Major</option>
+              <option value="staff">Staff</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="instrument">Instrument / Role</label>
+            <select id="instrument" name="instrument"></select>
+          </div>
+          <div class="nav-row">
+            <button type="button" class="btn-back" onclick="goBack()">← Back</button>
+            <button type="button" class="btn-next" onclick="goNext()">Continue →</button>
+          </div>
+        </div>
+
+        <!-- ═══ STEP pw — Password ═══ -->
+        <div class="step is-hidden-right no-transition" id="step-pw">
+          <p class="step-heading">
+            Secure your account
+            <small>Minimum 8 characters</small>
+          </p>
+          <div class="field-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="new-password" placeholder="••••••••" />
+            <span class="field-error">At least 8 characters required</span>
+          </div>
+          <div class="field-group">
+            <label for="passwordRetype">Confirm Password</label>
+            <input type="password" id="passwordRetype" name="passwordRetype" autocomplete="new-password" placeholder="••••••••" />
+            <span class="field-error">Passwords must match</span>
+          </div>
+          <div class="nav-row">
+            <button type="button" class="btn-back" onclick="goBack()">← Back</button>
+            <button type="button" class="btn-submit" onclick="submitForm()">Create Account 🎉</button>
+          </div>
+        </div>
+
+      </div><!-- /step-viewport -->
+    </form>
+
+    <!-- Footer -->
+    <div class="card-footer">
+      Already have an account? <a href="/login">Login here</a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Step sequences ───────────────────────────────────────────────────────
+  const MEMBER_STEPS = ['step-0','step-1','step-2','step-3','step-4m','step-pw'];
+  const PARENT_STEPS = ['step-0','step-1','step-2','step-3','step-pw'];
+
+  let accountType  = 'member';
+  let stepHistory  = ['step-0'];
+  let currentId    = 'step-0';
+  let animating    = false;
+
+  // ── Progress bar ─────────────────────────────────────────────────────────
+  function updateProgress() {
+    const seq = accountType === 'parent' ? PARENT_STEPS : MEMBER_STEPS;
+    const idx = seq.indexOf(currentId);
+    const pct = seq.length === 1 ? 0 : (idx / (seq.length - 1)) * 100;
+    document.getElementById('prog-fill').style.width = pct + '%';
+    document.getElementById('prog-label').textContent =
+      'Step ' + (idx + 1) + ' of ' + seq.length;
+  }
+
+  // ── Choose account type (step 0 choice) ──────────────────────────────────
+  function chooseType(type) {
+    accountType = type;
+    document.getElementById('reg-form').action =
+      type === 'parent' ? '/register-parent' : '/register-member';
+    goForward('step-1');
+  }
+
+  // ── Slide engine ─────────────────────────────────────────────────────────
+  function slideTo(newId, direction) {
+    if (animating) return;
+    animating = true;
+
+    const oldEl = document.getElementById(currentId);
+    const newEl = document.getElementById(newId);
+
+    // Remove any lingering no-transition helper class
+    newEl.classList.remove('no-transition');
+
+    // Position new element off-screen (no animation yet)
+    newEl.classList.remove('is-active','is-hidden-left','is-hidden-right','is-exiting');
+    newEl.classList.add(direction === 'forward' ? 'is-hidden-right' : 'is-hidden-left');
+
+    // Force reflow so the off-screen position is painted before we animate
+    void newEl.offsetWidth;
+
+    // Slide old out
+    oldEl.classList.remove('is-active');
+    oldEl.classList.add('is-exiting',
+      direction === 'forward' ? 'is-hidden-left' : 'is-hidden-right');
+
+    // Slide new in
+    newEl.classList.remove('is-hidden-right','is-hidden-left');
+    newEl.classList.add('is-active');
+
+    currentId = newId;
+    updateProgress();
+
+    // Clean up old step after animation
+    setTimeout(() => {
+      oldEl.classList.remove('is-exiting','is-hidden-left','is-hidden-right');
+      oldEl.classList.add('is-hidden-right'); // park off-screen to the right
+      animating = false;
+    }, 400);
+  }
+
+  function goForward(nextId) {
+    stepHistory.push(nextId);
+    slideTo(nextId, 'forward');
+  }
+
+  function goBack() {
+    if (stepHistory.length <= 1 || animating) return;
+    stepHistory.pop();
+    const prevId = stepHistory[stepHistory.length - 1];
+    slideTo(prevId, 'backward');
+  }
+
+  function getNextId() {
+    const seq = accountType === 'parent' ? PARENT_STEPS : MEMBER_STEPS;
+    const idx = seq.indexOf(currentId);
+    return seq[idx + 1] || null;
+  }
+
+  async function goNext() {
+    const ok = await validateStep(currentId);
+    if (!ok) return;
+    const next = getNextId();
+    if (next) goForward(next);
+  }
+
+  // ── Validation ───────────────────────────────────────────────────────────
+  function setValid(el, ok) {
+    if (ok) el.classList.remove('invalid');
+    else    el.classList.add('invalid');
+    return ok;
+  }
+
+  function setFieldError(el, msg) {
+    const span = el.closest('.field-group')?.querySelector('.field-error');
+    if (span) span.textContent = msg;
+  }
+
+  async function validateStep(id) {
+    let ok = true;
+
+    if (id === 'step-1') {
+      const fn = document.getElementById('firstname');
+      const ln = document.getElementById('lastname');
+      if (!setValid(fn, fn.value.trim())) ok = false;
+      if (!setValid(ln, ln.value.trim())) ok = false;
+    }
+
+    if (id === 'step-2') {
+      const em = document.getElementById('email');
+      const ph = document.getElementById('phone');
+      const emailFmt = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em.value.trim());
+      const phoneFmt = normalizePhone(ph.value).length === 10;
+
+      // Reset error messages to defaults before re-checking
+      setFieldError(em, 'Please enter a valid email');
+      setFieldError(ph, 'Please enter a valid phone number (10 digits)');
+
+      if (!setValid(em, emailFmt)) ok = false;
+      if (!setValid(ph, phoneFmt)) ok = false;
+
+      // Server duplicate check only if format is valid
+      if (ok) {
+        const btn = document.querySelector('#step-2 .btn-next');
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Checking...';
+        try {
+          const qs = new URLSearchParams({ email: em.value.trim(), phone: normalizePhone(ph.value) });
+          const data = await fetch('/check-registration?' + qs).then(r => r.json());
+          if (data.emailTaken) {
+            setFieldError(em, 'That email is already registered');
+            setValid(em, false);
+            ok = false;
+          }
+          if (data.phoneTaken) {
+            setFieldError(ph, 'That phone number is already registered');
+            setValid(ph, false);
+            ok = false;
+          }
+        } catch (e) {
+          // Network error — allow through, server will catch it on submit
+        }
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+
+    if (id === 'step-3') {
+      const addr = document.getElementById('address');
+      const bday = document.getElementById('birthday');
+      if (!setValid(addr, addr.value.trim())) ok = false;
+      if (!setValid(bday, bday.value))        ok = false;
+    }
+
+    return ok;
+  }
+
+  // Clear invalid on input
+  document.querySelectorAll('.field-group input, .field-group select').forEach(el => {
+    el.addEventListener('input', () => el.classList.remove('invalid'));
+  });
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+  function submitForm() {
+    const pw  = document.getElementById('password');
+    const pw2 = document.getElementById('passwordRetype');
+    let ok = true;
+
+    if (!setValid(pw,  pw.value.length >= 8)) ok = false;
+    if (!setValid(pw2, pw.value === pw2.value && pw2.value.length > 0)) ok = false;
+
+    if (!ok) return;
+    document.getElementById('reg-form').submit();
+  }
+
+  // ── Instrument map ────────────────────────────────────────────────────────
+  const INSTRUMENTS = {
+    'brass':          ['Trumpet','Mellophone','Baritone','Tuba'],
+    'drumline':       ['Snare','Quads','Bass','Cymbals'],
+    'front ensemble': ['Vibraphone','Marimba','Xylo/Glock','Rack','Bass','Synth'],
+    'guard':          ['Guard'],
+    'drum major':     ['Drum Major'],
+    'staff':          ['Visual','Brass','Drumline','Media','Front Ensemble','Guard','Design','Admin','Director'],
+  };
+
+  function updateInstruments() {
+    const sec  = document.getElementById('section').value;
+    const sel  = document.getElementById('instrument');
+    const list = INSTRUMENTS[sec] || [];
+    sel.innerHTML = list.map(o =>
+      `<option value="${o.toLowerCase()}">${o}</option>`
+    ).join('');
+  }
+
+  // ── Phone formatting ──────────────────────────────────────────────────────
+  // Strips optional US country code (+1 / 1) that autofill may prepend.
+  function normalizePhone(raw) {
+    let d = raw.replace(/\D/g, '');
+    if (d.length === 11 && d[0] === '1') d = d.slice(1);
+    return d.slice(0, 10);
+  }
+
+  function formatPhone(raw) {
+    const v = normalizePhone(raw);
+    if      (v.length > 6) return `(${v.slice(0,3)}) ${v.slice(3,6)}-${v.slice(6)}`;
+    else if (v.length > 3) return `(${v.slice(0,3)}) ${v.slice(3)}`;
+    else if (v.length > 0) return `(${v}`;
+    return '';
+  }
+
+  const phoneEl = document.getElementById('phone');
+
+  phoneEl.addEventListener('input', e => {
+    e.target.value = formatPhone(e.target.value);
+  });
+
+  // Allow + so autofill-typed "+1..." isn't blocked character by character
+  phoneEl.addEventListener('keypress', e => {
+    if (!/[\d+]/.test(e.key)) e.preventDefault();
+  });
+
+  // ── Keyboard support for type-btn cards ──────────────────────────────────
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        btn.click();
+      }
+    });
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  updateInstruments();
+  updateProgress();
+</script>
 </body>
 </html>

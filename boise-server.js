@@ -1573,7 +1573,7 @@ app.post("/register-parent", (req, res) => {
   let address = req.body.address || "";
   let password = req.body.password || "";
   let passwordRetype = req.body.passwordRetype || "";
-  let birthday = new Date(req.body.birthday).getTime();
+  let birthday = parseBirthdayToTimestamp(req.body.birthday);
 
   firstname = req.body.firstname.trim();
   lastname = req.body.lastname.trim();
@@ -1707,7 +1707,7 @@ app.post("/register-member", (req, res) => {
   let address = req.body.address || "";
   let password = req.body.password || "";
   let passwordRetype = req.body.passwordRetype || "";
-  let birthday = new Date(req.body.birthday).getTime();
+  let birthday = parseBirthdayToTimestamp(req.body.birthday);
 
   firstname = req.body.firstname.trim();
   lastname = req.body.lastname.trim();
@@ -5488,9 +5488,9 @@ app.post("/change-address", mustBeLoggedInAny, (req, res) => {
   // Preserve old birthday unless we get a valid new one
   let birthdayMs = member.birthday || null;
   if (birthdayRaw) {
-    const parsed = new Date(birthdayRaw);
-    if (!isNaN(parsed.getTime())) {
-      birthdayMs = parsed.getTime();
+    const parsed = parseBirthdayToTimestamp(birthdayRaw);
+    if (parsed) {
+      birthdayMs = parsed;
     }
   }
 
@@ -6396,6 +6396,8 @@ const MEMBER_EXPORT_COLUMN_OPTIONS = {
   lastname: "Last Name",
   email: "Email",
   phone: "Phone",
+  birthday: "Date of Birth",
+  address: "Address",
   section: "Section",
   instrument: "Instrument",
   shirtSize: "Shirt Size",
@@ -6416,6 +6418,41 @@ function toDollarsString(cents) {
   return (numeric / 100).toFixed(2);
 }
 
+const formatBirthdayHuman = (timestamp) => {
+  const millis = Number(timestamp);
+  if (!Number.isFinite(millis) || millis <= 0) return "";
+  return new Date(millis).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC"
+  });
+};
+
+// Format a birthday timestamp to YYYY-MM-DD string in UTC (for <input type="date"> value)
+const formatBirthdayISO = (timestamp) => {
+  const millis = Number(timestamp);
+  if (!Number.isFinite(millis) || millis <= 0) return "";
+  const d = new Date(millis);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+// Parse a date string (YYYY-MM-DD) to a UTC noon timestamp to avoid timezone day-shift
+const parseBirthdayToTimestamp = (dateStr) => {
+  if (!dateStr) return null;
+  const parts = String(dateStr).split("-");
+  if (parts.length !== 3) {
+    const fallback = new Date(dateStr);
+    return isNaN(fallback.getTime()) ? null : fallback.getTime();
+  }
+  // Build a UTC date at noon to avoid any timezone shifting
+  const d = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0));
+  return isNaN(d.getTime()) ? null : d.getTime();
+};
+
 function buildMemberExportRows(selectedGroups, selectedFields) {
   const users = db.prepare(`
     SELECT
@@ -6424,6 +6461,8 @@ function buildMemberExportRows(selectedGroups, selectedFields) {
       lastname,
       email,
       phone,
+      birthday,
+      address,
       section,
       instrument,
       shirtSize,
@@ -6459,6 +6498,10 @@ function buildMemberExportRows(selectedGroups, selectedFields) {
     .map((row) => {
       const output = {};
       selectedFields.forEach((field) => {
+        if (field === "birthday") {
+          output[field] = formatBirthdayHuman(row.birthday);
+          return;
+        }
         if (field === "shirtSize") {
           output[field] = row.shirtSize || "Not chosen";
           return;
@@ -6482,16 +6525,6 @@ function buildMemberExportRows(selectedGroups, selectedFields) {
     });
 }
 
-const formatBirthdayHuman = (timestamp) => {
-  const millis = Number(timestamp);
-  if (!Number.isFinite(millis) || millis <= 0) return "";
-  return new Date(millis).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric"
-  });
-};
-
 app.get("/contracts-admin/export-contracts.csv", mustBeAdmin, (req, res) => {
   const rows = db.prepare(`
     SELECT
@@ -6511,22 +6544,28 @@ app.get("/contracts-admin/export-contracts.csv", mustBeAdmin, (req, res) => {
 
   const groupOrder = { Corps: 0, Independent: 1, Affiliate: 2 };
 
-  const decorated = rows.map((row) => {
-    let contractedBy = "";
-    if (row.contractedCorps) contractedBy = "Corps";
-    else if (row.contractedIndependent) contractedBy = "Independent";
-    else if (row.contractedAffiliate) contractedBy = "Affiliate";
+  const decorated = [];
+  rows.forEach((row) => {
+    const groups = [];
+    if (row.contractedCorps) groups.push("Corps");
+    if (row.contractedIndependent) groups.push("Independent");
+    if (row.contractedAffiliate) groups.push("Affiliate");
 
-    return {
-      contractedBy,
-      firstname: row.firstname || "",
-      lastname: row.lastname || "",
-      birthday: formatBirthdayHuman(row.birthday),
-      phone: row.phone || "",
-      email: row.email || "",
-      section: row.section || "",
-      instrument: row.instrument || ""
-    };
+    // Create one row per contract type so members with multiple contracts appear in each group
+    if (groups.length === 0) groups.push("");
+
+    groups.forEach((contractedBy) => {
+      decorated.push({
+        contractedBy,
+        firstname: row.firstname || "",
+        lastname: row.lastname || "",
+        birthday: formatBirthdayHuman(row.birthday),
+        phone: row.phone || "",
+        email: row.email || "",
+        section: row.section || "",
+        instrument: row.instrument || ""
+      });
+    });
   });
 
   decorated.sort((a, b) => {

@@ -10,6 +10,8 @@
   <% const q       = typeof search === "string" ? search : ""; %>
   <% const section = typeof filter === "string" ? filter : "all"; %>
   <% const memberf = typeof membership === "string" ? membership : "all"; %>
+  <% const sortf   = typeof sort === "string" ? sort : "section"; %>
+  <% const daysf   = typeof days === "string" ? days : "all"; %>
   <% const p       = Number(page || 1); %>
   <% const pages   = Math.max(1, Number(totalPages || 1)); %>
 </head>
@@ -57,6 +59,27 @@
           </select>
         </div>
       </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
+        <div>
+          <label for="sort-select">Sort By</label>
+          <select id="sort-select" name="sort">
+            <option value="section" <%= sortf==="section" ? "selected" : "" %>>By Section</option>
+            <option value="newest" <%= sortf==="newest" ? "selected" : "" %>>Newest Members</option>
+            <option value="oldest" <%= sortf==="oldest" ? "selected" : "" %>>Oldest Members</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="days-select">Joined Within</label>
+          <select id="days-select" name="days">
+            <option value="all" <%= daysf==="all" ? "selected" : "" %>>All Time</option>
+            <option value="30" <%= daysf==="30" ? "selected" : "" %>>Last 30 Days</option>
+            <option value="60" <%= daysf==="60" ? "selected" : "" %>>Last 60 Days</option>
+            <option value="90" <%= daysf==="90" ? "selected" : "" %>>Last 90 Days</option>
+          </select>
+        </div>
+      </div>
       <br/>
     </form>
 
@@ -68,14 +91,14 @@
     <div style="display:grid; grid-template-columns: 1fr 5fr 1fr; text-align:center;">
       <div>
         <% if (p > 1) { %>
-          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&page=<%= p-1 %>">
+          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&sort=<%= encodeURIComponent(sortf) %>&days=<%= encodeURIComponent(daysf) %>&page=<%= p-1 %>">
             <button>&lt;</button>
           </a>
         <% } %>
       </div>
       <div>
         <% for (let i = 1; i <= pages; i++) { %>
-          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&page=<%= i %>"
+          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&sort=<%= encodeURIComponent(sortf) %>&days=<%= encodeURIComponent(daysf) %>&page=<%= i %>"
              <%= p===i ? 'style="font-weight:700; color: var(--tertiary-color);"' : "" %>>
             <%= i %>
           </a>
@@ -83,7 +106,7 @@
       </div>
       <div>
         <% if (p < pages) { %>
-          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&page=<%= p+1 %>">
+          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&sort=<%= encodeURIComponent(sortf) %>&days=<%= encodeURIComponent(daysf) %>&page=<%= p+1 %>">
             <button>&gt;</button>
           </a>
         <% } %>
@@ -264,14 +287,14 @@
     <div style="display:grid; grid-template-columns: 1fr 5fr 1fr; text-align:center;">
       <div>
         <% if (p > 1) { %>
-          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&page=<%= p-1 %>">
+          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&sort=<%= encodeURIComponent(sortf) %>&days=<%= encodeURIComponent(daysf) %>&page=<%= p-1 %>">
             <button>&lt;</button>
           </a>
         <% } %>
       </div>
       <div>
         <% for (let i = 1; i <= pages; i++) { %>
-          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&page=<%= i %>"
+          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&sort=<%= encodeURIComponent(sortf) %>&days=<%= encodeURIComponent(daysf) %>&page=<%= i %>"
              <%= p===i ? 'style="font-weight:700; color: var(--tertiary-color);"' : "" %>>
             <%= i %>
           </a>
@@ -279,7 +302,7 @@
       </div>
       <div>
         <% if (p < pages) { %>
-          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&page=<%= p+1 %>">
+          <a href="/edit-users?search=<%= encodeURIComponent(q) %>&filter=<%= encodeURIComponent(section) %>&membership=<%= encodeURIComponent(memberf) %>&sort=<%= encodeURIComponent(sortf) %>&days=<%= encodeURIComponent(daysf) %>&page=<%= p+1 %>">
             <button>&gt;</button>
           </a>
         <% } %>
@@ -353,9 +376,11 @@
         const params = new URL(href, window.location.origin).searchParams;
         currentPage = parseInt(params.get('page') || '1', 10);
         // sync controls with whatever the link carries
-        document.getElementById('search').value     = params.get('search')     || '';
-        document.getElementById('filter').value     = params.get('filter')     || 'all';
-        document.getElementById('membership').value = params.get('membership') || 'all';
+        document.getElementById('search').value         = params.get('search')     || '';
+        document.getElementById('filter').value         = params.get('filter')     || 'all';
+        document.getElementById('membership').value     = params.get('membership') || 'all';
+        document.getElementById('sort-select').value    = params.get('sort')       || 'section';
+        document.getElementById('days-select').value    = params.get('days')       || 'all';
         doFetch();
       });
     });
@@ -369,11 +394,15 @@
     const searchVal     = document.getElementById('search').value;
     const filterVal     = document.getElementById('filter').value;
     const membershipVal = document.getElementById('membership').value;
+    const sortVal       = document.getElementById('sort-select').value;
+    const daysVal       = document.getElementById('days-select').value;
 
     const url = new URL('/edit-users', window.location.origin);
     url.searchParams.set('search',     searchVal);
     url.searchParams.set('filter',     filterVal);
     url.searchParams.set('membership', membershipVal);
+    url.searchParams.set('sort',       sortVal);
+    url.searchParams.set('days',       daysVal);
     url.searchParams.set('page',       currentPage);
 
     // Update address bar without reloading
@@ -414,6 +443,8 @@
   document.getElementById('search').addEventListener('input', onSearchInput);
   document.getElementById('filter').addEventListener('change', onFilterChange);
   document.getElementById('membership').addEventListener('change', onFilterChange);
+  document.getElementById('sort-select').addEventListener('change', onFilterChange);
+  document.getElementById('days-select').addEventListener('change', onFilterChange);
 
   // Wire up the initial set of results
   initResults();

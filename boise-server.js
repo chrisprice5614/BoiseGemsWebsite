@@ -668,6 +668,9 @@ const createTables = db.transaction(() => {
     if (!userCols.includes("shirtSize")) {
       db.prepare("ALTER TABLE users ADD COLUMN shirtSize TEXT").run();
     }
+    if (!userCols.includes("created_at")) {
+      db.prepare("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0").run();
+    }
 
     db.prepare(
       `
@@ -1603,7 +1606,7 @@ app.post("/register-parent", (req, res) => {
 
   // âœ… Instantly verified = 1, no emailsecret/userVerify row
   const addParent = db.prepare(
-    "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
+    "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section, created_at) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
   );
   const newParent = addParent.run(
     firstname,
@@ -1615,7 +1618,8 @@ app.post("/register-parent", (req, res) => {
     phone,
     1, // verified
     1, // parent flag
-    "parent"
+    "parent",
+    Date.now()
   );
   const parentId = newParent.lastInsertRowid;
 
@@ -1753,7 +1757,7 @@ app.post("/register-member", (req, res) => {
 
   // âœ… Instantly verified = 1, no userVerify insert
   const addMember = db.prepare(
-    "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
+    "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument, created_at) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
   );
   const newMember = addMember.run(
     firstname,
@@ -1766,7 +1770,8 @@ app.post("/register-member", (req, res) => {
     1, // verified
     emailsecret, // stored but not used
     section,
-    instrument
+    instrument,
+    Date.now()
   );
 
   const newMemberId = newMember.lastInsertRowid;
@@ -3690,7 +3695,9 @@ app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
 app.get("/edit-users", mustBeAdmin, (req, res) => {
   const search = String(req.query.search || "").trim();
   const filter = String(req.query.filter || "all").trim();       // section filter
-  const membership = String(req.query.membership || "all").trim(); // new: corps/independent/all
+  const membership = String(req.query.membership || "all").trim(); // corps/independent/all
+  const sort = String(req.query.sort || "section").trim();       // newest | oldest | section
+  const days = String(req.query.days || "all").trim();           // all | 30 | 60 | 90
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
 
   const limit = 20;
@@ -3717,12 +3724,27 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
   } else if (membership === "affiliate") {
     where.push("contractedAffiliate = 1");
   }
+
+  // Days filter — only include accounts created within the last N days
+  if (["30", "60", "90"].includes(days)) {
+    const cutoff = Date.now() - parseInt(days, 10) * 24 * 60 * 60 * 1000;
+    where.push("(created_at IS NOT NULL AND created_at > ?)");
+    params.push(cutoff);
+  }
+
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  // Order: if section filter applied, just by lastname; else by section then lastname (same as before)
-  const orderSql = filter !== "all"
-    ? "ORDER BY lastname COLLATE NOCASE"
-    : "ORDER BY section, lastname COLLATE NOCASE";
+  // Order based on sort param
+  let orderSql;
+  if (sort === "newest") {
+    orderSql = "ORDER BY created_at DESC";
+  } else if (sort === "oldest") {
+    orderSql = "ORDER BY created_at ASC";
+  } else if (filter !== "all") {
+    orderSql = "ORDER BY lastname COLLATE NOCASE";
+  } else {
+    orderSql = "ORDER BY section, lastname COLLATE NOCASE";
+  }
 
   // Fetch users
   const listSql = `
@@ -3769,7 +3791,9 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
     users,
     search,
     filter,
-    membership,     // <-- pass to EJS
+    membership,
+    sort,
+    days,
     page,
     count,
     totalPages
@@ -4604,6 +4628,104 @@ app.post("/instruments/:id/checkin/:instId", mustBeAdmin, (req, res) => {
 
   req.session.flashMessage = "Instrument checked in.";
   return res.redirect(`/instruments/${userId}`);
+});
+
+// ── Admin Instrument Checkout Hub ──────────────────────────────────────
+
+// JSON user search for the checkout form
+app.get("/admin/users/search", mustBeAdmin, (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q || q.length < 2) return res.json([]);
+  const like = `%${q}%`;
+  const users = db.prepare(`
+    SELECT id, firstname, lastname, section
+    FROM users
+    WHERE (firstname LIKE ? OR lastname LIKE ?)
+      AND (parent IS NULL OR parent = 0)
+    ORDER BY lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
+    LIMIT 15
+  `).all(like, like);
+  return res.json(users);
+});
+
+app.get("/admin/instrument-checkout", mustBeAdmin, (req, res) => {
+  const checkedOut = db.prepare(`
+    SELECT i.*, u.firstname, u.lastname, u.section
+    FROM instruments i
+    JOIN users u ON u.id = i.user_id
+    WHERE i.checked_in_date IS NULL
+    ORDER BY i.checked_out_date DESC
+  `).all();
+
+  return res.render("admin-instrument-checkout", { checkedOut });
+});
+
+app.post("/admin/instrument-checkout/add", mustBeAdmin, (req, res) => {
+  const userId = Number(req.body.user_id);
+  if (!userId) {
+    req.session.flashMessage = "Please select a member.";
+    return res.redirect("/admin/instrument-checkout");
+  }
+
+  const userExists = db.prepare("SELECT id FROM users WHERE id = ?").get(userId);
+  if (!userExists) {
+    req.session.flashMessage = "Member not found.";
+    return res.redirect("/admin/instrument-checkout");
+  }
+
+  const instrument_type = String(req.body.instrument_type || "").trim();
+  const model           = String(req.body.model || "").trim();
+  const serial          = String(req.body.serial || "").trim();
+
+  if (!instrument_type) {
+    req.session.flashMessage = "Instrument type is required.";
+    return res.redirect("/admin/instrument-checkout");
+  }
+
+  db.prepare(`
+    INSERT INTO instruments (user_id, instrument_type, model, serial, checked_out_date, checked_in_date)
+    VALUES (?, ?, ?, ?, ?, NULL)
+  `).run(userId, instrument_type, model, serial, Date.now());
+
+  req.session.flashMessage = "Instrument checked out successfully.";
+  return res.redirect("/admin/instrument-checkout");
+});
+
+app.post("/admin/instrument-checkout/checkin/:instId", mustBeAdmin, (req, res) => {
+  const instId = Number(req.params.instId);
+  db.prepare("UPDATE instruments SET checked_in_date = ? WHERE id = ?").run(Date.now(), instId);
+  req.session.flashMessage = "Instrument checked in.";
+  return res.redirect("/admin/instrument-checkout");
+});
+
+app.get("/admin/instrument-history", mustBeAdmin, (req, res) => {
+  const search = String(req.query.search || "").trim();
+  const status = String(req.query.status || "all").trim(); // all | out | in
+
+  const where = [];
+  const params = [];
+
+  if (search) {
+    where.push("(u.firstname LIKE ? OR u.lastname LIKE ? OR i.instrument_type LIKE ? OR i.serial LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (status === "out") {
+    where.push("i.checked_in_date IS NULL");
+  } else if (status === "in") {
+    where.push("i.checked_in_date IS NOT NULL");
+  }
+
+  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
+
+  const records = db.prepare(`
+    SELECT i.*, u.firstname, u.lastname, u.section
+    FROM instruments i
+    JOIN users u ON u.id = i.user_id
+    ${whereSql}
+    ORDER BY i.checked_out_date DESC
+  `).all(...params);
+
+  return res.render("admin-instrument-history", { records, search, status });
 });
 
 app.get("/email-members", mustBeAdmin, (req, res) => {
@@ -6453,7 +6575,21 @@ const parseBirthdayToTimestamp = (dateStr) => {
   return isNaN(d.getTime()) ? null : d.getTime();
 };
 
-function buildMemberExportRows(selectedGroups, selectedFields) {
+function buildMemberExportRows(selectedGroups, selectedFields, sort = "az", days = "all") {
+  const whereClauses = [];
+  const sqlParams = [];
+
+  if (["30", "60", "90"].includes(days)) {
+    const cutoff = Date.now() - parseInt(days, 10) * 24 * 60 * 60 * 1000;
+    whereClauses.push("(created_at IS NOT NULL AND created_at > ?)");
+    sqlParams.push(cutoff);
+  }
+
+  let orderBy;
+  if (sort === "newest") orderBy = "created_at DESC";
+  else if (sort === "oldest") orderBy = "created_at ASC";
+  else orderBy = "lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC";
+
   const users = db.prepare(`
     SELECT
       id,
@@ -6474,8 +6610,9 @@ function buildMemberExportRows(selectedGroups, selectedFields) {
       paid,
       owed
     FROM users
-    ORDER BY lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
-  `).all();
+    ${whereClauses.length ? "WHERE " + whereClauses.join(" AND ") : ""}
+    ORDER BY ${orderBy}
+  `).all(...sqlParams);
 
   return users
     .filter((row) => {
@@ -6686,7 +6823,9 @@ app.get("/admin/export-member-info", mustBeAdmin, (req, res) => {
     selectedFields,
     rows: [],
     hasResults: false,
-    columnOptions: MEMBER_EXPORT_COLUMN_OPTIONS
+    columnOptions: MEMBER_EXPORT_COLUMN_OPTIONS,
+    sortBy: "az",
+    daysFilter: "all"
   });
 });
 
@@ -6711,7 +6850,10 @@ app.post("/admin/export-member-info", mustBeAdmin, (req, res) => {
     ? selectedFields
     : ["firstname", "lastname", "email"];
 
-  const rows = buildMemberExportRows(selectedGroups, normalizedFields);
+  const sortBy = ["newest", "oldest", "az"].includes(req.body.sort_by) ? req.body.sort_by : "az";
+  const daysFilter = ["30", "60", "90"].includes(req.body.days_filter) ? req.body.days_filter : "all";
+
+  const rows = buildMemberExportRows(selectedGroups, normalizedFields, sortBy, daysFilter);
 
   return res.render("admin-export-members", {
     member,
@@ -6719,7 +6861,9 @@ app.post("/admin/export-member-info", mustBeAdmin, (req, res) => {
     selectedFields: normalizedFields,
     rows,
     hasResults: true,
-    columnOptions: MEMBER_EXPORT_COLUMN_OPTIONS
+    columnOptions: MEMBER_EXPORT_COLUMN_OPTIONS,
+    sortBy,
+    daysFilter
   });
 });
 
@@ -6742,7 +6886,10 @@ app.post("/admin/export-member-info/csv", mustBeAdmin, (req, res) => {
     ? selectedFields
     : ["firstname", "lastname", "email"];
 
-  const rows = buildMemberExportRows(selectedGroups, normalizedFields);
+  const sortBy = ["newest", "oldest", "az"].includes(req.body.sort_by) ? req.body.sort_by : "az";
+  const daysFilter = ["30", "60", "90"].includes(req.body.days_filter) ? req.body.days_filter : "all";
+
+  const rows = buildMemberExportRows(selectedGroups, normalizedFields, sortBy, daysFilter);
 
   const headerLine = normalizedFields
     .map((field) => csvEscape(MEMBER_EXPORT_COLUMN_OPTIONS[field]))

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Boise Gems | Instrument Checkout</title>
+  <%- include("includes/head") %>
+  <style>
+    .checkout-card {
+      border: 1px solid var(--dark-quarter, #ccc);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+      background: #fff;
+    }
+    .checkout-card h3 { margin: 0 0 6px 0; }
+    .user-result-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+    .user-result-item:hover { background: #f0f0f0; }
+    #user-dropdown {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      max-height: 220px;
+      overflow-y: auto;
+      display: none;
+      position: absolute;
+      z-index: 100;
+      width: 100%;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    #user-search-wrapper { position: relative; }
+    .selected-badge {
+      display: inline-block;
+      background: var(--primary-color, #9D76BB);
+      color: #fff;
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-size: 0.9em;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div style="padding: 16px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+      <a href="/admin-portal">&larr; Admin Portal</a>
+      <a href="/admin/instrument-history"><button>Full Checkout History</button></a>
+    </div>
+    <h1 style="text-align:center;">🎺 Instrument Checkout</h1>
+    <br/>
+
+    <% if (locals.flashMessage) { %>
+      <div style="background:#d4edda; color:#155724; border:1px solid #c3e6cb; border-radius:6px; padding:10px 14px; margin-bottom:14px;">
+        <%= flashMessage %>
+      </div>
+    <% } %>
+
+    <!-- ── Check-Out Section ─────────────────────────────────────────── -->
+    <div class="checkout-card" style="max-width:600px; margin:0 auto 24px auto;">
+      <h2 style="margin-top:0;">Check Out an Instrument</h2>
+
+      <form id="checkout-form" method="POST" action="/admin/instrument-checkout/add">
+        <input type="hidden" name="user_id" id="checkout-user-id" value="" />
+
+        <div style="margin-bottom:12px;">
+          <label for="user-search-input" style="display:block; margin-bottom:4px;"><b>Member</b></label>
+          <div id="user-search-wrapper">
+            <input
+              type="text"
+              id="user-search-input"
+              placeholder="Type name to search…"
+              autocomplete="off"
+              style="width:100%;"
+            />
+            <div id="user-dropdown"></div>
+          </div>
+          <div id="selected-member-display"></div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label for="instrument_type" style="display:block; margin-bottom:4px;"><b>Instrument Type</b> <span style="color:red;">*</span></label>
+          <input type="text" name="instrument_type" id="instrument_type" required style="width:100%;" />
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label for="model" style="display:block; margin-bottom:4px;"><b>Model</b></label>
+          <input type="text" name="model" id="model" style="width:100%;" />
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label for="serial" style="display:block; margin-bottom:4px;"><b>Serial Number</b></label>
+          <input type="text" name="serial" id="serial" style="width:100%;" />
+        </div>
+
+        <div style="text-align:center;">
+          <button type="submit">Check Out</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ── Currently Checked Out ────────────────────────────────────── -->
+    <h2 style="text-align:center;">Currently Checked Out (<%= checkedOut.length %>)</h2>
+    <br/>
+
+    <% if (checkedOut.length === 0) { %>
+      <p style="text-align:center; color:#666;">No instruments are currently checked out.</p>
+    <% } else { %>
+      <div style="max-width:700px; margin:0 auto;">
+        <% checkedOut.forEach(function(inst) { %>
+          <div class="checkout-card">
+            <div style="display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:start;">
+              <div>
+                <h3 style="text-transform:capitalize;">
+                  <%= inst.instrument_type %>
+                  <% if (inst.model) { %><span style="font-weight:400;">— <%= inst.model %></span><% } %>
+                </h3>
+                <p style="margin:2px 0;">
+                  <b>Member:</b>
+                  <a href="/instruments/<%= inst.user_id %>"><%= inst.firstname %> <%= inst.lastname %></a>
+                  <% if (inst.section) { %><span style="color:#666; font-size:0.9em;">(<%=inst.section%>)</span><% } %>
+                </p>
+                <p style="margin:2px 0;"><b>Serial:</b> <%= inst.serial || "N/A" %></p>
+                <p style="margin:2px 0;">
+                  <b>Checked Out:</b>
+                  <%= inst.checked_out_date
+                    ? new Date(inst.checked_out_date).toLocaleDateString("en-US", {
+                        year: "numeric", month: "long", day: "numeric"
+                      })
+                    : "Unknown" %>
+                </p>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+                <form method="POST" action="/admin/instrument-checkout/checkin/<%= inst.id %>">
+                  <button type="submit" style="white-space:nowrap;">Check In</button>
+                </form>
+                <a href="/instruments/<%= inst.user_id %>" style="font-size:0.85em;">View Full History</a>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+
+<script>
+  const searchInput   = document.getElementById('user-search-input');
+  const dropdown      = document.getElementById('user-dropdown');
+  const hiddenUserId  = document.getElementById('checkout-user-id');
+  const display       = document.getElementById('selected-member-display');
+
+  let debounce;
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounce);
+    const q = searchInput.value.trim();
+    if (q.length < 2) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      return;
+    }
+    debounce = setTimeout(async () => {
+      try {
+        const res = await fetch(`/admin/users/search?q=${encodeURIComponent(q)}`);
+        const users = await res.json();
+        dropdown.innerHTML = '';
+        if (!users.length) {
+          dropdown.innerHTML = '<div class="user-result-item" style="color:#888;">No results found</div>';
+        } else {
+          users.forEach(u => {
+            const item = document.createElement('div');
+            item.className = 'user-result-item';
+            item.textContent = `${u.firstname} ${u.lastname}${u.section ? ' — ' + u.section : ''}`;
+            item.addEventListener('click', () => {
+              hiddenUserId.value = u.id;
+              searchInput.value = `${u.firstname} ${u.lastname}`;
+              display.innerHTML = `<span class="selected-badge">✓ ${u.firstname} ${u.lastname}</span>`;
+              dropdown.style.display = 'none';
+            });
+            dropdown.appendChild(item);
+          });
+        }
+        dropdown.style.display = 'block';
+      } catch(err) {
+        console.error('User search failed', err);
+      }
+    }, 250);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('user-search-wrapper').contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  document.getElementById('checkout-form').addEventListener('submit', (e) => {
+    if (!hiddenUserId.value) {
+      e.preventDefault();
+      alert('Please select a member from the search results before checking out an instrument.');
+    }
+  });
+</script>
+</body>
+</html>

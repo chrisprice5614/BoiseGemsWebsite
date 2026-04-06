@@ -26,7 +26,28 @@
         <label><input type="checkbox" name="group_uncontracted" <%= selectedGroups.uncontracted ? "checked" : "" %> /> Uncontracted</label>
       </div>
 
-      <h3>2) Select fields to export</h3>
+      <h3>2) Sort &amp; Filter by Date</h3>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px;">
+        <div>
+          <label for="sort_by" style="display:block; margin-bottom:4px;">Sort By</label>
+          <select name="sort_by" id="sort_by" style="width:100%;">
+            <option value="az" <%= sortBy === "az" ? "selected" : "" %>>A–Z (Last Name)</option>
+            <option value="newest" <%= sortBy === "newest" ? "selected" : "" %>>Newest Members</option>
+            <option value="oldest" <%= sortBy === "oldest" ? "selected" : "" %>>Oldest Members</option>
+          </select>
+        </div>
+        <div>
+          <label for="days_filter" style="display:block; margin-bottom:4px;">Joined Within</label>
+          <select name="days_filter" id="days_filter" style="width:100%;">
+            <option value="all" <%= daysFilter === "all" ? "selected" : "" %>>All Time</option>
+            <option value="30" <%= daysFilter === "30" ? "selected" : "" %>>Last 30 Days</option>
+            <option value="60" <%= daysFilter === "60" ? "selected" : "" %>>Last 60 Days</option>
+            <option value="90" <%= daysFilter === "90" ? "selected" : "" %>>Last 90 Days</option>
+          </select>
+        </div>
+      </div>
+
+      <h3>3) Select fields to export</h3>
       <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px;">
         <% Object.keys(columnOptions).forEach(function(key) { %>
           <label>
@@ -80,6 +101,8 @@
           <input type="hidden" name="group_affiliate" value="<%= selectedGroups.affiliate ? '1' : '0' %>" />
           <input type="hidden" name="group_staff" value="<%= selectedGroups.staff ? '1' : '0' %>" />
           <input type="hidden" name="group_uncontracted" value="<%= selectedGroups.uncontracted ? '1' : '0' %>" />
+          <input type="hidden" name="sort_by" value="<%= sortBy %>" />
+          <input type="hidden" name="days_filter" value="<%= daysFilter %>" />
           <% selectedFields.forEach(function(field) { %>
             <input type="hidden" name="export_fields" value="<%= field %>" />
           <% }) %>

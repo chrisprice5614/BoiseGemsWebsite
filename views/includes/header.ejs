@@ -46,6 +46,8 @@ else
             <a href="/parent-portal"><button>Parent Portal</button></a>
         <% } else if(user.staff) { %>
             <a href="/member-portal"><button>Staff Portal</button></a>
+        <% } else if(user.fan) { %>
+            <a href="/fan-portal"><button>Fan Portal</button></a>
         <% } else if(user) { %>
             <a href="/member-portal"><button>Member Portal</button></a>
         <% } %>

@@ -2,65 +2,845 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems</title>
+    <title>Boise Gems | Donate</title>
     <%- include("includes/head") %>
+    <style>
+        /* ── Hero ── */
+        .donate-hero {
+            position: relative; width: 100%; height: 380px; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .donate-hero img {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            object-fit: cover; object-position: center 30%; filter: brightness(.45);
+        }
+        .donate-hero-content {
+            position: relative; z-index: 2; text-align: center; padding: 0 20px;
+        }
+        .donate-hero-content h1 {
+            font-size: 2.8rem; color: #fff; font-weight: 800; letter-spacing: -.5px;
+            text-shadow: 0 3px 20px rgba(0,0,0,.5); margin-bottom: 10px;
+        }
+        .donate-hero-content p {
+            color: rgba(255,255,255,.88); font-size: 1.1rem; max-width: 580px;
+            margin: 0 auto; line-height: 1.6; text-shadow: 0 1px 6px rgba(0,0,0,.4);
+        }
+
+        /* ── Page wrapper ── */
+        .donate-page { max-width: 1080px; margin: 0 auto; padding: 0 20px 48px; }
+
+        /* ── Tabs ── */
+        .dn-tabs {
+            display: flex; gap: 0; margin: 36px 0 32px; border-radius: 12px;
+            overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.08);
+        }
+        .dn-tab {
+            flex: 1; padding: 16px 10px; text-align: center; font-weight: 700;
+            font-size: 1rem; cursor: pointer; border: none;
+            background: #fff; color: var(--dark-full);
+            transition: background 180ms, color 180ms, box-shadow 180ms;
+            border-bottom: 3px solid transparent;
+        }
+        .dn-tab:hover { background: #f7f3fc; }
+        .dn-tab.active {
+            background: var(--secondary-color); color: #fff;
+            border-bottom-color: var(--primary-color);
+            box-shadow: inset 0 -3px 0 var(--primary-color);
+        }
+        .dn-panel { display: none; }
+        .dn-panel.active { display: block; }
+
+        /* ── Section headers ── */
+        .dn-section-header {
+            position: relative; border-radius: 14px; overflow: hidden;
+            margin-bottom: 24px; height: 180px; display: flex;
+            align-items: flex-end;
+        }
+        .dn-section-header img {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            object-fit: cover; filter: brightness(.4);
+        }
+        .dn-section-header .dn-sh-text {
+            position: relative; z-index: 2; padding: 24px 28px; width: 100%;
+        }
+        .dn-section-header h2 {
+            color: #fff; font-size: 1.6rem; font-weight: 700;
+            margin-bottom: 4px; text-shadow: 0 2px 10px rgba(0,0,0,.4);
+        }
+        .dn-section-header p {
+            color: rgba(255,255,255,.85); font-size: .92rem; margin: 0;
+        }
+
+        /* ── Feed the Corps cards ── */
+        .ftc-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 16px; margin: 0 0 20px;
+        }
+        .ftc-card {
+            background: #fff; border: 2px solid #e4daf0; border-radius: 14px;
+            padding: 22px 16px 18px; text-align: center; cursor: pointer;
+            transition: border-color 200ms, box-shadow 200ms, transform 120ms;
+            position: relative; overflow: hidden;
+        }
+        .ftc-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--tertiary-color));
+            opacity: 0; transition: opacity 200ms;
+        }
+        .ftc-card:hover { border-color: var(--primary-color); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(96,67,125,.15); }
+        .ftc-card:hover::before { opacity: 1; }
+        .ftc-card.selected { border-color: var(--secondary-color); box-shadow: 0 8px 24px rgba(96,67,125,.2); }
+        .ftc-card.selected::before { opacity: 1; }
+        .ftc-card h4 { font-size: 1rem; font-weight: 700; color: var(--dark-full); margin: 0 0 6px; }
+        .ftc-card .ftc-price { font-size: 1.35rem; font-weight: 800; color: var(--secondary-color); }
+        .ftc-card .ftc-desc { font-size: .8rem; color: #666; margin-top: 8px; line-height: 1.4; }
+
+        /* ── Donate card wrapper ── */
+        .dn-donate-card {
+            background: #fff; border-radius: 16px; padding: 32px 28px;
+            box-shadow: 0 2px 16px rgba(0,0,0,.06); border: 1px solid #e8e0f0;
+        }
+        .dn-donate-card label { font-weight: 600; font-size: .9rem; color: var(--dark-full); display: block; margin-bottom: 5px; }
+        .dn-donate-card textarea {
+            width: 100%; padding: 11px 14px; border: 1.5px solid #d0c5e0; border-radius: 10px;
+            font-size: .95rem; background: #faf8ff; font-family: inherit; margin-bottom: 14px;
+            transition: border-color 180ms; min-height: 70px; resize: vertical;
+        }
+        .dn-donate-card textarea:focus { border-color: var(--primary-color); outline: none; box-shadow: 0 0 0 3px rgba(157,118,187,.15); }
+
+        /* ── Amount input ── */
+        .dn-amount-group {
+            display: flex; align-items: center; gap: 6px; margin-bottom: 24px;
+        }
+        .dn-currency {
+            font-size: 2rem; font-weight: 800; color: var(--secondary-color); line-height: 1;
+        }
+        .dn-per-month {
+            font-size: 1.1rem; font-weight: 700; color: #888; white-space: nowrap;
+        }
+        .dn-amount-group input[type="number"] {
+            flex: 1; font-size: 2rem; font-weight: 700; padding: 12px 16px;
+            border: 2px solid #d0c5e0; border-radius: 12px; background: #faf8ff;
+            color: var(--dark-full); font-family: inherit; transition: border-color 180ms;
+            min-width: 0;
+        }
+        .dn-amount-group input[type="number"]:focus {
+            border-color: var(--primary-color); outline: none;
+            box-shadow: 0 0 0 4px rgba(157,118,187,.12);
+        }
+
+        /* ── Tier tracker ── */
+        .tier-tracker {
+            position: relative; display: flex; justify-content: space-between;
+            margin: 0 0 22px; padding: 0 10px;
+        }
+        .tier-tracker::before {
+            content: ''; position: absolute; top: 10px; left: 10px; right: 10px;
+            height: 4px; background: #e4daf0; border-radius: 2px; z-index: 0;
+        }
+        .tt-fill {
+            position: absolute; top: 10px; left: 10px; height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--tertiary-color));
+            border-radius: 2px; z-index: 1; transition: width 350ms ease; width: 0;
+        }
+        .tt-step {
+            position: relative; z-index: 2; text-align: center; flex: 0 0 auto;
+        }
+        .tt-dot {
+            width: 22px; height: 22px; border-radius: 50%; background: #e4daf0;
+            border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.1);
+            margin: 0 auto 8px; transition: background 250ms, transform 200ms;
+        }
+        .tt-step.reached .tt-dot { background: var(--primary-color); }
+        .tt-step.active .tt-dot {
+            background: var(--secondary-color); transform: scale(1.25);
+            box-shadow: 0 2px 12px rgba(96,67,125,.35);
+        }
+        .tt-label {
+            font-size: .72rem; font-weight: 600; color: #aaa;
+            transition: color 200ms; white-space: nowrap;
+        }
+        .tt-label span { display: block; font-weight: 400; font-size: .68rem; }
+        .tt-step.reached .tt-label { color: var(--primary-color); }
+        .tt-step.active .tt-label { color: var(--secondary-color); font-weight: 800; }
+
+        /* ── Rewards panel ── */
+        .rewards-panel {
+            border-radius: 12px; padding: 20px 22px; margin-bottom: 20px;
+            border: 2px solid transparent; transition: border-color 280ms, background 280ms;
+        }
+        .rewards-panel.rp-none { background: #f9f7fc; border-color: #e4daf0; }
+        .rewards-panel.rp-bronze { background: linear-gradient(135deg, #fdf6ee, #f9f0e3); border-color: #cd7f32; }
+        .rewards-panel.rp-silver { background: linear-gradient(135deg, #f5f5f5, #ebebeb); border-color: #a8a8a8; }
+        .rewards-panel.rp-gold { background: linear-gradient(135deg, #fefbf0, #fdf5d9); border-color: #d4a017; }
+        .rewards-panel.rp-platinum { background: linear-gradient(135deg, #f8f8f8, #f0f0f0); border-color: #8e8e8e; }
+        .rewards-panel.rp-star_garnet { background: linear-gradient(135deg, #f8f0ff, #f0e6ff); border-color: #9b30ff; }
+        .rewards-panel h4 { margin: 0 0 10px; font-size: 1.05rem; font-weight: 700; }
+        .rewards-panel ul { padding-left: 18px; margin: 0; font-size: .88rem; color: #444; }
+        .rewards-panel ul li { margin-bottom: 4px; line-height: 1.5; }
+        .rewards-panel .rp-placeholder { color: #999; font-size: .9rem; margin: 0; }
+
+        /* ── Next-tier nudge ── */
+        .next-tier-nudge {
+            background: linear-gradient(135deg, #f3eafa, #ece2f7);
+            border: 1px solid #d0c5e0; border-radius: 10px;
+            padding: 12px 18px; margin-bottom: 18px;
+            font-size: .88rem; color: var(--secondary-color); font-weight: 600;
+        }
+
+        /* ── Form panels (expanded after card selection) ── */
+        .dn-expand-form {
+            display: none; margin-top: 20px; background: #fff; border-radius: 14px;
+            padding: 24px 28px; box-shadow: 0 2px 16px rgba(0,0,0,.07);
+            border: 1px solid #e8e0f0;
+        }
+        .dn-expand-form.visible { display: block; animation: dnSlideIn 280ms ease; }
+        @keyframes dnSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .dn-expand-form label { font-weight: 600; font-size: .9rem; color: var(--dark-full); display: block; margin-bottom: 5px; }
+        .dn-expand-form input[type="number"],
+        .dn-expand-form input[type="text"],
+        .dn-expand-form textarea {
+            width: 100%; padding: 11px 14px; border: 1.5px solid #d0c5e0; border-radius: 10px;
+            font-size: .95rem; background: #faf8ff; font-family: inherit; margin-bottom: 14px;
+            transition: border-color 180ms;
+        }
+        .dn-expand-form input:focus, .dn-expand-form textarea:focus { border-color: var(--primary-color); outline: none; box-shadow: 0 0 0 3px rgba(157,118,187,.15); }
+        .dn-expand-form textarea { min-height: 70px; resize: vertical; }
+        .dn-fee-note { font-size: .82rem; color: #888; margin-bottom: 14px; }
+        .dn-submit {
+            display: block; width: 100%; padding: 14px; border-radius: 12px; border: none;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: #fff; font-weight: 700; font-size: 1.05rem; cursor: pointer;
+            box-shadow: 0 4px 16px rgba(96,67,125,.25); transition: opacity 150ms, transform 100ms;
+            text-shadow: 0 1px 4px rgba(0,0,0,.2); text-transform: none;
+        }
+        .dn-submit:hover { opacity: .9; }
+        .dn-submit:active { transform: scale(.98); }
+
+        /* ── Shirt selectors ── */
+        .shirt-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+        .shirt-row label { font-weight: 600; font-size: .88rem; min-width: 100px; margin:0; }
+        .shirt-row select {
+            padding: 8px 12px; border-radius: 8px; border: 1.5px solid #d0c5e0;
+            font-size: .9rem; background: #faf8ff; font-family: inherit;
+        }
+
+
+
+        /* ── Guest donation ── */
+        .dn-guest-card {
+            background: #fff; border-radius: 16px; padding: 36px 32px;
+            box-shadow: 0 4px 24px rgba(0,0,0,.08);
+            margin: 36px 0 0;
+        }
+        .dn-guest-card label { font-weight: 600; font-size: .9rem; color: var(--dark-full); display: block; margin-bottom: 5px; }
+        .dn-guest-card input, .dn-guest-card textarea {
+            width: 100%; padding: 11px 14px; border: 1.5px solid #d0c5e0; border-radius: 10px;
+            font-size: .95rem; background: #faf8ff; font-family: inherit; margin-bottom: 16px;
+        }
+        .dn-guest-card input:focus, .dn-guest-card textarea:focus { border-color: var(--primary-color); outline: none; box-shadow: 0 0 0 3px rgba(157,118,187,.15); }
+
+        /* ── Donor wall ── */
+        .donor-wall { padding: 48px 20px 56px; max-width: 1080px; margin: 0 auto; }
+        .donor-wall h2 { text-align: center; font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+        .donor-wall .dw-sub { text-align: center; font-size: .9rem; color: #888; margin-bottom: 24px; }
+        .donor-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+        }
+        .donor-chip {
+            background: #fff; border: 1px solid #e4daf0; border-radius: 10px;
+            padding: 14px 12px; text-align: center;
+            box-shadow: 0 2px 8px rgba(96,67,125,.06);
+            transition: box-shadow 180ms, transform 120ms;
+        }
+        .donor-chip:hover { box-shadow: 0 4px 16px rgba(96,67,125,.12); transform: translateY(-2px); }
+        .donor-chip p { font-weight: 700; color: var(--dark-full); font-size: .92rem; }
+
+        /* ── Divider ── */
+        .dn-divider {
+            border: none; height: 1px;
+            background: linear-gradient(90deg, transparent, #d0c5e0, transparent);
+            margin: 32px 0;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 600px) {
+            .donate-hero { height: 260px; }
+            .donate-hero-content h1 { font-size: 1.8rem; }
+            .dn-section-header { height: 140px; }
+            .dn-section-header h2 { font-size: 1.2rem; }
+            .dn-guest-card { padding: 24px 18px; }
+            .dn-expand-form { padding: 20px 18px; }
+            .dn-donate-card { padding: 24px 18px; }
+            .dn-amount-group input[type="number"] { font-size: 1.4rem; }
+            .dn-currency, .dn-per-month { font-size: 1.4rem; }
+            .donor-grid { grid-template-columns: 1fr; }
+            .tt-label { font-size: .6rem; }
+            .tt-label span { font-size: .55rem; }
+            .tier-tracker { padding: 0 4px; }
+        }
+    </style>
 </head>
 <body>
     <header>
         <%- include("includes/header") %>
     </header>
     <main>
-        <div style="padding: 8px">
-            <br>
-            <h1 style="text-align: center;">Make a donation</h1>
-            <br>
-            <p>Donations help keep the corps functioning. Every donation goes to feeding the corps, new instruments, transportation, and other expenses that help the corps.</p>
-            <br>
-            <form action="/donate" method="POST">
-                <label for="email">Your Email</label>
-                <input type="email" name="email" placeholder="email@website.com" required>
-                <br>
-                <br>
-                <label for="name">Your Name</label>
-                <input type="text" name="name" required placeholder="First and Last Name">
-                <br>
-                <br>
-                <label for="message">Optional Message</label>
-                <textarea name="message" id="message" placeholder="Your message here..."></textarea>
-                <br>
-                <br>
-                <label for="payment">Enter Amount to Donate</label>
-                <input type="number" name="payment" step="0.01" min="0.50" max="999999" value="" required/>
-                <br>
-                <br>
-                <small>A 6% processing fee is added to all transactions</small>
-                <br>
-                <div style="text-align: center;">
-                    <button>Make Donation</button>
-                </div>
-            </form>
-            <br>
+
+        <!-- ═══════════════════════════════════════
+             HERO BANNER
+             ═══════════════════════════════════════ -->
+        <!-- IMAGE NEEDED: donate-hero.jpg — a wide, cinematic shot of the full corps
+             performing on a field at golden hour. The group photo from the capitol
+             steps (boise-gems-01.jpg) could work, or any dramatic wide-angle
+             performance photo that shows the scale of the corps. -->
+        <div class="donate-hero">
+            <img src="/img/photos/boise-gems-01.jpg" alt="Boise Gems performing" />
+            <div class="donate-hero-content">
+                <h1>Support the Gems</h1>
+                <p>Every dollar fuels rehearsals, instruments, meals on the road, and the experiences that shape our members. Your generosity keeps the music alive.</p>
+            </div>
         </div>
 
-        <!-- Donor Wall -->
-        <div style="padding: 8px 8px 32px;">
-            <hr style="margin-bottom: 28px;">
-            <h2 style="text-align: center; margin-bottom: 20px;">Thank You to Our Donors</h2>
+        <div class="donate-page">
+
+            <% if (typeof user !== 'undefined' && user) { %>
+
+            <!-- ──────────────────────────────────────
+                 LOGGED-IN DONATION EXPERIENCE
+                 ────────────────────────────────────── -->
+
+            <div class="dn-tabs">
+                <button class="dn-tab active" onclick="switchTab('onetime')">Make a One-Time Donation</button>
+                <button class="dn-tab" onclick="switchTab('subscribe')">Subscribe to the Gems</button>
+            </div>
+
+            <!-- ═══ ONE-TIME PANEL ═══ -->
+            <div class="dn-panel active" id="panel-onetime">
+
+                <!-- Feed the Corps -->
+                <!-- IMAGE NEEDED: donate-feed.jpg — a casual/warm photo of members eating
+                     together, getting water during practice, or the community interacting
+                     with the corps during a break. The community.jpg photo (kid playing
+                     drums with members) is a great option. -->
+                <div class="dn-section-header">
+                    <img src="/img/action/water.jpg" alt="Members during a break" />
+                    <div class="dn-sh-text">
+                        <h2>Feed the Corps</h2>
+                        <p>Fuel a rehearsal. A member holds a sign with your personal message and it's posted to our socials.</p>
+                    </div>
+                </div>
+
+                <div class="ftc-grid">
+                    <div class="ftc-card" onclick="selectFtc(this, 'water_break', 2500)">
+                        <h4>Water Break</h4>
+                        <div class="ftc-price">$25</div>
+                        <div class="ftc-desc">Member holds sign with your message; posted to socials</div>
+                    </div>
+                    <div class="ftc-card" onclick="selectFtc(this, 'gatorade', 5000)">
+                        <h4>Gatorade</h4>
+                        <div class="ftc-price">$50</div>
+                        <div class="ftc-desc">Members hold sign with your message; posted to socials</div>
+                    </div>
+                    <div class="ftc-card" onclick="selectFtc(this, 'pbj', 10000)">
+                        <h4>PB&amp;J Sandwiches</h4>
+                        <div class="ftc-price">$100</div>
+                        <div class="ftc-desc">Members hold sign with your message; posted to socials</div>
+                    </div>
+                    <div class="ftc-card" onclick="selectFtc(this, 'lunch', 20000)">
+                        <h4>Lunch</h4>
+                        <div class="ftc-price">$200</div>
+                        <div class="ftc-desc">Section/member holds sign; posted to socials + website acknowledgement</div>
+                    </div>
+                    <div class="ftc-card" onclick="selectFtc(this, 'dinner', 30000)">
+                        <h4>Dinner</h4>
+                        <div class="ftc-price">$300</div>
+                        <div class="ftc-desc">Section/member holds sign; posted to socials + website acknowledgement</div>
+                    </div>
+                </div>
+
+                <form id="ftc-form" action="/donate/feed-the-corps" method="POST" class="dn-expand-form">
+                    <input type="hidden" name="ftcTier" id="ftcTier" value="" />
+                    <input type="hidden" name="ftcAmount" id="ftcAmount" value="" />
+                    <label for="ftcMessage">Your message for the sign</label>
+                    <textarea name="ftcMessage" id="ftcMessage" placeholder="Write your personal message here..." required></textarea>
+                    <p class="dn-fee-note">A processing fee is added to all transactions.</p>
+                    <button type="submit" class="dn-submit">Donate &amp; Feed the Corps</button>
+                </form>
+
+                <hr class="dn-divider">
+
+                <% if (typeof fanType !== 'undefined' && fanType === 'individual') { %>
+                    <div class="dn-section-header">
+                        <img src="/img/action/dm-2.jpg" alt="Performer in action" />
+                        <div class="dn-sh-text">
+                            <h2>Make a Donation</h2>
+                            <p>Enter your amount and see what rewards you unlock. All donations are tax deductible.</p>
+                        </div>
+                    </div>
+
+                    <div class="dn-donate-card">
+                        <form id="onetime-form" action="/donate/onetime" method="POST">
+                            <input type="hidden" name="selectedTier" id="onetimeTier" value="" />
+                            <input type="hidden" name="tierMinCents" id="onetimeTierMin" value="" />
+
+                            <label for="onetimeAmount" style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">How much would you like to donate?</label>
+                            <div class="dn-amount-group">
+                                <span class="dn-currency">$</span>
+                                <input type="number" name="payment" id="onetimeAmount" step="0.01" min="0.50" max="999999" required oninput="updateOneTimeTier()" />
+                            </div>
+
+                            <div class="tier-tracker" id="ot-tracker">
+                                <div class="tt-fill" id="ot-fill"></div>
+                                <div class="tt-step" data-min="100">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Bronze<span>$100</span></div>
+                                </div>
+                                <div class="tt-step" data-min="250">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Silver<span>$250</span></div>
+                                </div>
+                                <div class="tt-step" data-min="500">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Gold<span>$500</span></div>
+                                </div>
+                                <div class="tt-step" data-min="750">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Platinum<span>$750</span></div>
+                                </div>
+                                <div class="tt-step" data-min="1000">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Star Garnet<span>$1,000</span></div>
+                                </div>
+                            </div>
+
+                            <div id="ot-rewards" class="rewards-panel rp-none">
+                                <h4>Your Rewards</h4>
+                                <p class="rp-placeholder">Enter an amount above to see your tier rewards.</p>
+                            </div>
+
+                            <div id="ot-nudge" class="next-tier-nudge" style="display:none;"></div>
+
+                            <div id="onetime-shirt-section" style="margin-bottom: 14px;"></div>
+
+                            <label for="onetimeMessage">Optional Message</label>
+                            <textarea name="message" id="onetimeMessage" placeholder="Your message here..."></textarea>
+
+                            <p class="dn-fee-note">A processing fee is added to all transactions.</p>
+                            <button type="submit" class="dn-submit">Make Donation</button>
+                        </form>
+                    </div>
+                <% } else { %>
+                    <div class="dn-donate-card">
+                        <form id="onetime-form" action="/donate/onetime" method="POST">
+                            <input type="hidden" name="selectedTier" value="" />
+                            <input type="hidden" name="tierMinCents" value="" />
+
+                            <label for="onetimeAmountSimple" style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">Donation Amount</label>
+                            <div class="dn-amount-group">
+                                <span class="dn-currency">$</span>
+                                <input type="number" name="payment" id="onetimeAmountSimple" step="0.01" min="0.50" max="999999" required />
+                            </div>
+
+                            <label for="onetimeMessageSimple">Optional Message</label>
+                            <textarea name="message" id="onetimeMessageSimple" placeholder="Your message here..."></textarea>
+
+                            <p class="dn-fee-note">A processing fee is added to all transactions.</p>
+                            <button type="submit" class="dn-submit">Make Donation</button>
+                        </form>
+                    </div>
+                <% } %>
+
+            </div><!-- /panel-onetime -->
+
+            <!-- ═══ SUBSCRIPTION PANEL ═══ -->
+            <div class="dn-panel" id="panel-subscribe">
+                <% if (typeof fanType !== 'undefined' && fanType === 'corporate') { %>
+                    <div class="dn-section-header">
+                        <img src="/img/photos/donate-corporate.jpg" alt="Full corps performing" />
+                        <div class="dn-sh-text">
+                            <h2>Corporate Sponsorship</h2>
+                            <p>Choose your monthly sponsorship amount and see your rewards. All sponsorships are tax deductible.</p>
+                        </div>
+                    </div>
+
+                    <div class="dn-donate-card">
+                        <form id="sub-form-corporate" action="/donate/subscribe" method="POST">
+                            <input type="hidden" name="tier" id="corpSubTier" value="" />
+                            <input type="hidden" name="fanType" value="corporate" />
+
+                            <label style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">Monthly Sponsorship Amount</label>
+                            <div class="dn-amount-group">
+                                <span class="dn-currency">$</span>
+                                <input type="number" name="monthlyAmount" id="corpSubAmount" step="0.01" min="1" max="999999" required oninput="updateCorpSubTier()" />
+                                <span class="dn-per-month">/month</span>
+                            </div>
+
+                            <div class="tier-tracker" id="corp-tracker">
+                                <div class="tt-fill" id="corp-fill"></div>
+                                <div class="tt-step" data-min="100">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Bronze<span>$100</span></div>
+                                </div>
+                                <div class="tt-step" data-min="500">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Silver<span>$500</span></div>
+                                </div>
+                                <div class="tt-step" data-min="1000">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Gold<span>$1,000</span></div>
+                                </div>
+                                <div class="tt-step" data-min="2500">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Platinum<span>$2,500</span></div>
+                                </div>
+                                <div class="tt-step" data-min="5000">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Star Garnet<span>$5,000</span></div>
+                                </div>
+                            </div>
+
+                            <div id="corp-rewards" class="rewards-panel rp-none">
+                                <h4>Your Rewards</h4>
+                                <p class="rp-placeholder">Enter an amount above to see your sponsorship rewards.</p>
+                            </div>
+
+                            <div id="corp-nudge" class="next-tier-nudge" style="display:none;"></div>
+
+                            <div id="corp-shirt-section" style="margin-bottom: 14px;"></div>
+
+                            <p style="font-size:.85rem; color:#777; margin-bottom:12px; font-style:italic;">
+                                If additional information is needed (e.g. corporate logos), you will receive an email with further instructions.
+                            </p>
+                            <p class="dn-fee-note">A processing fee is added to all transactions.</p>
+                            <button type="submit" class="dn-submit">Start Subscription</button>
+                        </form>
+                    </div>
+
+                <% } else { %>
+                    <div class="dn-section-header">
+                        <img src="/img/photos/boise-gems-05.jpg" alt="Members performing" />
+                        <div class="dn-sh-text">
+                            <h2>Individual Sponsorship &ndash; Monthly</h2>
+                            <p>Choose your monthly contribution and see your rewards. All sponsorships are tax deductible.</p>
+                        </div>
+                    </div>
+
+                    <div class="dn-donate-card">
+                        <form id="sub-form-individual" action="/donate/subscribe" method="POST">
+                            <input type="hidden" name="tier" id="indSubTier" value="" />
+                            <input type="hidden" name="fanType" value="individual" />
+
+                            <label style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">Monthly Amount</label>
+                            <div class="dn-amount-group">
+                                <span class="dn-currency">$</span>
+                                <input type="number" name="monthlyAmount" id="indSubAmount" step="0.01" min="1" max="999999" required oninput="updateIndSubTier()" />
+                                <span class="dn-per-month">/month</span>
+                            </div>
+
+                            <div class="tier-tracker" id="ind-tracker">
+                                <div class="tt-fill" id="ind-fill"></div>
+                                <div class="tt-step" data-min="10">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Bronze<span>$10</span></div>
+                                </div>
+                                <div class="tt-step" data-min="25">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Silver<span>$25</span></div>
+                                </div>
+                                <div class="tt-step" data-min="50">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Gold<span>$50</span></div>
+                                </div>
+                                <div class="tt-step" data-min="75">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Platinum<span>$75</span></div>
+                                </div>
+                                <div class="tt-step" data-min="100">
+                                    <div class="tt-dot"></div>
+                                    <div class="tt-label">Star Garnet<span>$100</span></div>
+                                </div>
+                            </div>
+
+                            <div id="ind-rewards" class="rewards-panel rp-none">
+                                <h4>Your Rewards</h4>
+                                <p class="rp-placeholder">Enter an amount above to see your tier rewards.</p>
+                            </div>
+
+                            <div id="ind-nudge" class="next-tier-nudge" style="display:none;"></div>
+
+                            <div id="ind-shirt-section" style="margin-bottom: 14px;"></div>
+
+                            <p class="dn-fee-note">A processing fee is added to all transactions.</p>
+                            <button type="submit" class="dn-submit">Start Subscription</button>
+                        </form>
+                    </div>
+                <% } %>
+            </div><!-- /panel-subscribe -->
+
+            <% } else { %>
+
+            <!-- ──────────────────────────────────────
+                 NOT LOGGED IN — guest donation
+                 ────────────────────────────────────── -->
+            <div class="dn-guest-card">
+                <form action="/donate" method="POST" style="border:none; box-shadow:none; padding:0; margin:0; background:none;">
+                    <label for="email">Your Email</label>
+                    <input type="email" name="email" placeholder="email@website.com" required>
+                    <label for="name">Your Name</label>
+                    <input type="text" name="name" required placeholder="First and Last Name">
+                    <label for="message">Optional Message</label>
+                    <textarea name="message" id="message" placeholder="Your message here..." style="min-height:70px; resize:vertical;"></textarea>
+                    <label for="payment">Donation Amount ($)</label>
+                    <input type="number" name="payment" step="0.01" min="0.50" max="999999" required />
+                    <p class="dn-fee-note">A processing fee is added to all transactions.</p>
+                    <button type="submit" class="dn-submit">Make Donation</button>
+                </form>
+            </div>
+
+            <% } %>
+
+        </div><!-- /donate-page -->
+
+        <!-- ═══ Donor Wall ═══ -->
+        <div class="donor-wall">
+            <h2>Thank You to Our Donors</h2>
+            <p class="dw-sub">Your support makes all the difference.</p>
             <% if (typeof donorNames !== 'undefined' && donorNames && donorNames.length > 0) { %>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;">
+                <div class="donor-grid">
                     <% donorNames.forEach(name => { %>
-                    <div style="background: var(--light-half); border: 1px solid #ccc; border-radius: 10px; padding: 14px 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); text-align: center;">
-                        <p style="font-weight: 700; color: var(--dark-full); font-size: 0.95rem;"><%= name %></p>
+                    <div class="donor-chip">
+                        <p><%= name %></p>
                     </div>
                     <% }) %>
                 </div>
             <% } else { %>
-                <p style="text-align: center; color: #777;">Be the first to donate!</p>
+                <p style="text-align: center; color: #999;">Be the first to donate!</p>
             <% } %>
         </div>
+
     </main>
     <footer>
         <%- include("includes/footer") %>
     </footer>
+
+    <script>
+    /* ── Tab switching ── */
+    function switchTab(tab) {
+        document.querySelectorAll('.dn-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.dn-panel').forEach(p => p.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('panel-' + tab).classList.add('active');
+    }
+
+    /* ── Feed the Corps ── */
+    let selectedFtcCard = null;
+    function selectFtc(card, tier, amountCents) {
+        if (selectedFtcCard) selectedFtcCard.classList.remove('selected');
+        card.classList.add('selected');
+        selectedFtcCard = card;
+        document.getElementById('ftcTier').value = tier;
+        document.getElementById('ftcAmount').value = amountCents;
+        const form = document.getElementById('ftc-form');
+        form.classList.add('visible');
+        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    /* ── Shared helpers ── */
+    const SHIRT_SIZES = ['XS','S','M','L','XL','2XL','3XL'];
+
+    function renderShirtSelectors(container, shirts, prefix) {
+        if (!shirts || shirts.length === 0) { container.innerHTML = ''; return; }
+        let html = '<strong style="display:block; margin-bottom:10px; font-size:.95rem;">Select Shirt Size(s)</strong>';
+        let idx = 0;
+        shirts.forEach(s => {
+            for (let i = 0; i < s.count; i++) {
+                html += '<div class="shirt-row">' +
+                    '<label>' + s.label + (s.count > 1 ? ' #' + (i+1) : '') + ':</label>' +
+                    '<select name="' + prefix + '_' + idx + '" required>' +
+                    '<option value="">-- Select --</option>' +
+                    SHIRT_SIZES.map(sz => '<option value="'+sz+'">'+sz+'</option>').join('') +
+                    '</select></div>';
+                idx++;
+            }
+        });
+        container.innerHTML = html;
+    }
+
+    function calcFillPercent(amount, thresholds) {
+        for (let i = thresholds.length - 1; i >= 0; i--) {
+            if (amount >= thresholds[i]) {
+                if (i === thresholds.length - 1) return 100;
+                const segPct = 100 / (thresholds.length - 1);
+                const base = i * segPct;
+                const range = thresholds[i + 1] - thresholds[i];
+                const progress = Math.min((amount - thresholds[i]) / range, 1);
+                return base + progress * segPct;
+            }
+        }
+        if (amount > 0 && thresholds[0] > 0) {
+            const firstSegPct = 100 / (thresholds.length - 1);
+            return (amount / thresholds[0]) * firstSegPct * 0.8;
+        }
+        return 0;
+    }
+
+    function updateTracker(trackerId, fillId, amount, thresholds) {
+        const tracker = document.getElementById(trackerId);
+        const fill = document.getElementById(fillId);
+        if (!tracker || !fill) return;
+        const steps = tracker.querySelectorAll('.tt-step');
+        let activeIdx = -1;
+        steps.forEach((step, i) => {
+            const min = thresholds[i];
+            step.classList.remove('reached', 'active');
+            if (amount >= min) {
+                step.classList.add('reached');
+                activeIdx = i;
+            }
+        });
+        if (activeIdx >= 0) steps[activeIdx].classList.add('active');
+        const barWidth = tracker.querySelector('.tt-step:last-child');
+        const trackerRect = tracker.getBoundingClientRect();
+        const pct = calcFillPercent(amount, thresholds);
+        const maxWidth = trackerRect.width - 20;
+        fill.style.width = Math.min(pct, 100) + '%';
+    }
+
+    function updateRewardsPanel(panelId, nudgeId, tier, amount, tierData) {
+        const panel = document.getElementById(panelId);
+        const nudge = document.getElementById(nudgeId);
+        if (!panel) return;
+        panel.className = 'rewards-panel';
+        if (!tier) {
+            panel.classList.add('rp-none');
+            panel.innerHTML = '<h4>Your Rewards</h4>' +
+                '<p class="rp-placeholder">Increase your donation to start earning tier rewards!</p>';
+        } else {
+            panel.classList.add('rp-' + tier.key);
+            let html = '<h4 style="color:' + tier.color + ';">' + tier.label + ' Tier</h4><ul>';
+            tier.perks.forEach(p => html += '<li>' + p + '</li>');
+            html += '</ul>';
+            panel.innerHTML = html;
+        }
+        if (nudge) {
+            const currentIdx = tier ? tierData.indexOf(tier) : -1;
+            const nextTier = tierData[currentIdx + 1];
+            if (nextTier && amount > 0) {
+                const diff = (nextTier.min - amount).toFixed(2);
+                nudge.style.display = 'block';
+                nudge.innerHTML = 'Add <strong>$' + diff + ' more</strong> to reach <strong>' + nextTier.label + '</strong> and unlock: ' + nextTier.perks[0];
+            } else {
+                nudge.style.display = 'none';
+            }
+        }
+    }
+
+    /* ════════════════════════════════════════════
+       ONE-TIME INDIVIDUAL TIERS
+       ════════════════════════════════════════════ */
+    const OT_TIERS = [
+        { key: 'bronze', min: 100, label: 'Bronze', color: '#9a5e1e',
+          perks: ['Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [] },
+        { key: 'silver', min: 250, label: 'Silver', color: '#6b6b6b',
+          perks: ['Shirt (1)', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: 'Shirt', count: 1 }] },
+        { key: 'gold', min: 500, label: 'Gold', color: '#9e7400',
+          perks: ['BG hat (1) + BG shirt (1)', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 1 }] },
+        { key: 'platinum', min: 750, label: 'Platinum', color: '#555',
+          perks: ['(2) GA Tickets for Drums Across the Gem State', 'BG hat (1) + BG shirts (2)', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 2 }] },
+        { key: 'star_garnet', min: 1000, label: 'Star Garnet', color: '#7b1fa2',
+          perks: ['VIP Tickets (2) for Drums Across the Gem State', 'BG hat (1) + BG shirts (2)', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 2 }] }
+    ];
+    const OT_THRESHOLDS = OT_TIERS.map(t => t.min);
+
+    function updateOneTimeTier() {
+        const amount = parseFloat(document.getElementById('onetimeAmount').value) || 0;
+        let matched = null;
+        for (let i = OT_TIERS.length - 1; i >= 0; i--) {
+            if (amount >= OT_TIERS[i].min) { matched = OT_TIERS[i]; break; }
+        }
+        document.getElementById('onetimeTier').value = matched ? matched.key : '';
+        document.getElementById('onetimeTierMin').value = matched ? matched.min * 100 : '';
+        updateTracker('ot-tracker', 'ot-fill', amount, OT_THRESHOLDS);
+        updateRewardsPanel('ot-rewards', 'ot-nudge', matched, amount, OT_TIERS);
+        const shirtSection = document.getElementById('onetime-shirt-section');
+        renderShirtSelectors(shirtSection, matched ? matched.shirts : [], 'shirtSize');
+    }
+
+    /* ════════════════════════════════════════════
+       INDIVIDUAL SUBSCRIPTION TIERS
+       ════════════════════════════════════════════ */
+    const IND_SUB_TIERS = [
+        { key: 'bronze', min: 10, label: 'Bronze', color: '#9a5e1e',
+          perks: ['Donor acknowledgement on website for 2026 season', 'Tax deductible contribution'],
+          shirts: [] },
+        { key: 'silver', min: 25, label: 'Silver', color: '#6b6b6b',
+          perks: ['Shirt (1)', 'Donor acknowledgement on website for 2026 season', 'Tax deductible contribution'],
+          shirts: [{ label: 'Shirt', count: 1 }] },
+        { key: 'gold', min: 50, label: 'Gold', color: '#9e7400',
+          perks: ['BG hat (1) + BG shirt (1)', 'Donor acknowledgement on website for 2026 season', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 1 }] },
+        { key: 'platinum', min: 75, label: 'Platinum', color: '#555',
+          perks: ['(2) GA Tickets for Drums Across the Gem State', 'BG hat (1) + BG shirts (2)', 'Donor acknowledgement on website for 2026 season', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 2 }] },
+        { key: 'star_garnet', min: 100, label: 'Star Garnet', color: '#7b1fa2',
+          perks: ['VIP Tickets (2) for Drums Across the Gem State', 'BG hat (1) + BG shirts (2)', 'Donor acknowledgement on website for 2026 season', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 2 }] }
+    ];
+    const IND_SUB_THRESHOLDS = IND_SUB_TIERS.map(t => t.min);
+
+    function updateIndSubTier() {
+        const amount = parseFloat(document.getElementById('indSubAmount').value) || 0;
+        let matched = null;
+        for (let i = IND_SUB_TIERS.length - 1; i >= 0; i--) {
+            if (amount >= IND_SUB_TIERS[i].min) { matched = IND_SUB_TIERS[i]; break; }
+        }
+        document.getElementById('indSubTier').value = matched ? matched.key : '';
+        updateTracker('ind-tracker', 'ind-fill', amount, IND_SUB_THRESHOLDS);
+        updateRewardsPanel('ind-rewards', 'ind-nudge', matched, amount, IND_SUB_TIERS);
+        const shirtSection = document.getElementById('ind-shirt-section');
+        renderShirtSelectors(shirtSection, matched ? matched.shirts : [], 'indShirtSize');
+    }
+
+    /* ════════════════════════════════════════════
+       CORPORATE SUBSCRIPTION TIERS
+       ════════════════════════════════════════════ */
+    const CORP_SUB_TIERS = [
+        { key: 'bronze', min: 100, label: 'Bronze', color: '#9a5e1e',
+          perks: ['Donor acknowledgement on website for 2026 season', 'Acknowledgement at Drums Across the Gem State', '(1) social media acknowledgement', 'Tax deductible contribution'],
+          shirts: [] },
+        { key: 'silver', min: 500, label: 'Silver', color: '#6b6b6b',
+          perks: ['BG shirts (2)', '(1) social media acknowledgement', 'Acknowledgement on website & at Drums Across the Gem State', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Shirt', count: 2 }] },
+        { key: 'gold', min: 1000, label: 'Gold', color: '#9e7400',
+          perks: ['Logo on equipment trailer (Good location)', '(2) social media acknowledgements', 'Acknowledgement at Drums Across the Gem State & tour send-off', 'BG hats (2) + BG shirts (2)', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: 'BG Hat', count: 2 }, { label: 'BG Shirt', count: 2 }] },
+        { key: 'platinum', min: 2500, label: 'Platinum', color: '#555',
+          perks: ['Logo on equipment trailer (Great location)', 'Tour shirt (2)', 'GA tickets (4) w/ acknowledgement at all Gems events', '10% discount on all BG merch', '(3) social media posts', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: 'Tour Shirt', count: 2 }] },
+        { key: 'star_garnet', min: 5000, label: 'Star Garnet', color: '#7b1fa2',
+          perks: ['Logo on equipment trailer (Prominent location)', '2026 Tour shirt (4)', 'Premium tickets (4) w/ speaker acknowledgement at all Gems events', '10% discount on all BG merch', '(5) social media posts', 'Donor acknowledgement on website', 'Tax deductible contribution'],
+          shirts: [{ label: '2026 Tour Shirt', count: 4 }] }
+    ];
+    const CORP_SUB_THRESHOLDS = CORP_SUB_TIERS.map(t => t.min);
+
+    function updateCorpSubTier() {
+        const amount = parseFloat(document.getElementById('corpSubAmount').value) || 0;
+        let matched = null;
+        for (let i = CORP_SUB_TIERS.length - 1; i >= 0; i--) {
+            if (amount >= CORP_SUB_TIERS[i].min) { matched = CORP_SUB_TIERS[i]; break; }
+        }
+        document.getElementById('corpSubTier').value = matched ? matched.key : '';
+        updateTracker('corp-tracker', 'corp-fill', amount, CORP_SUB_THRESHOLDS);
+        updateRewardsPanel('corp-rewards', 'corp-nudge', matched, amount, CORP_SUB_TIERS);
+        const shirtSection = document.getElementById('corp-shirt-section');
+        renderShirtSelectors(shirtSection, matched ? matched.shirts : [], 'corpShirtSize');
+    }
+    </script>
 </body>
 </html>

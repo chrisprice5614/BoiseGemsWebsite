@@ -1,0 +1,144 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin – Donors &amp; Subscriptions – Boise Gems</title>
+    <%- include("includes/head") %>
+    <style>
+        .tier-badge { display: inline-block; padding: 3px 10px; border-radius: 5px; font-weight: 700; font-size: 0.8rem; color: #fff; text-transform: capitalize; }
+        .tier-bronze { background: #cd7f32; }
+        .tier-silver { background: #8a8a8a; }
+        .tier-gold { background: #d4a017; }
+        .tier-platinum { background: linear-gradient(135deg, #8e8e8e, #b0b0b0); }
+        .tier-star_garnet { background: #9b30ff; }
+        .status-active { background: #d4edda; color: #155724; }
+        .status-cancelled { background: #f8d7da; color: #721c24; }
+        .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .admin-filter-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
+        .admin-filter-bar select, .admin-filter-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 24px 20px; max-width: 1200px; margin: 0 auto;">
+            <h1>Donors &amp; Subscriptions</h1>
+            <p style="color: #666;">Manage all donations, subscriptions, and sponsorship tiers.</p>
+
+            <!-- ═══ Active Subscriptions by Tier ═══ -->
+            <h2 style="margin-top: 28px;">💎 Active Subscriptions</h2>
+            <% const tierOrder = ['star_garnet','platinum','gold','silver','bronze'];
+               const tierLabels = { star_garnet: 'Star Garnet', platinum: 'Platinum', gold: 'Gold', silver: 'Silver', bronze: 'Bronze' };
+            %>
+            <% tierOrder.forEach(tier => {
+                const tieredSubs = subscriptions.filter(s => s.tier === tier && s.status === 'active');
+                if (tieredSubs.length > 0) { %>
+                    <h3 style="margin-top: 18px; text-transform: capitalize;">
+                        <span class="tier-badge tier-<%= tier %>"><%= tierLabels[tier] %></span>
+                        <span style="font-size: 0.85rem; color: #666; margin-left: 8px;">(<%= tieredSubs.length %> active)</span>
+                    </h3>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Type</th>
+                                <th>Monthly</th>
+                                <th>Shirts</th>
+                                <th>Started</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% tieredSubs.forEach(sub => {
+                                const u = subUsers[sub.user_id] || {};
+                            %>
+                            <tr>
+                                <td><%= u.firstname || '' %> <%= u.lastname || '' %><% if (u.businessName) { %> <br><small style="color:#888;"><%= u.businessName %></small><% } %></td>
+                                <td><%= u.email || '' %></td>
+                                <td style="text-transform: capitalize;"><%= sub.fan_type %></td>
+                                <td>$<%= (sub.amount_cents / 100).toFixed(2) %></td>
+                                <td><%= sub.shirt_sizes ? JSON.parse(sub.shirt_sizes).join(', ') : '–' %></td>
+                                <td><%= new Date(sub.created_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) %></td>
+                            </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+            <% } }) %>
+
+            <% if (subscriptions.filter(s => s.status === 'active').length === 0) { %>
+                <p style="color: #999; font-style: italic;">No active subscriptions yet.</p>
+            <% } %>
+
+            <!-- ═══ Cancelled Subscriptions ═══ -->
+            <% const cancelledSubs = subscriptions.filter(s => s.status === 'cancelled');
+               if (cancelledSubs.length > 0) { %>
+                <details style="margin-top: 24px;">
+                    <summary style="cursor: pointer; font-weight: 700; font-size: 1.1rem;">Cancelled Subscriptions (<%= cancelledSubs.length %>)</summary>
+                    <table class="admin-table" style="margin-top: 10px;">
+                        <thead>
+                            <tr><th>Name</th><th>Email</th><th>Tier</th><th>Was Paying</th><th>Cancelled</th></tr>
+                        </thead>
+                        <tbody>
+                            <% cancelledSubs.forEach(sub => {
+                                const u = subUsers[sub.user_id] || {};
+                            %>
+                            <tr>
+                                <td><%= u.firstname || '' %> <%= u.lastname || '' %></td>
+                                <td><%= u.email || '' %></td>
+                                <td><span class="tier-badge tier-<%= sub.tier %>"><%= tierLabels[sub.tier] || sub.tier %></span></td>
+                                <td>$<%= (sub.amount_cents / 100).toFixed(2) %>/mo</td>
+                                <td><%= sub.cancelled_at ? new Date(sub.cancelled_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) : '–' %></td>
+                            </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </details>
+            <% } %>
+
+            <hr style="margin: 32px 0;">
+
+            <!-- ═══ All Donations ═══ -->
+            <h2>📜 All Donations</h2>
+            <% if (allDonations.length > 0) { %>
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Type</th>
+                            <th>Tier</th>
+                            <th>Amount</th>
+                            <th>Fee</th>
+                            <th>Total</th>
+                            <th>Message</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% allDonations.forEach(d => { %>
+                        <tr>
+                            <td><%= d.name %></td>
+                            <td><%= d.email %></td>
+                            <td style="text-transform: capitalize;"><%= (d.donation_type || 'one_time').replace(/_/g, ' ') %></td>
+                            <td><% if (d.tier) { %><span class="tier-badge tier-<%= d.tier %>"><%= tierLabels[d.tier] || d.tier %></span><% } else { %>–<% } %></td>
+                            <td>$<%= (d.amount / 100).toFixed(2) %></td>
+                            <td>$<%= (d.processing_fee / 100).toFixed(2) %></td>
+                            <td>$<%= (d.total_charged / 100).toFixed(2) %></td>
+                            <td><%= d.message || '–' %></td>
+                            <td><%= new Date(d.created_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) %></td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            <% } else { %>
+                <p style="color: #999; font-style: italic;">No donations recorded yet.</p>
+            <% } %>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

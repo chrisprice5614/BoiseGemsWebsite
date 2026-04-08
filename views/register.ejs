@@ -363,7 +363,7 @@
       .card-footer    { padding: 14px 22px 22px; }
       .progress-wrap  { padding: 16px 22px 0; }
       .two-col        { grid-template-columns: 1fr; gap: 0; }
-      .type-grid      { gap: 10px; }
+      .type-grid      { gap: 10px; grid-template-columns: 1fr !important; }
       .type-btn       { padding: 18px 8px 14px; }
       .step.is-hidden-right,
       .step.is-exiting,
@@ -399,20 +399,48 @@
         <!-- ═══ STEP 0 — Account type ═══ -->
         <div class="step is-active" id="step-0">
           <p class="step-heading">
-            Are you registering as a parent?
+            Which are you?
             <small>Choose the option that describes you best</small>
           </p>
-          <div class="type-grid">
+          <div class="type-grid" style="grid-template-columns: 1fr 1fr 1fr;">
             <div class="type-btn" onclick="chooseType('member')" role="button" tabindex="0">
               <div class="tb-icon">👟</div>
-              <div class="tb-label">No, I'm a Member</div>
+              <div class="tb-label">Member / Auditionee</div>
               <div class="tb-desc">Auditionee, performer, or staff</div>
             </div>
             <div class="type-btn" onclick="chooseType('parent')" role="button" tabindex="0">
               <div class="tb-icon">👨‍👩‍👧‍👦</div>
-              <div class="tb-label">Yes, I'm a Parent</div>
-              <div class="tb-desc">Registering as a parent / guardian</div>
+              <div class="tb-label">Parent</div>
+              <div class="tb-desc">Parent or guardian of a member</div>
             </div>
+            <div class="type-btn" onclick="chooseType('fan')" role="button" tabindex="0">
+              <div class="tb-icon">🎶</div>
+              <div class="tb-label">Fan</div>
+              <div class="tb-desc">Follow events &amp; support the Gems</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ STEP 0f — Fan sub-type ═══ -->
+        <div class="step is-hidden-right no-transition" id="step-0f">
+          <p class="step-heading">
+            Are you an individual or a business?
+            <small>This helps us tailor your sponsorship experience</small>
+          </p>
+          <div class="type-grid">
+            <div class="type-btn" onclick="chooseFanType('individual')" role="button" tabindex="0">
+              <div class="tb-icon">🙋</div>
+              <div class="tb-label">Individual</div>
+              <div class="tb-desc">Personal supporter / fan</div>
+            </div>
+            <div class="type-btn" onclick="chooseFanType('corporate')" role="button" tabindex="0">
+              <div class="tb-icon">🏢</div>
+              <div class="tb-label">Corporation / Business</div>
+              <div class="tb-desc">Company or organisation sponsor</div>
+            </div>
+          </div>
+          <div class="nav-row">
+            <button type="button" class="btn-back" onclick="goBack()">← Back</button>
           </div>
         </div>
 
@@ -431,6 +459,12 @@
               <span class="field-error">Required</span>
             </div>
           </div>
+          <div class="field-group" id="business-name-group" style="display:none; margin-top:14px;">
+            <label for="businessName">Business / Organisation Name</label>
+            <input type="text" id="businessName" name="businessName" placeholder="Acme Corp" />
+            <span class="field-error">Required for business accounts</span>
+          </div>
+          <input type="hidden" id="fanType" name="fanType" value="" />
           <div class="nav-row">
             <button type="button" class="btn-back" onclick="goBack()">← Back</button>
             <button type="button" class="btn-next" onclick="goNext()">Continue →</button>
@@ -542,15 +576,19 @@
   // ── Step sequences ───────────────────────────────────────────────────────
   const MEMBER_STEPS = ['step-0','step-1','step-2','step-3','step-4m','step-pw'];
   const PARENT_STEPS = ['step-0','step-1','step-2','step-3','step-pw'];
+  const FAN_STEPS    = ['step-0','step-0f','step-1','step-2','step-3','step-pw'];
 
   let accountType  = 'member';
+  let fanSubType   = 'individual';
   let stepHistory  = ['step-0'];
   let currentId    = 'step-0';
   let animating    = false;
 
   // ── Progress bar ─────────────────────────────────────────────────────────
   function updateProgress() {
-    const seq = accountType === 'parent' ? PARENT_STEPS : MEMBER_STEPS;
+    const seq = accountType === 'parent' ? PARENT_STEPS
+              : accountType === 'fan'    ? FAN_STEPS
+              : MEMBER_STEPS;
     const idx = seq.indexOf(currentId);
     const pct = seq.length === 1 ? 0 : (idx / (seq.length - 1)) * 100;
     document.getElementById('prog-fill').style.width = pct + '%';
@@ -561,8 +599,27 @@
   // ── Choose account type (step 0 choice) ──────────────────────────────────
   function chooseType(type) {
     accountType = type;
-    document.getElementById('reg-form').action =
-      type === 'parent' ? '/register-parent' : '/register-member';
+    if (type === 'fan') {
+      document.getElementById('reg-form').action = '/register-fan';
+      goForward('step-0f');
+    } else {
+      document.getElementById('reg-form').action =
+        type === 'parent' ? '/register-parent' : '/register-member';
+      // Hide business name field for non-fans
+      document.getElementById('business-name-group').style.display = 'none';
+      document.getElementById('fanType').value = '';
+      goForward('step-1');
+    }
+  }
+
+  function chooseFanType(subType) {
+    fanSubType = subType;
+    document.getElementById('fanType').value = subType;
+    if (subType === 'corporate') {
+      document.getElementById('business-name-group').style.display = 'block';
+    } else {
+      document.getElementById('business-name-group').style.display = 'none';
+    }
     goForward('step-1');
   }
 
@@ -617,7 +674,9 @@
   }
 
   function getNextId() {
-    const seq = accountType === 'parent' ? PARENT_STEPS : MEMBER_STEPS;
+    const seq = accountType === 'parent' ? PARENT_STEPS
+              : accountType === 'fan'    ? FAN_STEPS
+              : MEMBER_STEPS;
     const idx = seq.indexOf(currentId);
     return seq[idx + 1] || null;
   }
@@ -649,6 +708,10 @@
       const ln = document.getElementById('lastname');
       if (!setValid(fn, fn.value.trim())) ok = false;
       if (!setValid(ln, ln.value.trim())) ok = false;
+      if (accountType === 'fan' && fanSubType === 'corporate') {
+        const bn = document.getElementById('businessName');
+        if (!setValid(bn, bn.value.trim())) ok = false;
+      }
     }
 
     if (id === 'step-2') {

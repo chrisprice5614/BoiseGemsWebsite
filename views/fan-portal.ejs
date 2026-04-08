@@ -1,0 +1,100 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fan Portal – Boise Gems</title>
+    <%- include("includes/head") %>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div style="padding: 24px 20px;">
+            <div class="admin-top">
+                <div>
+                    <h1>Fan Portal</h1>
+                    <p style="margin-top: 4px; color: #666;">Welcome back, <b><%= member.firstname %> <%= member.lastname %></b></p>
+                    <% if (member.fanType === 'corporate' && member.businessName) { %>
+                        <p style="margin-top: 2px; color: #888;">🏢 <%= member.businessName %></p>
+                    <% } %>
+                </div>
+            </div>
+
+            <div class="admin-info-card" style="margin-top: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 24px;">
+                    <p><b>Email:</b> <%= member.email %></p>
+                    <p><b>Phone:</b> <%= member.phone %></p>
+                    <p><b>Type:</b> <%= member.fanType === 'corporate' ? 'Corporation / Business' : 'Individual' %></p>
+                </div>
+            </div>
+
+            <div class="portal-grid">
+
+                <div class="portal-section">
+                    <h3>🎉 Events</h3>
+                    <div class="portal-btn-list">
+                        <a href="/calendar"><button class="portal-btn">View Calendar</button></a>
+                    </div>
+                </div>
+
+                <div class="portal-section">
+                    <h3>💜 Support the Gems</h3>
+                    <div class="portal-btn-list">
+                        <a href="/donate"><button class="portal-btn">Donate / Subscribe</button></a>
+                    </div>
+                </div>
+
+                <% if (subscriptions && subscriptions.length > 0) { %>
+                <div class="portal-section">
+                    <h3>💎 My Subscriptions</h3>
+                    <div class="portal-btn-list">
+                        <% subscriptions.forEach(sub => { %>
+                            <div style="background: var(--light-quarter); border: 1px solid #ccc; border-radius: 8px; padding: 14px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                    <div>
+                                        <strong style="text-transform: capitalize;"><%= sub.tier %></strong>
+                                        <span style="color: #666; font-size: 0.85rem;"> – $<%= (sub.amount_cents / 100).toFixed(2) %>/mo</span>
+                                        <% if (sub.status === 'active') { %>
+                                            <span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 6px;">Active</span>
+                                        <% } else { %>
+                                            <span style="background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 6px;">Cancelled</span>
+                                        <% } %>
+                                    </div>
+                                    <% if (sub.status === 'active') { %>
+                                        <form action="/fan-portal/cancel-subscription/<%= sub.id %>" method="POST" onsubmit="return confirm('Are you sure you want to cancel this subscription?');" style="margin:0;">
+                                            <button type="submit" style="background: #dc3545; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;">Cancel</button>
+                                        </form>
+                                    <% } %>
+                                </div>
+                            </div>
+                        <% }) %>
+                    </div>
+                </div>
+                <% } %>
+
+                <% if (donationHistory && donationHistory.length > 0) { %>
+                <div class="portal-section">
+                    <h3>📜 Donation History</h3>
+                    <div class="portal-btn-list">
+                        <% donationHistory.forEach(d => { %>
+                            <div style="background: var(--light-quarter); border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px;">
+                                <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
+                                    <span style="font-weight: 600; text-transform: capitalize;"><%= d.donation_type || 'Donation' %><% if (d.tier) { %> – <%= d.tier %><% } %></span>
+                                    <span style="color: #666; font-size: 0.85rem;">$<%= (d.amount / 100).toFixed(2) %></span>
+                                </div>
+                                <p style="font-size: 0.8rem; color: #888; margin-top: 4px;"><%= new Date(d.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) %></p>
+                            </div>
+                        <% }) %>
+                    </div>
+                </div>
+                <% } %>
+
+            </div>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+</body>
+</html>

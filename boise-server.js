@@ -1011,6 +1011,63 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
   if (!donationCols.includes("hide_from_list")) {
     db.prepare("ALTER TABLE donations ADD COLUMN hide_from_list INTEGER NOT NULL DEFAULT 0").run();
   }
+  if (!donationCols.includes("user_id")) {
+    db.prepare("ALTER TABLE donations ADD COLUMN user_id INTEGER").run();
+  }
+  if (!donationCols.includes("tier")) {
+    db.prepare("ALTER TABLE donations ADD COLUMN tier TEXT").run();
+  }
+  if (!donationCols.includes("donation_type")) {
+    db.prepare("ALTER TABLE donations ADD COLUMN donation_type TEXT").run(); // 'one_time','feed_the_corps','subscription'
+  }
+
+  // --- Fan columns on users table ---
+  const fanCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!fanCols.includes("fan")) {
+    db.prepare("ALTER TABLE users ADD COLUMN fan INTEGER DEFAULT 0").run();
+  }
+  if (!fanCols.includes("fanType")) {
+    db.prepare("ALTER TABLE users ADD COLUMN fanType TEXT").run(); // 'individual' or 'corporate'
+  }
+  if (!fanCols.includes("businessName")) {
+    db.prepare("ALTER TABLE users ADD COLUMN businessName TEXT").run();
+  }
+  if (!fanCols.includes("stripe_customer_id")) {
+    db.prepare("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT").run();
+  }
+
+  // --- Fan donation subscriptions ---
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS fan_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      stripe_subscription_id TEXT NOT NULL,
+      stripe_price_id TEXT,
+      tier TEXT NOT NULL,
+      fan_type TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      shirt_sizes TEXT,
+      created_at INTEGER NOT NULL,
+      cancelled_at INTEGER,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `).run();
+
+  // --- potential_donation: add columns for logged-in user tracking ---
+  const pdCols = db.prepare("PRAGMA table_info(potential_donation)").all().map(c => c.name);
+  if (!pdCols.includes("user_id")) {
+    db.prepare("ALTER TABLE potential_donation ADD COLUMN user_id INTEGER").run();
+  }
+  if (!pdCols.includes("tier")) {
+    db.prepare("ALTER TABLE potential_donation ADD COLUMN tier TEXT").run();
+  }
+  if (!pdCols.includes("donation_type")) {
+    db.prepare("ALTER TABLE potential_donation ADD COLUMN donation_type TEXT").run();
+  }
+  if (!pdCols.includes("shirt_sizes")) {
+    db.prepare("ALTER TABLE potential_donation ADD COLUMN shirt_sizes TEXT").run();
+  }
 
 })
 
@@ -1338,6 +1395,10 @@ function mustBeMember(req,res, next){
     return res.redirect("/")
   }
 
+  if(req.fan){
+    return res.redirect("/fan-portal")
+  }
+
   if(!req.parent){
     if(!req.admin)
       return next();
@@ -1514,17 +1575,19 @@ app.use(function (req, res, next) {
         req.admin = req.user.admin
         req.parent = req.user.parent
         req.staff = req.user.staff
+        req.fan = req.user.fan || 0
     } catch (err) {
         req.user = false
         req.staff = false;
         req.admin = false;
         req.parent = false
-        
+        req.fan = false
     }
 
     res.locals.user = req.user;
     res.locals.admin = req.admin;
     res.locals.parent = req.parent;
+    res.locals.fan = req.fan;
     res.locals.errors = errors;
 
     res.locals.RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || "";
@@ -1819,6 +1882,85 @@ app.post("/register-member", (req, res) => {
   return res.redirect("/");
 });
 
+// ── Register Fan ──
+app.post("/register-fan", (req, res) => {
+  if (req.user) return res.redirect("/");
+
+  let errors = [];
+
+  let firstname = (req.body.firstname || "").trim();
+  let lastname = (req.body.lastname || "").trim();
+  let phone = (req.body.phone || "").trim();
+  let email = (req.body.email || "").trim().toLowerCase();
+  let address = (req.body.address || "").trim();
+  let password = req.body.password || "";
+  let passwordRetype = req.body.passwordRetype || "";
+  let birthday = parseBirthdayToTimestamp(req.body.birthday);
+  let fanType = (req.body.fanType || "individual").trim();
+  let businessName = (req.body.businessName || "").trim();
+
+  if (!["individual", "corporate"].includes(fanType)) fanType = "individual";
+  if (fanType === "corporate" && !businessName) errors.push("Business name is required for corporate accounts");
+
+  if (password.length < 8) errors.push("Your password must be at least 8 characters long");
+
+  const checkEmail = db.prepare("SELECT * FROM users WHERE email = ?");
+  if (checkEmail.get(email)) errors.push("Email is already in use");
+
+  if (password !== passwordRetype) errors.push("Passwords do not match");
+
+  if (errors.length) {
+    res.locals.errors = errors;
+    return res.render("register", {});
+  }
+
+  const salt = bcrypt.genSaltSync(10);
+  password = bcrypt.hashSync(password, salt);
+
+  const addFan = db.prepare(
+    `INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, section, fan, fanType, businessName, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const newFan = addFan.run(
+    firstname, lastname, password, address, birthday, email, phone,
+    1, "fan", 1, fanType, businessName || null, Date.now()
+  );
+
+  const fanId = newFan.lastInsertRowid;
+
+  const ourTokenValue = jwt.sign(
+    {
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
+      userid: fanId,
+      firstname,
+      lastname,
+      email,
+      admin: 0,
+      staff: 0,
+      parent: 0,
+      fan: 1,
+    },
+    process.env.JWTSECRET
+  );
+
+  res.cookie("bgcookie", ourTokenValue, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24,
+  });
+
+  const html = `
+    Hello ${firstname},
+    <p>Welcome to Boise Gems! Your fan account has been created successfully.</p>
+    <p>You can log in anytime here: <a href="${process.env.BASEURL}/login">${process.env.BASEURL}/login</a></p>
+    <p>If you didn't create this account, please contact us.</p>
+  `;
+  sendEmail(email, "Welcome to Boise Gems!", html);
+
+  return res.redirect("/fan-portal");
+});
+
 
 app.get("/check-email", (req,res) => {
   return res.render("check-email")
@@ -1895,6 +2037,35 @@ app.get("/forgot-password", (req,res) => {
 
   return res.render("forgot-password")
 })
+
+// ── Fan Portal ──
+app.get("/fan-portal", mustBeLoggedIn, (req, res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!member || !member.fan) return res.redirect("/");
+
+  const subscriptions = db.prepare("SELECT * FROM fan_subscriptions WHERE user_id = ? ORDER BY created_at DESC").all(req.user.userid);
+  const donationHistory = db.prepare("SELECT * FROM donations WHERE user_id = ? ORDER BY created_at DESC").all(req.user.userid);
+
+  return res.render("fan-portal", { member, subscriptions, donationHistory });
+});
+
+// ── Cancel fan subscription ──
+app.post("/fan-portal/cancel-subscription/:id", mustBeLoggedIn, async (req, res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!member || !member.fan) return res.redirect("/");
+
+  const sub = db.prepare("SELECT * FROM fan_subscriptions WHERE id = ? AND user_id = ?").get(req.params.id, req.user.userid);
+  if (!sub || sub.status !== "active") return res.redirect("/fan-portal");
+
+  try {
+    await stripe.subscriptions.cancel(sub.stripe_subscription_id);
+  } catch (err) {
+    console.error("Failed to cancel Stripe subscription:", err);
+  }
+
+  db.prepare("UPDATE fan_subscriptions SET status = 'cancelled', cancelled_at = ? WHERE id = ?").run(Date.now(), sub.id);
+  return res.redirect("/fan-portal");
+});
 
 app.get("/member-portal", mustBeMember, (req,res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
@@ -2369,6 +2540,7 @@ app.post("/login", (req, res) => {
       admin: userInQuestion.admin,
       staff: userInQuestion.staff,
       parent: userInQuestion.parent,
+      fan: userInQuestion.fan || 0,
     },
     process.env.JWTSECRET
   ); //Creating a token for logging in
@@ -5290,7 +5462,14 @@ app.get("/donate", (req, res) => {
     .split(",")
     .map(n => n.trim())
     .filter(n => n.length > 0);
-  return res.render("donate", { donorNames });
+
+  let fanType = null;
+  if (req.user) {
+    const member = db.prepare("SELECT fanType FROM users WHERE id = ?").get(req.user.userid);
+    fanType = member ? (member.fanType || "individual") : "individual";
+  }
+
+  return res.render("donate", { donorNames, fanType });
 });
 
 // GET /volunteer
@@ -5343,6 +5522,22 @@ app.post("/admin/donors", mustBeAdmin, (req, res) => {
   db.prepare("UPDATE donor_list SET names = ? WHERE id = 1").run(names);
   req.session.flashMessage = "Donor list updated.";
   return res.redirect("/admin/donors");
+});
+
+// ═══ Admin Subscriptions & Donations ═══
+app.get("/admin/subscriptions", mustBeAdmin, (req, res) => {
+  const subscriptions = db.prepare("SELECT * FROM fan_subscriptions ORDER BY created_at DESC").all();
+  const allDonations = db.prepare("SELECT * FROM donations ORDER BY created_at DESC").all();
+
+  // Build a map of user_id -> user info for subscriptions
+  const subUsers = {};
+  const userIds = [...new Set(subscriptions.map(s => s.user_id))];
+  userIds.forEach(uid => {
+    const u = db.prepare("SELECT id, firstname, lastname, email, fanType, businessName FROM users WHERE id = ?").get(uid);
+    if (u) subUsers[uid] = u;
+  });
+
+  return res.render("admin-subscriptions", { subscriptions, allDonations, subUsers });
 });
 
 // POST /donate - create potential donation and redirect to Stripe Checkout
@@ -5504,8 +5699,8 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     // Move the potential row into finalized donations
     const insertDonation = db.prepare(
       `INSERT INTO donations
-        (email, name, message, amount, processing_fee, total_charged, stripe_session_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        (email, name, message, amount, processing_fee, total_charged, stripe_session_id, created_at, user_id, tier, donation_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     insertDonation.run(
       potential.email,
@@ -5515,7 +5710,10 @@ app.get("/donate/success/:potentialId", async (req, res) => {
       potential.processing_fee,
       potential.total_charge,
       potential.stripe_session_id,
-      Date.now()
+      Date.now(),
+      potential.user_id || null,
+      potential.tier || null,
+      potential.donation_type || "one_time"
     );
 
     // Also add to paymentHistory table for consistent transaction records.
@@ -5568,6 +5766,296 @@ app.get("/donate/success/:potentialId", async (req, res) => {
 app.get("/donate/thank-you", (req,res) => {
   return res.render("donation-thank-you")
 })
+
+// ═══ Feed the Corps one-time donation (logged-in) ═══
+app.post("/donate/feed-the-corps", mustBeLoggedIn, async (req, res) => {
+  try {
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.redirect("/donate");
+
+    const tier = String(req.body.ftcTier || "").trim();
+    const amountCents = Math.round(Number(req.body.ftcAmount));
+    const message = String(req.body.ftcMessage || "").trim();
+
+    const validTiers = { water_break: 2500, gatorade: 5000, pbj: 10000, lunch: 20000, dinner: 30000 };
+    if (!validTiers[tier] || amountCents !== validTiers[tier]) return res.status(400).send("Invalid tier.");
+
+    const processingFee = Math.round(amountCents * 0.06);
+    const totalCharge = amountCents + processingFee;
+
+    const insertPotential = db.prepare(
+      `INSERT INTO potential_donation (email, name, message, amount, processing_fee, total_charge, created_at, user_id, tier, donation_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const result = insertPotential.run(
+      member.email,
+      member.firstname + " " + member.lastname,
+      message,
+      amountCents,
+      processingFee,
+      totalCharge,
+      Date.now(),
+      member.id,
+      tier,
+      "feed_the_corps"
+    );
+    const potentialId = result.lastInsertRowid;
+
+    const tierNames = { water_break: "Water Break", gatorade: "Gatorade", pbj: "PB&J Sandwiches", lunch: "Lunch", dinner: "Dinner" };
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `Feed the Corps – ${tierNames[tier]}`,
+            description: message || `Feed the Corps donation by ${member.firstname} ${member.lastname}`,
+          },
+          unit_amount: totalCharge,
+        },
+        quantity: 1,
+      }],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
+      cancel_url: `${process.env.BASEURL}/donate`,
+    });
+
+    db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?").run(session.id, potentialId);
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error("Feed the corps donate error:", err);
+    return res.status(500).send("Failed to create Stripe session");
+  }
+});
+
+// ═══ One-time donation (logged-in) ═══
+app.post("/donate/onetime", mustBeLoggedIn, async (req, res) => {
+  try {
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.redirect("/donate");
+
+    const amountCents = Math.round(Number(req.body.payment) * 100);
+    if (!Number.isFinite(amountCents) || amountCents < 50) return res.status(400).send("Invalid amount.");
+
+    const tier = String(req.body.selectedTier || "").trim() || null;
+    const message = String(req.body.message || "").trim();
+
+    // Collect shirt sizes from form
+    const shirtSizes = [];
+    for (const key of Object.keys(req.body)) {
+      if (key.startsWith("shirtSize_")) {
+        shirtSizes.push(req.body[key]);
+      }
+    }
+
+    const processingFee = Math.round(amountCents * 0.06);
+    const totalCharge = amountCents + processingFee;
+
+    const insertPotential = db.prepare(
+      `INSERT INTO potential_donation (email, name, message, amount, processing_fee, total_charge, created_at, user_id, tier, donation_type, shirt_sizes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const result = insertPotential.run(
+      member.email,
+      member.firstname + " " + member.lastname,
+      message,
+      amountCents,
+      processingFee,
+      totalCharge,
+      Date.now(),
+      member.id,
+      tier,
+      "one_time",
+      shirtSizes.length ? JSON.stringify(shirtSizes) : null
+    );
+    const potentialId = result.lastInsertRowid;
+
+    const desc = tier
+      ? `${tier.replace("_", " ")} tier donation`
+      : `One-time donation`;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: "Donation to The Boise Gems Drum & Bugle Corps",
+            description: desc + (message ? ` – ${message}` : ""),
+          },
+          unit_amount: totalCharge,
+        },
+        quantity: 1,
+      }],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
+      cancel_url: `${process.env.BASEURL}/donate`,
+    });
+
+    db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?").run(session.id, potentialId);
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error("One-time donate error:", err);
+    return res.status(500).send("Failed to create Stripe session");
+  }
+});
+
+// ═══ Subscription donation (logged-in) ═══
+app.post("/donate/subscribe", mustBeLoggedIn, async (req, res) => {
+  try {
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.redirect("/donate");
+
+    const tier = String(req.body.tier || "").trim();
+    const fanType = String(req.body.fanType || "individual").trim();
+    const monthlyDollars = Number(req.body.monthlyAmount);
+
+    if (!tier || !monthlyDollars || monthlyDollars < 1) return res.status(400).send("Invalid subscription data.");
+
+    // Validate minimum amounts
+    const indMins = { bronze: 10, silver: 25, gold: 50, platinum: 75, star_garnet: 100 };
+    const corpMins = { bronze: 100, silver: 500, gold: 1000, platinum: 2500, star_garnet: 5000 };
+    const mins = fanType === "corporate" ? corpMins : indMins;
+    if (!mins[tier] || monthlyDollars < mins[tier]) return res.status(400).send("Amount below minimum for this tier.");
+
+    const monthlyCents = Math.round(monthlyDollars * 100);
+    const processingFee = Math.round(monthlyCents * 0.06);
+    const totalMonthly = monthlyCents + processingFee;
+
+    // Collect shirt sizes
+    const shirtSizes = [];
+    for (const key of Object.keys(req.body)) {
+      if (key.startsWith("indShirtSize_") || key.startsWith("corpShirtSize_")) {
+        shirtSizes.push(req.body[key]);
+      }
+    }
+
+    // Get or create Stripe customer
+    let stripeCustomerId = member.stripe_customer_id;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: member.email,
+        name: member.firstname + " " + member.lastname,
+        metadata: { user_id: String(member.id), fan_type: fanType, business_name: member.businessName || "" },
+      });
+      stripeCustomerId = customer.id;
+      db.prepare("UPDATE users SET stripe_customer_id = ? WHERE id = ?").run(stripeCustomerId, member.id);
+    }
+
+    // Create a Stripe price for the subscription
+    const tierNames = { bronze: "Bronze", silver: "Silver", gold: "Gold", platinum: "Platinum", star_garnet: "Star Garnet" };
+    const product = await stripe.products.create({
+      name: `Boise Gems ${tierNames[tier]} ${fanType === "corporate" ? "Corporate" : "Individual"} Sponsorship`,
+      metadata: { tier, fan_type: fanType },
+    });
+
+    const price = await stripe.prices.create({
+      product: product.id,
+      unit_amount: totalMonthly,
+      currency: "usd",
+      recurring: { interval: "month" },
+    });
+
+    // Create Stripe Checkout session in subscription mode
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      payment_method_types: ["card"],
+      line_items: [{ price: price.id, quantity: 1 }],
+      mode: "subscription",
+      success_url: `${process.env.BASEURL}/donate/subscribe/success?session_id={CHECKOUT_SESSION_ID}&tier=${encodeURIComponent(tier)}&fan_type=${encodeURIComponent(fanType)}&amount=${totalMonthly}&shirts=${encodeURIComponent(JSON.stringify(shirtSizes))}`,
+      cancel_url: `${process.env.BASEURL}/donate`,
+    });
+
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error("Subscription error:", err);
+    return res.status(500).send("Failed to create subscription");
+  }
+});
+
+// ═══ Subscription success callback ═══
+app.get("/donate/subscribe/success", mustBeLoggedIn, async (req, res) => {
+  try {
+    const sessionId = req.query.session_id;
+    const tier = req.query.tier;
+    const fanType = req.query.fan_type || "individual";
+    const amountCents = Number(req.query.amount) || 0;
+    const shirtSizes = req.query.shirts ? JSON.parse(req.query.shirts) : [];
+
+    if (!sessionId) return res.redirect("/donate");
+
+    // Retrieve the subscription ID from Stripe
+    const stripeSession = await stripe.checkout.sessions.retrieve(sessionId);
+    const subscriptionId = stripeSession.subscription;
+
+    if (!subscriptionId) return res.redirect("/donate");
+
+    // Check we haven't already recorded this
+    const existing = db.prepare("SELECT id FROM fan_subscriptions WHERE stripe_subscription_id = ?").get(subscriptionId);
+    if (!existing) {
+      db.prepare(
+        `INSERT INTO fan_subscriptions (user_id, stripe_subscription_id, stripe_price_id, tier, fan_type, amount_cents, status, shirt_sizes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+      ).run(
+        req.user.userid,
+        subscriptionId,
+        stripeSession.line_items ? "" : "",
+        tier,
+        fanType,
+        amountCents,
+        shirtSizes.length ? JSON.stringify(shirtSizes) : null,
+        Date.now()
+      );
+
+      // Record the first payment in donations table
+      const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+      const donorName = member ? (member.firstname + " " + member.lastname) : "Fan";
+      const baseCents = Math.round(amountCents / 1.06); // reverse the 6% fee
+      const feeCents = amountCents - baseCents;
+
+      db.prepare(
+        `INSERT INTO donations (email, name, message, amount, processing_fee, total_charged, stripe_session_id, created_at, user_id, tier, donation_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        member ? member.email : "",
+        donorName,
+        `${tier} subscription started`,
+        baseCents,
+        feeCents,
+        amountCents,
+        sessionId,
+        Date.now(),
+        req.user.userid,
+        tier,
+        "subscription"
+      );
+
+      addChrisShare(amountCents, `Subscription ${tier} by ${donorName}`);
+
+      // Send acknowledgement email
+      if (member) {
+        let emailBody = `
+          <h1 style="text-align:center;">Thank you for your subscription!</h1>
+          <p>Dear ${member.firstname},</p>
+          <p>You are now a <strong>${tier.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</strong> level subscriber to The Boise Gems Drum &amp; Bugle Corps.</p>
+          <p><strong>Monthly charge:</strong> $${(amountCents / 100).toFixed(2)}</p>
+          <p>You can manage or cancel your subscription at any time from your Fan Portal.</p>
+        `;
+        if (fanType === "corporate") {
+          emailBody += `<p><em>If we need additional information (such as your corporate logo for the equipment trailer), we will reach out via email.</em></p>`;
+        }
+        emailBody += `<p>Sincerely,<br/>The Boise Gems Drum &amp; Bugle Corps</p>`;
+        sendEmail(member.email, "Subscription Confirmed – Boise Gems", emailBody);
+        sendEmail(MasterEmail, "New Subscription", `New ${tier} ${fanType} subscription by ${donorName} (${member.email}) – $${(amountCents / 100).toFixed(2)}/mo`);
+      }
+    }
+
+    return res.redirect("/donate/thank-you");
+  } catch (err) {
+    console.error("Subscription success error:", err);
+    return res.redirect("/donate/thank-you");
+  }
+});
 
 app.get("/update-info", mustBeLoggedInAny, (req,res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);

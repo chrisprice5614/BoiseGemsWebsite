@@ -7016,7 +7016,8 @@ const MEMBER_EXPORT_COLUMN_OPTIONS = {
   contractedAffiliate: "Contracted Affiliate",
   staff: "Staff",
   paid: "Paid (USD)",
-  owed: "Owed (USD)"
+  owed: "Owed (USD)",
+  allergies: "Allergies"
 };
 
 function parseCheckboxFlag(raw) {
@@ -7080,24 +7081,27 @@ function buildMemberExportRows(selectedGroups, selectedFields, sort = "az", days
 
   const users = db.prepare(`
     SELECT
-      id,
-      firstname,
-      lastname,
-      email,
-      phone,
-      birthday,
-      address,
-      section,
-      instrument,
-      shirtSize,
-      contractedCorps,
-      contractedIndependent,
-      contractedAffiliate,
-      staff,
-      parent,
-      paid,
-      owed
-    FROM users
+      u.id,
+      u.firstname,
+      u.lastname,
+      u.email,
+      u.phone,
+      u.birthday,
+      u.address,
+      u.section,
+      u.instrument,
+      u.shirtSize,
+      u.contractedCorps,
+      u.contractedIndependent,
+      u.contractedAffiliate,
+      u.staff,
+      u.parent,
+      u.paid,
+      u.owed,
+      a.no_allergies,
+      a.allergies AS allergyText
+    FROM users u
+    LEFT JOIN allergies a ON a.user_id = u.id
     ${whereClauses.length ? "WHERE " + whereClauses.join(" AND ") : ""}
     ORDER BY ${orderBy}
   `).all(...sqlParams);
@@ -7142,6 +7146,14 @@ function buildMemberExportRows(selectedGroups, selectedFields, sort = "az", days
         }
         if (field === "paid" || field === "owed") {
           output[field] = toDollarsString(row[field]);
+          return;
+        }
+        if (field === "allergies") {
+          if (row.no_allergies) {
+            output[field] = "No allergies";
+          } else {
+            output[field] = row.allergyText || "Not provided";
+          }
           return;
         }
         output[field] = row[field] || "";
@@ -7390,6 +7402,43 @@ app.post("/admin/export-member-info/csv", mustBeAdmin, (req, res) => {
   const csv = [headerLine, ...bodyLines].join("\r\n");
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="member-info-${Date.now()}.csv"`);
+  return res.send(csv);
+});
+
+app.get("/admin/export-allergies.csv", mustBeAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      u.firstname,
+      u.lastname,
+      u.email,
+      u.phone,
+      u.section,
+      u.instrument,
+      a.allergies
+    FROM users u
+    INNER JOIN allergies a ON a.user_id = u.id
+    WHERE (a.no_allergies = 0 OR a.no_allergies IS NULL)
+      AND a.allergies IS NOT NULL
+      AND TRIM(a.allergies) != ''
+    ORDER BY u.lastname COLLATE NOCASE ASC, u.firstname COLLATE NOCASE ASC
+  `).all();
+
+  const headers = ["First Name", "Last Name", "Email", "Phone", "Section", "Instrument", "Allergies"];
+  const headerLine = headers.map(csvEscape).join(",");
+
+  const bodyLines = rows.map((row) => [
+    row.firstname || "",
+    row.lastname || "",
+    row.email || "",
+    row.phone || "",
+    row.section || "",
+    row.instrument || "",
+    row.allergies || ""
+  ].map(csvEscape).join(","));
+
+  const csv = [headerLine, ...bodyLines].join("\r\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="member-allergies-${Date.now()}.csv"`);
   return res.send(csv);
 });
 

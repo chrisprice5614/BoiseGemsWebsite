@@ -13,6 +13,12 @@
     </header>
     <main>
         <div style="margin: 12px;">
+            <% if (typeof previewMode !== 'undefined' && previewMode) { %>
+                <div style="position: sticky; top: 0; z-index: 999; padding: 10px 18px; background: linear-gradient(90deg,#1a73e8,#4285f4); color:#fff; border-radius: 8px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.18);">
+                    <strong>👁 Admin Preview — Member View</strong>
+                    <a href="/admin-portal" style="padding:5px 14px; border-radius:6px; background:rgba(255,255,255,0.25); color:#fff; text-decoration:none; font-weight:700; border:1px solid rgba(255,255,255,0.5);">← Back to Admin</a>
+                </div>
+            <% } %>
             <% if (member.minor && (!member.parentId || member.parentId == 0)) { %>
                 <div style="padding: 18px; border-radius: 10px; background: linear-gradient(90deg,#fff6e6,#ffecea); border: 3px solid #ff8a6b; margin-bottom: 16px;">
                     <h2 style="margin-top:0;">Action required: Parent/Guardian Needed</h2>
@@ -39,15 +45,17 @@
                     <div class="image-wrapper">
                          <a href="/update-profile-photo">
                             <% const srcImage = member.img == null ? "/img/ui/gem.png" : member.img %>
-                            <img src="<%= srcImage %>" alt="Member photo for <%= user.firstname %> <%= user.lastname %>">
+                            <% const displayFirst = (typeof previewMode !== 'undefined' && previewMode) ? member.firstname : user.firstname; %>
+                            <% const displayLast  = (typeof previewMode !== 'undefined' && previewMode) ? member.lastname  : user.lastname; %>
+                            <img src="<%= srcImage %>" alt="Member photo for <%= displayFirst %> <%= displayLast %>">
                         </a>
-                        <% if(member.img == null) { %>
+                        <% if(member.img == null && !(typeof previewMode !== 'undefined' && previewMode)) { %>
                             <span style="color: #fff;">Click image to change profile photo.</span>
                         <% } %>
                     </div>
                 </div>
                 <div>
-                    <h2 style="text-align: center; text-transform: capitalize;"><b><%= user.firstname %> <%= user.lastname %></b> - <%= member.section %>, <%= member.instrument %></h2>
+                    <h2 style="text-align: center; text-transform: capitalize;"><b><%= displayFirst %> <%= displayLast %></b> - <%= member.section %>, <%= member.instrument %></h2>
                     <% if(member.contractedIndependent) {%>
                         <p style="text-align: center;">Contracted for <b>Boise Gems Independent</b></p>
                     <% } %>
@@ -96,48 +104,6 @@
                     <% if(!member.staff) { %>
                     <p><b>Balance Due: </b><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(member.owed / 100) %></p>
                     <% } %>
-                    <br>
-                    <div style="margin: 8px 0; padding: 8px; border-radius: 8px; background:#f5f5f5;">
-                        <h3 style="margin-top:0;">Boise Gems Indoor</h3>
-
-                        <% if (member.indoorSection) { %>
-                            <p>
-                            Section: <strong><%= member.indoorSection %></strong><br/>
-                            Instrument:
-                            <strong><%= member.indoorInstrument || "Not specified" %></strong>
-                            </p>
-                        <% } else { %>
-                            <p>You’re not currently signed up for Boise Gems Indoor.</p>
-                        <% } %>
-
-                        <form action="/member-portal/indoor" method="POST">
-                            <label for="indoorSection">Indoor section</label><br/>
-                            <select id="indoorSection" name="indoorSection">
-                            <option value="">Not this season</option>
-                            <option value="Front Ensemble" <%= member.indoorSection === "Front Ensemble" ? "selected" : "" %>>
-                                Front Ensemble
-                            </option>
-                            <option value="Drumline" <%= member.indoorSection === "Drumline" ? "selected" : "" %>>
-                                Drumline
-                            </option>
-                            </select>
-
-                            <br><br>
-
-                            <label for="indoorInstrument">Indoor instrument</label><br/>
-                            <input
-                            type="text"
-                            id="indoorInstrument"
-                            name="indoorInstrument"
-                            value="<%= member.indoorInstrument || "" %>"
-                            placeholder="e.g. Snare, Tenors, Basses, Marimba, Vibes"
-                            style="max-width: 280px;"
-                            />
-
-                            <br><br>
-                            <button type="submit">Save Indoor preference</button>
-                        </form>
-                        </div>
                 </div>
                 <div style="margin: 24px 8px; padding: 8px; background-color: #dfdfdf; border-radius: 12px; box-shadow: 2px 2px 6px rgba(0,0,0,0.25);">
                      <% if (contracts.length) { %>

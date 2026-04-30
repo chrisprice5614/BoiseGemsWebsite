@@ -97,6 +97,7 @@
 
         /* ── Donate card wrapper ── */
         .dn-donate-card {
+            width: 100%; box-sizing: border-box;
             background: #fff; border-radius: 16px; padding: 32px 28px;
             box-shadow: 0 2px 16px rgba(0,0,0,.06); border: 1px solid #e8e0f0;
         }
@@ -229,10 +230,12 @@
 
         /* ── Guest donation ── */
         .dn-guest-card {
+            width: 100%; box-sizing: border-box;
             background: #fff; border-radius: 16px; padding: 36px 32px;
             box-shadow: 0 4px 24px rgba(0,0,0,.08);
             margin: 36px 0 0;
         }
+        .dn-guest-card form { width: 100%; box-sizing: border-box; }
         .dn-guest-card label { font-weight: 600; font-size: .9rem; color: var(--dark-full); display: block; margin-bottom: 5px; }
         .dn-guest-card input, .dn-guest-card textarea {
             width: 100%; padding: 11px 14px; border: 1.5px solid #d0c5e0; border-radius: 10px;

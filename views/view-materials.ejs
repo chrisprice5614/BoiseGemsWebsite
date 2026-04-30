@@ -5,7 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Boise Gems — Audition Materials</title>
   <%- include("includes/head") %>
-  <!-- styles moved to styles.css -->
+  <style>
+    .edit-panel {
+      margin-top: 10px;
+      padding: 12px;
+      background: #f8f8f8;
+      border: 1px dashed #aaa;
+      border-radius: 8px;
+    }
+    .edit-panel label { font-weight: 600; font-size: 0.9rem; }
+    .edit-panel .upload-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+    .edit-panel input[type="file"] { flex: 1; min-width: 0; }
+    .edit-panel button[type="submit"] {
+      padding: 6px 16px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .edit-panel button[type="submit"]:hover { background: #1558b0; }
+    .btn-edit-mat {
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: #fff3e0;
+      border: 1px solid #fb8c00;
+      color: #e65100;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-edit-mat:hover { background: #ffe0b2; }
+    details > summary { list-style: none; display: inline; }
+    details > summary::-webkit-details-marker { display: none; }
+  </style>
 </head>
 <body>
 <header><%- include("includes/header") %></header>
@@ -14,11 +54,15 @@
   <div style="padding: 8px;">
     <h1 style="text-align:center; margin: 8px 0 4px;">Audition Materials</h1>
     <p class="note">
-      Download the latest audition packets for your section. If a section shows “Coming soon,” check back later—materials are being updated.
+      Download the latest audition packets for your section. If a section shows "Coming soon," check back later—materials are being updated.
     </p>
+    <% if (admin || staff) { %>
+      <p style="text-align:center; font-size:0.85rem; color:#888; margin: 4px 0 0;">
+        Staff/Admin: use the <b>Edit</b> button on any card to upload a replacement PDF for that section.
+      </p>
+    <% } %>
 
     <% 
-      // Order and labels for display
       const order = [
         "brass",
         "drumline",
@@ -37,6 +81,15 @@
         "drumline (independent)": "Drumline (Independent)",
         "front ensemble (independent)": "Front Ensemble (Independent)"
       };
+      const fieldName = {
+        "brass": "brass",
+        "drumline": "drumline",
+        "guard": "guard",
+        "front ensemble": "front",
+        "drum major": "drum_major",
+        "drumline (independent)": "drumline_independent",
+        "front ensemble (independent)": "front_independent"
+      };
     %>
 
     <div class="materials-grid" style="margin-top: 14px;">
@@ -54,6 +107,21 @@
               <a class="btn-primary" href="<%= link %>" download>Download</a>
             <% } else { %>
               <button class="btn-disabled" disabled>Coming soon</button>
+            <% } %>
+            <% if (admin || staff) { %>
+              <details>
+                <summary><button type="button" class="btn-edit-mat">Edit</button></summary>
+                <div class="edit-panel">
+                  <label>Upload new PDF for <em><%= pretty[key] %></em>:</label>
+                  <form action="/set-materials" method="POST" enctype="multipart/form-data">
+                    <div class="upload-row">
+                      <input type="file" name="<%= fieldName[key] %>" accept="application/pdf" required />
+                      <button type="submit">Upload &amp; Replace</button>
+                    </div>
+                    <small style="color:#888;">This will replace the current PDF for this section.</small>
+                  </form>
+                </div>
+              </details>
             <% } %>
           </div>
         </article>

@@ -6188,8 +6188,45 @@ app.post("/set-allergies", mustBeLoggedIn, (req,res) => {
   return res.redirect("/member-portal")
 })
 
-app.get("/set-materials", mustBeStaff, (req,res) => {
-  return res.render("set-materials")
+app.get("/set-materials", mustBeStaff, (req, res) => {
+  const rows = db.prepare("SELECT section, pdf FROM materials").all();
+  const materials = {};
+  for (const r of rows) {
+    if (r.pdf) materials[String(r.section || "").toLowerCase().trim()] = r.pdf;
+  }
+  return res.render("set-materials", { materials });
+})
+
+// Admin: view the member portal as themselves (member view preview)
+app.get("/admin/member-view", mustBeAdmin, (req, res) => {
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!member) return res.redirect("/admin-portal");
+
+  const contracts = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?").all(req.user.userid);
+  const requiredForms = getRequiredFormsForUser(req.user.userid);
+  const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(req.user.userid);
+  const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
+  const allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(req.user.userid);
+
+  member.minor = false;
+  if (member.birthday) {
+    const birthday = new Date(member.birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthday.getFullYear();
+    const hadBDay =
+      today.getMonth() > birthday.getMonth() ||
+      (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+    if (!hadBDay) age--;
+    member.minor = age < 18;
+  }
+
+  return res.render("member-portal", {
+    member,
+    contracts,
+    leftoverForms,
+    allergy,
+    previewMode: true
+  });
 })
 
 

@@ -67,8 +67,12 @@ function ensureActiveContractExtension(req, res, next) {
   // No extension row
   if (!ext) return res.redirect("/");
 
-  // Wrong user
-  if (!req.user || ext.user_id !== req.user.userid) {
+  // Wrong user — allow both the designated signer (user_id) and the member
+  // themselves (child_id) to access the contract page.
+  if (
+    !req.user ||
+    (ext.user_id !== req.user.userid && ext.child_id !== req.user.userid)
+  ) {
     return res.redirect("/");
   }
 
@@ -2069,7 +2073,7 @@ app.post("/fan-portal/cancel-subscription/:id", mustBeLoggedIn, async (req, res)
 
 app.get("/member-portal", mustBeMember, (req,res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  const contracts = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?").all(req.user.userid);
+  const contracts = db.prepare("SELECT * FROM contractExtension WHERE user_id = ? OR child_id = ?").all(req.user.userid, req.user.userid);
 
   // REQUIRED FORMS (by rules)
   const requiredForms = getRequiredFormsForUser(req.user.userid);
@@ -2911,7 +2915,11 @@ app.post(
     );
     const contractExtension = getContractStatement.get(req.params.id);
 
-    if (!contractExtension || contractExtension.user_id !== req.user.userid) {
+    if (
+      !contractExtension ||
+      (contractExtension.user_id !== req.user.userid &&
+        contractExtension.child_id !== req.user.userid)
+    ) {
       return res.redirect("/");
     }
 
@@ -3006,7 +3014,7 @@ app.post(
       }
 
       const redirectTarget = isMinorContract ? "/parent-portal" : "/member-portal";
-      req.session.flashMessage = "Contract signed successfully â€” cash/check selected. No online payment required. Welcome to Boise Gems!";
+      req.session.flashMessage = "Contract signed successfully - cash/check selected. No online payment required. Welcome to Boise Gems!";
       return res.redirect(redirectTarget);
     }
 
@@ -3674,6 +3682,103 @@ app.get("/admin/contract-extensions", mustBeAdmin, (req, res) => {
   return res.render("admin-contract-extensions", {
     extensions,
   });
+});
+
+// Resend selected contract extensions — creates fresh extensions with the same
+// data, sends new emails, then deletes the old extension rows.
+app.post("/admin/contract-extensions/resend", mustBeAdmin, (req, res) => {
+  const rawIds = req.body.extensionIds;
+  if (!rawIds) {
+    req.session.flashMessage = "No contracts selected to resend.";
+    return res.redirect("/admin/contract-extensions");
+  }
+
+  const ids = (Array.isArray(rawIds) ? rawIds : [rawIds]).map(Number).filter(Boolean);
+  if (!ids.length) {
+    req.session.flashMessage = "No valid contracts selected.";
+    return res.redirect("/admin/contract-extensions");
+  }
+
+  let sentCount = 0;
+
+  for (const id of ids) {
+    const ext = db
+      .prepare(
+        `SELECT ce.*,
+                signer.firstname AS signerFirst, signer.lastname AS signerLast, signer.email AS signerEmail,
+                child.firstname  AS childFirst,  child.lastname  AS childLast,  child.email  AS childEmail
+         FROM contractExtension ce
+         JOIN users signer ON signer.id = ce.user_id
+         LEFT JOIN users child ON child.id = ce.child_id
+         WHERE ce.id = ?`
+      )
+      .get(id);
+
+    if (!ext) continue;
+
+    // Delete the old extension
+    db.prepare("DELETE FROM contractExtension WHERE id = ?").run(id);
+
+    // Insert a fresh extension with the same parameters and a new TTL
+    const newExpiresAt = Date.now() + CONTRACT_EXTENSION_TTL_MS;
+    db.prepare(
+      `INSERT INTO contractExtension (user_id, child_id, due_date, bypass_fee, created_at, season, extender)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      ext.user_id,
+      ext.child_id || null,
+      newExpiresAt,
+      ext.bypass_fee,
+      Date.now(),
+      ext.season,
+      req.user.userid
+    );
+
+    // Determine group label for email
+    const group = ext.season && ext.season.includes("independent")
+      ? "independent"
+      : ext.season && ext.season.includes("affiliate")
+        ? "affiliate"
+        : "corps";
+
+    let welcomeMessage = "The Boise Gems Drum & Bugle Corps";
+    if (group === "independent") welcomeMessage = "Boise Gems Independent";
+    else if (group === "affiliate") welcomeMessage = "Boise Gems Affiliate";
+
+    // Email target is the signer (parent for minors, member for adults)
+    const emailName  = ext.signerFirst || "";
+    const emailAddr  = ext.signerEmail || "";
+    const memberName = ext.childFirst
+      ? `${ext.childFirst} ${ext.childLast}`
+      : `${ext.signerFirst} ${ext.signerLast}`;
+
+    const html = `
+      <h1 style="text-align:center;">Contract Reminder</h1>
+      <p>Hello ${emailName},</p>
+      <p>
+        ${ext.child_id
+          ? `${memberName} has a pending contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+          : `You have a pending contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`}
+      </p>
+      <p>Your previous contract link has been refreshed. Please log in to your account to review and sign it.</p>
+      <div style="text-align:center; margin-top:16px;">
+        <a href="${process.env.BASEURL}/login"
+           target="_blank"
+           style="background-color:#0b71d9;color:white;padding:10px 18px;border-radius:4px;font-weight:bold;display:inline-block;text-decoration:none;">
+          Log In To Your Account
+        </a>
+      </div>
+    `;
+
+    if (emailAddr) {
+      sendEmail(emailAddr, "Contract Extension — Resent", html);
+    }
+
+    sentCount++;
+  }
+
+  req.session.flashMessage = `${sentCount} contract${sentCount === 1 ? "" : "s"} resent successfully. Old links replaced with fresh ones.`;
+  return res.redirect("/admin/contract-extensions");
 });
 
 
@@ -6202,7 +6307,7 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
   if (!member) return res.redirect("/admin-portal");
 
-  const contracts = db.prepare("SELECT * FROM contractExtension WHERE user_id = ?").all(req.user.userid);
+  const contracts = db.prepare("SELECT * FROM contractExtension WHERE user_id = ? OR child_id = ?").all(req.user.userid, req.user.userid);
   const requiredForms = getRequiredFormsForUser(req.user.userid);
   const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(req.user.userid);
   const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);

@@ -14,19 +14,54 @@
       <div style="margin:12px;">
         <h1>Contract Extensions</h1>
         <p>
-          These are contract extension links that have been issued. The “Signer”
+          These are contract extension links that have been issued. The "Signer"
           is the account that logs in and signs; if there is a child, the child
           name is shown as well.
         </p>
         <br/>
 
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+          <a href="/staff/members">
+            <button style="background:#e6f4ea;border:1px solid #34a853;color:#1e6e2e;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:700;">
+              + Extend Contract
+            </button>
+          </a>
+          <% if (extensions.length) { %>
+            <button id="toggle-resend-btn"
+              style="background:#fff3cd;border:1px solid #ffc107;color:#5a4000;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:700;"
+              onclick="toggleResendMode()">
+              Resend Contracts
+            </button>
+          <% } %>
+        </div>
+
         <% if (!extensions.length) { %>
           <p><em>No contract extensions found.</em></p>
         <% } else { %>
+          <form id="resend-form" method="POST" action="/admin/contract-extensions/resend" style="display:none;">
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:6px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="check-all-cb" onchange="toggleCheckAll(this)" style="width:16px;height:16px;cursor:pointer;">
+                Check All
+              </label>
+              <button type="submit"
+                style="background:#0b71d9;color:#fff;padding:8px 20px;border-radius:6px;border:none;cursor:pointer;font-weight:700;"
+                onclick="return confirmResend()">
+                Send Selected
+              </button>
+              <button type="button"
+                style="background:#eee;color:#333;padding:8px 14px;border-radius:6px;border:1px solid #ccc;cursor:pointer;"
+                onclick="toggleResendMode()">
+                Cancel
+              </button>
+            </div>
+          </form>
+
           <div style="overflow-x:auto;">
             <table style="width:100%; border-collapse:collapse;">
               <thead>
                 <tr>
+                  <th id="resend-check-header" style="border-bottom:1px solid #ccc; padding:6px; text-align:center; display:none; width:36px;"></th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Signer</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Child (if any)</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Group</th>
@@ -48,6 +83,9 @@
                     }
                   %>
                   <tr>
+                    <td class="resend-check-cell" style="border-bottom:1px solid #eee; padding:6px; text-align:center; display:none;">
+                      <input type="checkbox" name="extensionIds" value="<%= ext.id %>" form="resend-form" style="width:16px;height:16px;cursor:pointer;" class="resend-cb">
+                    </td>
                     <td style="border-bottom:1px solid #eee; padding:6px;">
                       <%= ext.signerFirst %> <%= ext.signerLast %><br/>
                       <small><%= ext.signerEmail %></small>
@@ -108,6 +146,52 @@
           </div>
         <% } %>
       </div>
+
+      <script>
+        var resendMode = false;
+
+        function toggleResendMode() {
+          resendMode = !resendMode;
+
+          var form        = document.getElementById('resend-form');
+          var toggleBtn   = document.getElementById('toggle-resend-btn');
+          var checkHeader = document.getElementById('resend-check-header');
+          var checkCells  = document.querySelectorAll('.resend-check-cell');
+          var checkboxes  = document.querySelectorAll('.resend-cb');
+          var checkAllCb  = document.getElementById('check-all-cb');
+
+          form.style.display        = resendMode ? 'block' : 'none';
+          toggleBtn.style.display   = resendMode ? 'none'  : 'inline-block';
+          checkHeader.style.display = resendMode ? 'table-cell' : 'none';
+
+          checkCells.forEach(function(cell) {
+            cell.style.display = resendMode ? 'table-cell' : 'none';
+          });
+
+          if (!resendMode) {
+            checkboxes.forEach(function(cb) { cb.checked = false; });
+            checkAllCb.checked = false;
+          }
+        }
+
+        function toggleCheckAll(masterCb) {
+          document.querySelectorAll('.resend-cb').forEach(function(cb) {
+            cb.checked = masterCb.checked;
+          });
+        }
+
+        function confirmResend() {
+          var checked = document.querySelectorAll('.resend-cb:checked').length;
+          if (checked === 0) {
+            alert('Please select at least one contract to resend.');
+            return false;
+          }
+          return confirm(
+            'Resend ' + checked + ' contract' + (checked === 1 ? '' : 's') + '?\n\n' +
+            'This will delete the old extension links and send fresh ones to the signer(s).'
+          );
+        }
+      </script>
     </main>
     <footer>
       <%- include("includes/footer") %>

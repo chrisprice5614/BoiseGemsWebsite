@@ -152,9 +152,28 @@
                                         <% } %>
                                     </p>
                                 <% } %>
-                                <a href="/accept-contract/<%= contract.id %>">
-                                    <button>View/Accept Contract - <%= groupString %></button>
-                                </a>
+                                <% const needsParentSig = !!(contract.child_id && contract.user_id !== user.userid); %>
+                                <% if (needsParentSig) { %>
+                                    <button onclick="document.getElementById('parent-sign-modal-<%= contract.id %>').style.display='flex'">
+                                        View/Accept Contract - <%= groupString %>
+                                    </button>
+                                    <div id="parent-sign-modal-<%= contract.id %>" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+                                        <div style="background:#fff; border-radius:12px; padding:28px 24px; max-width:400px; width:90%; text-align:center; box-shadow:0 4px 24px rgba(0,0,0,0.25);">
+                                            <h3 style="margin-top:0; color:#333;">Parent/Guardian Required</h3>
+                                            <p style="color:#444; line-height:1.5;">
+                                                This contract must be signed by your parent or guardian.
+                                                Please have them log in to their <strong>parent account</strong> and sign it from their Parent Portal.
+                                            </p>
+                                            <button onclick="document.getElementById('parent-sign-modal-<%= contract.id %>').style.display='none'" style="margin-top:12px; padding:8px 24px; border-radius:8px; background:#0b71d9; color:#fff; border:none; font-weight:700; cursor:pointer;">
+                                                Got it
+                                            </button>
+                                        </div>
+                                    </div>
+                                <% } else { %>
+                                    <a href="/accept-contract/<%= contract.id %>">
+                                        <button>View/Accept Contract - <%= groupString %></button>
+                                    </a>
+                                <% } %>
                                 <br>
                             <% }); %>
                         </div>

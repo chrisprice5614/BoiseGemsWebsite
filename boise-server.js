@@ -8960,323 +8960,464 @@ function mobileAuthOptional(req, res, next) {
   next();
 }
 
+// Safe user serializer – avoids type surprises on the mobile client
+function serializeUser(u) {
+  if (!u) return null;
+  return {
+    id: Number(u.id),
+    firstname: u.firstname || "",
+    lastname: u.lastname || "",
+    email: u.email || "",
+    phone: u.phone || null,
+    birthday: u.birthday != null ? Number(u.birthday) : null,
+    admin: u.admin ? 1 : 0,
+    staff: u.staff ? 1 : 0,
+    parent: u.parent ? 1 : 0,
+    fan: u.fan ? 1 : 0,
+    section: u.section || null,
+    instrument: u.instrument || null,
+    img: u.img || null,
+    contractedCorps: u.contractedCorps ? 1 : 0,
+    contractedIndependent: u.contractedIndependent ? 1 : 0,
+    contractedAffiliate: u.contractedAffiliate ? 1 : 0,
+    shirtSize: u.shirtSize || null,
+    paid: Number(u.paid) || 0,
+    owed: Number(u.owed) || 0,
+    address: u.address || null,
+    city: u.city || null,
+    state: u.state || null,
+    zip: u.zip || null,
+    school: u.school || null,
+    grade: u.grade || null,
+    parentId: u.parentId != null ? Number(u.parentId) : null,
+  };
+}
+
 // POST /api/mobile/login
 app.post("/api/mobile/login", (req, res) => {
-  const email = String(req.body.email || "").trim().toLowerCase();
-  const password = String(req.body.password || "");
-  if (!email || !password) return res.status(400).json({ ok: false, message: "Email and password required" });
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    if (!email || !password) return res.status(400).json({ ok: false, message: "Email and password required" });
 
-  const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
-  if (!user) return res.status(401).json({ ok: false, message: "Invalid email or password" });
+    const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    if (!user) return res.status(401).json({ ok: false, message: "Invalid email or password" });
 
-  const match = bcrypt.compareSync(password, user.password);
-  if (!match) return res.status(401).json({ ok: false, message: "Invalid email or password" });
+    const match = bcrypt.compareSync(password, user.password);
+    if (!match) return res.status(401).json({ ok: false, message: "Invalid email or password" });
 
-  const token = jwt.sign(
-    {
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
-      userid: user.id,
-      firstname: user.firstname,
-      lastname: user.lastname,
-      email: user.email,
-      admin: user.admin,
-      staff: user.staff,
-      parent: user.parent,
-      fan: user.fan || 0,
-    },
-    process.env.JWTSECRET
-  );
+    const token = jwt.sign(
+      {
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
+        userid: Number(user.id),
+        firstname: user.firstname || "",
+        lastname: user.lastname || "",
+        email: user.email || "",
+        admin: user.admin ? 1 : 0,
+        staff: user.staff ? 1 : 0,
+        parent: user.parent ? 1 : 0,
+        fan: user.fan ? 1 : 0,
+      },
+      process.env.JWTSECRET
+    );
 
-  return res.json({
-    ok: true,
-    token,
-    user: {
-      id: user.id,
-      firstname: user.firstname,
-      lastname: user.lastname,
-      email: user.email,
-      admin: !!user.admin,
-      staff: !!user.staff,
-      parent: !!user.parent,
-      fan: !!(user.fan),
-      section: user.section,
-      instrument: user.instrument,
-      img: user.img,
-      contractedCorps: !!user.contractedCorps,
-      contractedIndependent: !!user.contractedIndependent,
-      contractedAffiliate: !!user.contractedAffiliate,
-      shirtSize: user.shirtSize,
-    }
-  });
+    return res.json({ ok: true, token, user: serializeUser(user) });
+  } catch (e) {
+    console.error("mobile login error", e);
+    return res.status(500).json({ ok: false, message: "Server error during login" });
+  }
+});
+
+// POST /api/mobile/register-member
+app.post("/api/mobile/register-member", (req, res) => {
+  try {
+    const firstname = String(req.body.firstname || "").trim();
+    const lastname  = String(req.body.lastname  || "").trim();
+    const email     = String(req.body.email     || "").trim().toLowerCase();
+    const phone     = String(req.body.phone     || "").trim();
+    const address   = String(req.body.address   || "").trim();
+    const section   = String(req.body.section   || "").trim();
+    const instrument = String(req.body.instrument || "").trim();
+    const password  = String(req.body.password  || "");
+    const passwordRetype = String(req.body.passwordRetype || "");
+    const birthdayRaw = req.body.birthday || null;
+    const birthday  = birthdayRaw ? parseBirthdayToTimestamp(birthdayRaw) : null;
+
+    const errors = [];
+    if (!firstname) errors.push("First name is required");
+    if (!lastname)  errors.push("Last name is required");
+    if (!email)     errors.push("Email is required");
+    if (password.length < 8) errors.push("Password must be at least 8 characters");
+    if (password !== passwordRetype) errors.push("Passwords do not match");
+
+    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    if (existing) errors.push("Email is already in use");
+
+    if (errors.length) return res.status(400).json({ ok: false, message: errors[0], errors });
+
+    const salt = bcrypt.genSaltSync(10);
+    const hashed = bcrypt.hashSync(password, salt);
+    const emailsecret = bcrypt.hashSync(firstname + Date.now().toString(), salt).replace(/[^a-zA-Z0-9]/g, "");
+
+    const result = db.prepare(
+      "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(firstname, lastname, hashed, address, birthday, email, phone, 1, emailsecret, section, instrument, Date.now());
+
+    const newId = Number(result.lastInsertRowid);
+    db.prepare("INSERT INTO permissions (user_id) VALUES (?)").run(newId);
+
+    const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(newId);
+
+    const token = jwt.sign(
+      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, staff: 0, parent: 0, fan: 0 },
+      process.env.JWTSECRET
+    );
+
+    try { sendEmail(email, "Welcome to Boise Gems!", `<p>Hello ${firstname}, welcome to Boise Gems! Your account has been created.</p>`); } catch(_) {}
+
+    return res.json({ ok: true, token, user: serializeUser(newUser) });
+  } catch (e) {
+    console.error("mobile register-member error", e);
+    return res.status(500).json({ ok: false, message: "Server error during registration" });
+  }
+});
+
+// POST /api/mobile/register-parent
+app.post("/api/mobile/register-parent", (req, res) => {
+  try {
+    const firstname = String(req.body.firstname || "").trim();
+    const lastname  = String(req.body.lastname  || "").trim();
+    const email     = String(req.body.email     || "").trim().toLowerCase();
+    const phone     = String(req.body.phone     || "").trim();
+    const address   = String(req.body.address   || "").trim();
+    const password  = String(req.body.password  || "");
+    const passwordRetype = String(req.body.passwordRetype || "");
+    const birthdayRaw = req.body.birthday || null;
+    const birthday  = birthdayRaw ? parseBirthdayToTimestamp(birthdayRaw) : null;
+
+    const errors = [];
+    if (!firstname) errors.push("First name is required");
+    if (!lastname)  errors.push("Last name is required");
+    if (!email)     errors.push("Email is required");
+    if (password.length < 8) errors.push("Password must be at least 8 characters");
+    if (password !== passwordRetype) errors.push("Passwords do not match");
+
+    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    if (existing) errors.push("Email is already in use");
+
+    if (errors.length) return res.status(400).json({ ok: false, message: errors[0], errors });
+
+    const salt = bcrypt.genSaltSync(10);
+    const hashed = bcrypt.hashSync(password, salt);
+
+    const result = db.prepare(
+      "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(firstname, lastname, hashed, address, birthday, email, phone, 1, 1, "parent", Date.now());
+
+    const newId = Number(result.lastInsertRowid);
+    const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(newId);
+
+    const token = jwt.sign(
+      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, staff: 0, parent: 1, fan: 0 },
+      process.env.JWTSECRET
+    );
+
+    try { sendEmail(email, "Welcome to Boise Gems!", `<p>Hello ${firstname}, welcome to Boise Gems! Your parent account has been created.</p>`); } catch(_) {}
+
+    return res.json({ ok: true, token, user: serializeUser(newUser) });
+  } catch (e) {
+    console.error("mobile register-parent error", e);
+    return res.status(500).json({ ok: false, message: "Server error during registration" });
+  }
+});
+
+// GET /api/mobile/check-email?email=...
+app.get("/api/mobile/check-email", (req, res) => {
+  try {
+    const email = String(req.query.email || "").trim().toLowerCase();
+    if (!email) return res.json({ ok: true, available: false, message: "Email required" });
+    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    return res.json({ ok: true, available: !existing });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 // GET /api/mobile/me
 app.get("/api/mobile/me", mobileAuth, (req, res) => {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  if (!user) return res.status(404).json({ ok: false, message: "User not found" });
+  try {
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!user) return res.status(404).json({ ok: false, message: "User not found" });
 
-  const allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(user.id);
-  const emergency = db.prepare("SELECT * FROM emergencyContacts WHERE user_id = ?").get(user.id);
+    let allergy = null;
+    let emergency = null;
+    try { allergy = db.prepare("SELECT * FROM allergies WHERE user_id = ?").get(user.id) || null; } catch(_) {}
+    try { emergency = db.prepare("SELECT * FROM emergencyContacts WHERE user_id = ?").get(user.id) || null; } catch(_) {}
 
-  return res.json({
-    ok: true,
-    user: {
-      id: user.id,
-      firstname: user.firstname,
-      lastname: user.lastname,
-      email: user.email,
-      phone: user.phone,
-      birthday: user.birthday,
-      admin: !!user.admin,
-      staff: !!user.staff,
-      parent: !!user.parent,
-      fan: !!(user.fan),
-      section: user.section,
-      instrument: user.instrument,
-      img: user.img,
-      contractedCorps: !!user.contractedCorps,
-      contractedIndependent: !!user.contractedIndependent,
-      contractedAffiliate: !!user.contractedAffiliate,
-      shirtSize: user.shirtSize,
-      paid: user.paid,
-      owed: user.owed,
-      address: user.address,
-      city: user.city,
-      state: user.state,
-      zip: user.zip,
-      school: user.school,
-      grade: user.grade,
-    },
-    allergy: allergy || null,
-    emergency: emergency || null,
-  });
+    return res.json({ ok: true, user: serializeUser(user), allergy, emergency });
+  } catch (e) {
+    console.error("mobile /me error", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 // GET /api/mobile/events  – upcoming events (next 12 months)
 app.get("/api/mobile/events", mobileAuthOptional, (req, res) => {
-  const now = new Date();
-  const end = new Date(now.getFullYear(), now.getMonth() + 12, 1);
-  const rows = db.prepare(`
-    SELECT id, title, slug, datetime, type, image, endtime, description, cost, location, calltime, dismissaltime, whattobring, mealinfo, uniformrequirement, transportationplan
-    FROM events
-    WHERE datetime >= ? AND datetime < ?
-    ORDER BY datetime ASC
-  `).all(now.toISOString().slice(0, 19), end.toISOString().slice(0, 19));
-  return res.json({ ok: true, events: rows });
-});
-
-// GET /api/mobile/events/:id  – single event by id (with RSVP status)
-app.get("/api/mobile/events/:id", mobileAuthOptional, (req, res) => {
-  const event = db.prepare("SELECT * FROM events WHERE id = ?").get(Number(req.params.id));
-  if (!event) return res.status(404).json({ ok: false, message: "Event not found" });
-
-  let rsvpCount = 0;
-  let reservedSelf = false;
   try {
-    rsvpCount = db.prepare("SELECT COUNT(*) as c FROM rsvp WHERE event_id = ?").get(event.id).c;
-    if (req.user) {
-      reservedSelf = !!db.prepare("SELECT 1 FROM rsvp WHERE event_id = ? AND user_id = ?").get(event.id, req.user.userid);
-    }
-  } catch { /* ignore */ }
-
-  return res.json({ ok: true, event, rsvpCount, reservedSelf });
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth() + 12, 1);
+    const rows = db.prepare(`
+      SELECT id, title, slug, datetime, type, image, endtime, description, cost,
+             location, calltime, dismissaltime, whattobring, mealinfo, uniformrequirement, transportationplan
+      FROM events
+      WHERE datetime >= ? AND datetime < ?
+      ORDER BY datetime ASC
+    `).all(now.toISOString().slice(0, 19), end.toISOString().slice(0, 19));
+    return res.json({ ok: true, events: rows });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
-// GET /api/mobile/news  – recent news
+// GET /api/mobile/events/:id
+app.get("/api/mobile/events/:id", mobileAuthOptional, (req, res) => {
+  try {
+    const event = db.prepare("SELECT * FROM events WHERE id = ?").get(Number(req.params.id));
+    if (!event) return res.status(404).json({ ok: false, message: "Event not found" });
+    let rsvpCount = 0;
+    let reservedSelf = false;
+    try { rsvpCount = db.prepare("SELECT COUNT(*) as c FROM rsvp WHERE event_id = ?").get(event.id).c; } catch(_) {}
+    if (req.user) {
+      try { reservedSelf = !!db.prepare("SELECT 1 FROM rsvp WHERE event_id = ? AND user_id = ?").get(event.id, req.user.userid); } catch(_) {}
+    }
+    return res.json({ ok: true, event, rsvpCount, reservedSelf });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/news
 app.get("/api/mobile/news", (req, res) => {
-  const posts = db.prepare(`
-    SELECT id, title, slug, hero, created_at
-    FROM news
-    ORDER BY created_at DESC
-    LIMIT 30
-  `).all();
-  return res.json({ ok: true, posts });
+  try {
+    const posts = db.prepare("SELECT id, title, slug, hero, created_at FROM news ORDER BY created_at DESC LIMIT 30").all();
+    return res.json({ ok: true, posts });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 // GET /api/mobile/news/:slug
 app.get("/api/mobile/news/:slug", (req, res) => {
-  const post = db.prepare("SELECT * FROM news WHERE slug = ?").get(req.params.slug);
-  if (!post) return res.status(404).json({ ok: false, message: "Not found" });
-  return res.json({ ok: true, post });
-});
-
-// GET /api/mobile/transactions  – member's payment history and balance
-app.get("/api/mobile/transactions", mobileAuth, (req, res) => {
-  if (req.parent) return res.status(403).json({ ok: false, message: "Use /parent/child/:id/transactions" });
-  const user = db.prepare("SELECT paid, owed FROM users WHERE id = ?").get(req.user.userid);
-  const payments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(req.user.userid);
-  return res.json({ ok: true, paid: user?.paid || 0, owed: user?.owed || 0, payments });
-});
-
-// GET /api/mobile/forms  – required forms for this member
-app.get("/api/mobile/forms", mobileAuth, (req, res) => {
-  if (req.parent) return res.status(403).json({ ok: false, message: "Use /parent/child/:id/forms" });
-  const requiredForms = getRequiredFormsForUser(req.user.userid);
-  const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(req.user.userid);
-  const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
-  return res.json({ ok: true, forms: leftoverForms });
-});
-
-// GET /api/mobile/staff  – public staff directory
-app.get("/api/mobile/staff", (req, res) => {
-  const staff = db.prepare(`
-    SELECT id, firstname, lastname, slug, title, category, bio, img, sort_order
-    FROM staff
-    ORDER BY sort_order ASC, lastname COLLATE NOCASE
-  `).all();
-  return res.json({ ok: true, staff });
-});
-
-// GET /api/mobile/files  – file library root folders by scope/year
-app.get("/api/mobile/files", mobileAuth, (req, res) => {
-  const roots = db.prepare(`
-    SELECT * FROM file_folders
-    WHERE parent_id IS NULL
-    ORDER BY scope, year DESC
-  `).all();
-  return res.json({ ok: true, roots });
-});
-
-// GET /api/mobile/files/folder/:id  – folder contents
-app.get("/api/mobile/files/folder/:id", mobileAuth, (req, res) => {
-  const folderId = parseInt(req.params.id, 10);
-  const folder = db.prepare("SELECT * FROM file_folders WHERE id = ?").get(folderId);
-  if (!folder) return res.status(404).json({ ok: false, message: "Folder not found" });
-
-  const subfolders = db.prepare("SELECT * FROM file_folders WHERE parent_id = ? ORDER BY name COLLATE NOCASE").all(folderId);
-  const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  const canManage = !!(req.admin || req.staff);
-
-  const rawFiles = db.prepare("SELECT * FROM file_items WHERE folder_id = ? ORDER BY created_at DESC").all(folderId);
-  const files = rawFiles.filter(f => canManage || canUserSeeFileItem(userRow, f));
-
-  return res.json({ ok: true, folder, subfolders, files });
-});
-
-// GET /api/mobile/dashboard  – role-specific summary data
-app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
-  const userId = req.user.userid;
-  const now = new Date().toISOString().slice(0, 19);
-
-  // Upcoming events (next 5)
-  const upcomingEvents = db.prepare(`
-    SELECT id, title, slug, datetime, type, location, calltime
-    FROM events WHERE datetime >= ? ORDER BY datetime ASC LIMIT 5
-  `).all(now);
-
-  // Latest news (last 3)
-  const latestNews = db.prepare(`
-    SELECT id, title, slug, hero, created_at FROM news ORDER BY created_at DESC LIMIT 3
-  `).all();
-
-  let memberData = null;
-  let parentData = null;
-  let adminData = null;
-
-  if (!req.parent && !req.fan) {
-    // Member / staff / admin view
-    const user = db.prepare("SELECT paid, owed, section, instrument, contractedCorps, contractedIndependent, contractedAffiliate FROM users WHERE id = ?").get(userId);
-    const requiredForms = getRequiredFormsForUser(userId);
-    const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(userId);
-    const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
-    const missingCount = leftoverForms.filter(f => !f.uploaded).length;
-
-    memberData = {
-      paid: user?.paid || 0,
-      owed: user?.owed || 0,
-      section: user?.section,
-      instrument: user?.instrument,
-      contractedCorps: !!user?.contractedCorps,
-      contractedIndependent: !!user?.contractedIndependent,
-      contractedAffiliate: !!user?.contractedAffiliate,
-      missingFormsCount: missingCount,
-    };
+  try {
+    const post = db.prepare("SELECT * FROM news WHERE slug = ?").get(req.params.slug);
+    if (!post) return res.status(404).json({ ok: false, message: "Not found" });
+    return res.json({ ok: true, post });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
   }
+});
 
-  if (req.parent) {
+// GET /api/mobile/transactions
+app.get("/api/mobile/transactions", mobileAuth, (req, res) => {
+  try {
+    if (req.parent) return res.status(403).json({ ok: false, message: "Use /parent/child/:id/transactions" });
+    const user = db.prepare("SELECT paid, owed FROM users WHERE id = ?").get(req.user.userid);
+    const payments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(req.user.userid);
+    return res.json({ ok: true, paid: Number(user?.paid) || 0, owed: Number(user?.owed) || 0, payments });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/forms
+app.get("/api/mobile/forms", mobileAuth, (req, res) => {
+  try {
+    if (req.parent) return res.status(403).json({ ok: false, message: "Use /parent/child/:id/forms" });
+    const requiredForms = getRequiredFormsForUser(req.user.userid);
+    const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(req.user.userid);
+    markUploadsAndCount(requiredForms, uploadedForms); // mutates requiredForms, adds .uploaded
+    return res.json({ ok: true, forms: requiredForms });
+  } catch (e) {
+    console.error("mobile forms error", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/staff
+app.get("/api/mobile/staff", (req, res) => {
+  try {
+    const staff = db.prepare("SELECT id, firstname, lastname, slug, title, category, bio, img, sort_order FROM staff ORDER BY sort_order ASC, lastname COLLATE NOCASE").all();
+    return res.json({ ok: true, staff });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/files
+app.get("/api/mobile/files", mobileAuth, (req, res) => {
+  try {
+    const roots = db.prepare("SELECT * FROM file_folders WHERE parent_id IS NULL ORDER BY scope, year DESC").all();
+    return res.json({ ok: true, roots });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/files/folder/:id
+app.get("/api/mobile/files/folder/:id", mobileAuth, (req, res) => {
+  try {
+    const folderId = parseInt(req.params.id, 10);
+    const folder = db.prepare("SELECT * FROM file_folders WHERE id = ?").get(folderId);
+    if (!folder) return res.status(404).json({ ok: false, message: "Folder not found" });
+    const subfolders = db.prepare("SELECT * FROM file_folders WHERE parent_id = ? ORDER BY name COLLATE NOCASE").all(folderId);
+    const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    const canManage = !!(req.admin || req.staff);
+    const rawFiles = db.prepare("SELECT * FROM file_items WHERE folder_id = ? ORDER BY created_at DESC").all(folderId);
+    const files = rawFiles.filter(f => canManage || canUserSeeFileItem(userRow, f));
+    return res.json({ ok: true, folder, subfolders, files });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/dashboard
+app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
+  try {
+    const userId = req.user.userid;
+    const now = new Date().toISOString().slice(0, 19);
+
+    const upcomingEvents = db.prepare(`
+      SELECT id, title, slug, datetime, type, location, calltime
+      FROM events WHERE datetime >= ? ORDER BY datetime ASC LIMIT 5
+    `).all(now);
+
+    const latestNews = db.prepare(`
+      SELECT id, title, slug, hero, created_at FROM news ORDER BY created_at DESC LIMIT 3
+    `).all();
+
+    let memberData = null;
+    let parentData = null;
+    let adminData = null;
+
+    if (!req.parent && !req.fan) {
+      const user = db.prepare("SELECT paid, owed, section, instrument, contractedCorps, contractedIndependent, contractedAffiliate FROM users WHERE id = ?").get(userId);
+      let missingCount = 0;
+      try {
+        const requiredForms = getRequiredFormsForUser(userId);
+        const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(userId);
+        missingCount = markUploadsAndCount(requiredForms, uploadedForms); // returns count directly
+      } catch(_) {}
+      memberData = {
+        paid: Number(user?.paid) || 0,
+        owed: Number(user?.owed) || 0,
+        section: user?.section || null,
+        instrument: user?.instrument || null,
+        contractedCorps: user?.contractedCorps ? 1 : 0,
+        contractedIndependent: user?.contractedIndependent ? 1 : 0,
+        contractedAffiliate: user?.contractedAffiliate ? 1 : 0,
+        missingFormsCount: missingCount,
+      };
+    }
+
+    if (req.parent) {
+      const children = db.prepare(`
+        SELECT id, firstname, lastname, section, instrument, paid, owed, img,
+               contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users WHERE parentId = ?
+      `).all(userId).map(serializeUser);
+      parentData = { children };
+    }
+
+    if (req.admin) {
+      const totalMembers = db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get().c;
+      let pendingContracts = 0;
+      try { pendingContracts = db.prepare("SELECT COUNT(*) as c FROM contractExtension").get().c; } catch(_) {}
+      adminData = { totalMembers: Number(totalMembers), pendingContracts: Number(pendingContracts) };
+    }
+
+    return res.json({ ok: true, upcomingEvents, latestNews, memberData, parentData, adminData });
+  } catch (e) {
+    console.error("mobile dashboard error", e);
+    return res.status(500).json({ ok: false, message: "Server error loading dashboard" });
+  }
+});
+
+// GET /api/mobile/parent/children
+app.get("/api/mobile/parent/children", mobileAuth, (req, res) => {
+  try {
+    if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
     const children = db.prepare(`
       SELECT id, firstname, lastname, section, instrument, paid, owed, img,
-             contractedCorps, contractedIndependent, contractedAffiliate
+             contractedCorps, contractedIndependent, contractedAffiliate, shirtSize, parentId
       FROM users WHERE parentId = ?
-    `).all(userId);
-    parentData = { children };
+    `).all(req.user.userid).map(serializeUser);
+    return res.json({ ok: true, children });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
   }
-
-  if (req.admin) {
-    const totalMembers = db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get().c;
-    const pendingContracts = db.prepare("SELECT COUNT(*) as c FROM contractExtension").get().c;
-    adminData = { totalMembers, pendingContracts };
-  }
-
-  return res.json({ ok: true, upcomingEvents, latestNews, memberData, parentData, adminData });
-});
-
-// GET /api/mobile/parent/children  – parent's children
-app.get("/api/mobile/parent/children", mobileAuth, (req, res) => {
-  if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
-  const children = db.prepare(`
-    SELECT id, firstname, lastname, section, instrument, paid, owed, img,
-           contractedCorps, contractedIndependent, contractedAffiliate, shirtSize
-    FROM users WHERE parentId = ?
-  `).all(req.user.userid);
-  return res.json({ ok: true, children });
 });
 
 // GET /api/mobile/parent/child/:id/transactions
 app.get("/api/mobile/parent/child/:id/transactions", mobileAuth, (req, res) => {
-  if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
-  const childId = Number(req.params.id);
-  const child = db.prepare("SELECT id, firstname, lastname, paid, owed, parentId FROM users WHERE id = ?").get(childId);
-  if (!child || child.parentId !== req.user.userid) return res.status(403).json({ ok: false, message: "Forbidden" });
-  const payments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(childId);
-  return res.json({ ok: true, paid: child.paid || 0, owed: child.owed || 0, payments });
+  try {
+    if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
+    const childId = Number(req.params.id);
+    const child = db.prepare("SELECT id, firstname, lastname, paid, owed, parentId FROM users WHERE id = ?").get(childId);
+    if (!child || Number(child.parentId) !== Number(req.user.userid)) return res.status(403).json({ ok: false, message: "Forbidden" });
+    const payments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(childId);
+    return res.json({ ok: true, paid: Number(child.paid) || 0, owed: Number(child.owed) || 0, payments });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 // GET /api/mobile/parent/child/:id/forms
 app.get("/api/mobile/parent/child/:id/forms", mobileAuth, (req, res) => {
-  if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
-  const childId = Number(req.params.id);
-  const child = db.prepare("SELECT id, parentId FROM users WHERE id = ?").get(childId);
-  if (!child || child.parentId !== req.user.userid) return res.status(403).json({ ok: false, message: "Forbidden" });
-  const requiredForms = getRequiredFormsForUser(childId);
-  const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(childId);
-  const leftoverForms = markUploadsAndCount(requiredForms, uploadedForms);
-  return res.json({ ok: true, forms: leftoverForms });
+  try {
+    if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
+    const childId = Number(req.params.id);
+    const child = db.prepare("SELECT id, parentId FROM users WHERE id = ?").get(childId);
+    if (!child || Number(child.parentId) !== Number(req.user.userid)) return res.status(403).json({ ok: false, message: "Forbidden" });
+    const requiredForms = getRequiredFormsForUser(childId);
+    const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(childId);
+    markUploadsAndCount(requiredForms, uploadedForms);
+    return res.json({ ok: true, forms: requiredForms });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
-// GET /api/mobile/admin/members  – admin/staff member list
+// GET /api/mobile/admin/members
 app.get("/api/mobile/admin/members", mobileAuth, (req, res) => {
-  if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
-  const members = db.prepare(`
-    SELECT id, firstname, lastname, email, phone, section, instrument, paid, owed, img,
-           contractedCorps, contractedIndependent, contractedAffiliate, shirtSize, admin, staff
-    FROM users
-    WHERE (parent IS NULL OR parent = 0) AND (fan IS NULL OR fan = 0)
-    ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
-  `).all();
-  return res.json({ ok: true, members });
+  try {
+    if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
+    const members = db.prepare(`
+      SELECT id, firstname, lastname, email, phone, section, instrument, paid, owed, img,
+             contractedCorps, contractedIndependent, contractedAffiliate, shirtSize, admin, staff, parentId
+      FROM users
+      WHERE (parent IS NULL OR parent = 0) AND (fan IS NULL OR fan = 0)
+      ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
+    `).all().map(serializeUser);
+    return res.json({ ok: true, members });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 // GET /api/mobile/admin/stats
 app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
-  if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
-
-  const totalMembers = db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0) AND (staff IS NULL OR staff=0)").get().c;
-  const contractedCorps = db.prepare("SELECT COUNT(*) as c FROM users WHERE contractedCorps = 1").get().c;
-  const contractedIndependent = db.prepare("SELECT COUNT(*) as c FROM users WHERE contractedIndependent = 1").get().c;
-  const totalOwed = db.prepare("SELECT COALESCE(SUM(owed),0) as s FROM users").get().s;
-  const totalPaid = db.prepare("SELECT COALESCE(SUM(paid),0) as s FROM users").get().s;
-  const recentPayments = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC LIMIT 10").all();
-
-  return res.json({
-    ok: true,
-    totalMembers,
-    contractedCorps,
-    contractedIndependent,
-    totalOwed,
-    totalPaid,
-    recentPayments,
-  });
+  try {
+    if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
+    const totalMembers = db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0) AND (staff IS NULL OR staff=0)").get().c;
+    const contractedCorps = db.prepare("SELECT COUNT(*) as c FROM users WHERE contractedCorps = 1").get().c;
+    const contractedIndependent = db.prepare("SELECT COUNT(*) as c FROM users WHERE contractedIndependent = 1").get().c;
+    const totalOwed = db.prepare("SELECT COALESCE(SUM(owed),0) as s FROM users").get().s;
+    const totalPaid = db.prepare("SELECT COALESCE(SUM(paid),0) as s FROM users").get().s;
+    const recentPayments = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC LIMIT 10").all();
+    return res.json({ ok: true, totalMembers: Number(totalMembers), contractedCorps: Number(contractedCorps), contractedIndependent: Number(contractedIndependent), totalOwed: Number(totalOwed), totalPaid: Number(totalPaid), recentPayments });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

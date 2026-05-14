@@ -1039,6 +1039,13 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
   if (!fanCols.includes("stripe_customer_id")) {
     db.prepare("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT").run();
   }
+  // Mobile app role columns — safe to add to existing databases
+  if (!fanCols.includes("director")) {
+    db.prepare("ALTER TABLE users ADD COLUMN director INTEGER DEFAULT 0").run();
+  }
+  if (!fanCols.includes("volunteer")) {
+    db.prepare("ALTER TABLE users ADD COLUMN volunteer INTEGER DEFAULT 0").run();
+  }
 
   // --- Fan donation subscriptions ---
   db.prepare(`
@@ -8977,11 +8984,13 @@ function mobileAuth(req, res, next) {
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return res.status(401).json({ ok: false, message: "Unauthorized" });
   try {
-    req.user = jwt.verify(token, process.env.JWTSECRET);
-    req.admin = req.user.admin;
-    req.staff = req.user.staff;
-    req.parent = req.user.parent;
-    req.fan = req.user.fan || 0;
+    req.user      = jwt.verify(token, process.env.JWTSECRET);
+    req.admin     = req.user.admin;
+    req.director  = req.user.director || 0;
+    req.staff     = req.user.staff;
+    req.parent    = req.user.parent;
+    req.volunteer = req.user.volunteer || 0;
+    req.fan       = req.user.fan || 0;
     next();
   } catch {
     return res.status(401).json({ ok: false, message: "Invalid or expired token" });
@@ -8993,11 +9002,13 @@ function mobileAuthOptional(req, res, next) {
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (token) {
     try {
-      req.user = jwt.verify(token, process.env.JWTSECRET);
-      req.admin = req.user.admin;
-      req.staff = req.user.staff;
-      req.parent = req.user.parent;
-      req.fan = req.user.fan || 0;
+      req.user      = jwt.verify(token, process.env.JWTSECRET);
+      req.admin     = req.user.admin;
+      req.director  = req.user.director || 0;
+      req.staff     = req.user.staff;
+      req.parent    = req.user.parent;
+      req.volunteer = req.user.volunteer || 0;
+      req.fan       = req.user.fan || 0;
     } catch { /* ignore */ }
   }
   next();
@@ -9026,8 +9037,10 @@ function serializeUser(u) {
     phone: u.phone || null,
     birthday: u.birthday != null ? Number(u.birthday) : null,
     admin: u.admin ? 1 : 0,
+    director: u.director ? 1 : 0,
     staff: u.staff ? 1 : 0,
     parent: u.parent ? 1 : 0,
+    volunteer: u.volunteer ? 1 : 0,
     fan: u.fan ? 1 : 0,
     section: u.section || null,
     instrument: u.instrument || null,
@@ -9069,8 +9082,10 @@ app.post("/api/mobile/login", (req, res) => {
         lastname: user.lastname || "",
         email: user.email || "",
         admin: user.admin ? 1 : 0,
+        director: user.director ? 1 : 0,
         staff: user.staff ? 1 : 0,
         parent: user.parent ? 1 : 0,
+        volunteer: user.volunteer ? 1 : 0,
         fan: user.fan ? 1 : 0,
       },
       process.env.JWTSECRET
@@ -9124,7 +9139,7 @@ app.post("/api/mobile/register-member", (req, res) => {
     const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(newId);
 
     const token = jwt.sign(
-      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, staff: 0, parent: 0, fan: 0 },
+      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, director: 0, staff: 0, parent: 0, volunteer: 0, fan: 0 },
       process.env.JWTSECRET
     );
 
@@ -9173,7 +9188,7 @@ app.post("/api/mobile/register-parent", (req, res) => {
     const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(newId);
 
     const token = jwt.sign(
-      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, staff: 0, parent: 1, fan: 0 },
+      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, director: 0, staff: 0, parent: 1, volunteer: 0, fan: 0 },
       process.env.JWTSECRET
     );
 
@@ -9182,6 +9197,53 @@ app.post("/api/mobile/register-parent", (req, res) => {
     return res.json({ ok: true, token, user: serializeUser(newUser) });
   } catch (e) {
     console.error("mobile register-parent error", e);
+    return res.status(500).json({ ok: false, message: "Server error during registration" });
+  }
+});
+
+// POST /api/mobile/register-volunteer
+app.post("/api/mobile/register-volunteer", (req, res) => {
+  try {
+    const firstname = String(req.body.firstname || "").trim();
+    const lastname  = String(req.body.lastname  || "").trim();
+    const email     = String(req.body.email     || "").trim().toLowerCase();
+    const phone     = String(req.body.phone     || "").trim();
+    const address   = String(req.body.address   || "").trim();
+    const password  = String(req.body.password  || "");
+    const passwordRetype = String(req.body.passwordRetype || "");
+
+    const errors = [];
+    if (!firstname) errors.push("First name is required");
+    if (!lastname)  errors.push("Last name is required");
+    if (!email)     errors.push("Email is required");
+    if (password.length < 8) errors.push("Password must be at least 8 characters");
+    if (password !== passwordRetype) errors.push("Passwords do not match");
+
+    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    if (existing) errors.push("Email is already in use");
+
+    if (errors.length) return res.status(400).json({ ok: false, message: errors[0], errors });
+
+    const salt = bcrypt.genSaltSync(10);
+    const hashed = bcrypt.hashSync(password, salt);
+
+    const result = db.prepare(
+      "INSERT INTO users (firstname, lastname, password, address, email, phone, verified, volunteer, section, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+    ).run(firstname, lastname, hashed, address, email, phone, 1, 1, "volunteer", Date.now());
+
+    const newId = Number(result.lastInsertRowid);
+    const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(newId);
+
+    const token = jwt.sign(
+      { exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, userid: newId, firstname, lastname, email, admin: 0, director: 0, staff: 0, parent: 0, volunteer: 1, fan: 0 },
+      process.env.JWTSECRET
+    );
+
+    try { sendEmail(email, "Welcome to Boise Gems!", `<p>Hello ${firstname}, welcome to Boise Gems! Your volunteer account has been created.</p>`); } catch(_) {}
+
+    return res.json({ ok: true, token, user: serializeUser(newUser) });
+  } catch (e) {
+    console.error("mobile register-volunteer error", e);
     return res.status(500).json({ ok: false, message: "Server error during registration" });
   }
 });

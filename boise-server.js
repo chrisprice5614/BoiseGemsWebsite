@@ -1306,6 +1306,49 @@ function migrateFormsTable(db) {
 // call it on boot
 migrateFormsTable(db);
 
+// ── Schedules tables (NEW — not altering any existing table) ─────────────────
+// ⚠️  DO NOT modify existing tables here.  Add only new tables for new features.
+function initSchedulesTables(db) {
+  // Daily rehearsal / activity schedule
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS schedules (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      title         TEXT    NOT NULL,
+      date          TEXT    NOT NULL,   -- YYYY-MM-DD
+      location      TEXT,
+      call_time     TEXT,               -- HH:MM (24h)
+      dismissal_time TEXT,              -- HH:MM (24h)
+      notes         TEXT,               -- member-visible notes
+      staff_notes   TEXT,               -- staff-only (never sent to regular members)
+      scope         TEXT    NOT NULL DEFAULT 'all', -- 'all','corps','indoor','bgi'
+      created_by    INTEGER,            -- user id of creator
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    )
+  `).run();
+
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date ASC)`).run();
+
+  // Individual time blocks within a schedule
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS schedule_blocks (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+      title       TEXT    NOT NULL,
+      start_time  TEXT    NOT NULL,     -- HH:MM (24h)
+      end_time    TEXT,                 -- HH:MM (24h)
+      location    TEXT,                 -- overrides parent schedule location
+      -- section filter: 'all','brass','guard','frontensemble','drumline','drummajor'
+      section     TEXT    NOT NULL DEFAULT 'all',
+      block_type  TEXT    NOT NULL DEFAULT 'rehearsal', -- rehearsal|meal|break|meeting|performance|travel|other
+      notes       TEXT,
+      sort_order  INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
+}
+initSchedulesTables(db);
+// ─────────────────────────────────────────────────────────────────────────────
+
 const app = express()
 app.use(express.json())
 app.set("view engine", "ejs")
@@ -8961,6 +9004,18 @@ function mobileAuthOptional(req, res, next) {
 }
 
 // Safe user serializer – avoids type surprises on the mobile client
+// ─── Mobile API helpers ──────────────────────────────────────────────────────
+// ⚠️  DO NOT ALTER EXISTING WEBSITE TABLES in this section.
+//     All schema work (CREATE TABLE, ALTER TABLE) belongs ONLY inside
+//     initializeDB() above. Any new mobile-only tables must also live
+//     inside initializeDB(). Never alter existing tables here.
+
+/** Serialize a DB user row to a safe, type-consistent JSON object for the
+ *  mobile app.  paid/owed are stored as INTEGER CENTS in the DB — we divide
+ *  by 100 here so Flutter receives dollars (e.g. 50000 → 500.00).
+ *  img is a relative path like /img/publicupload/x.webp — Flutter prepends
+ *  the base URL.
+ */
 function serializeUser(u) {
   if (!u) return null;
   return {
@@ -8976,13 +9031,13 @@ function serializeUser(u) {
     fan: u.fan ? 1 : 0,
     section: u.section || null,
     instrument: u.instrument || null,
-    img: u.img || null,
+    img: u.img || null,          // relative path — Flutter prepends baseUrl
     contractedCorps: u.contractedCorps ? 1 : 0,
     contractedIndependent: u.contractedIndependent ? 1 : 0,
     contractedAffiliate: u.contractedAffiliate ? 1 : 0,
     shirtSize: u.shirtSize || null,
-    paid: Number(u.paid) || 0,
-    owed: Number(u.owed) || 0,
+    paid: (Number(u.paid) || 0) / 100,   // cents → dollars
+    owed: (Number(u.owed) || 0) / 100,   // cents → dollars
     address: u.address || null,
     city: u.city || null,
     state: u.state || null,
@@ -9157,7 +9212,7 @@ app.get("/api/mobile/me", mobileAuth, (req, res) => {
     return res.json({ ok: true, user: serializeUser(user), allergy, emergency });
   } catch (e) {
     console.error("mobile /me error", e);
-    return res.status(500).json({ ok: false, message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });
 
@@ -9167,8 +9222,7 @@ app.get("/api/mobile/events", mobileAuthOptional, (req, res) => {
     const now = new Date();
     const end = new Date(now.getFullYear(), now.getMonth() + 12, 1);
     const rows = db.prepare(`
-      SELECT id, title, slug, datetime, type, image, endtime, description, cost,
-             location, calltime, dismissaltime, whattobring, mealinfo, uniformrequirement, transportationplan
+      SELECT id, title, slug, datetime, endtime, type, image, description, cost, location, link
       FROM events
       WHERE datetime >= ? AND datetime < ?
       ORDER BY datetime ASC
@@ -9222,10 +9276,17 @@ app.get("/api/mobile/transactions", mobileAuth, (req, res) => {
   try {
     if (req.parent) return res.status(403).json({ ok: false, message: "Use /parent/child/:id/transactions" });
     const user = db.prepare("SELECT paid, owed FROM users WHERE id = ?").get(req.user.userid);
-    const payments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(req.user.userid);
-    return res.json({ ok: true, paid: Number(user?.paid) || 0, owed: Number(user?.owed) || 0, payments });
+    const rawPayments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(req.user.userid);
+    // amounts in paymentHistory are stored as cents — convert to dollars for mobile
+    const payments = rawPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 }));
+    return res.json({
+      ok: true,
+      paid: (Number(user?.paid) || 0) / 100,
+      owed: (Number(user?.owed) || 0) / 100,
+      payments,
+    });
   } catch (e) {
-    return res.status(500).json({ ok: false, message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });
 
@@ -9239,7 +9300,7 @@ app.get("/api/mobile/forms", mobileAuth, (req, res) => {
     return res.json({ ok: true, forms: requiredForms });
   } catch (e) {
     console.error("mobile forms error", e);
-    return res.status(500).json({ ok: false, message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });
 
@@ -9287,7 +9348,7 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
     const now = new Date().toISOString().slice(0, 19);
 
     const upcomingEvents = db.prepare(`
-      SELECT id, title, slug, datetime, type, location, calltime
+      SELECT id, title, slug, datetime, type, location
       FROM events WHERE datetime >= ? ORDER BY datetime ASC LIMIT 5
     `).all(now);
 
@@ -9308,8 +9369,8 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
         missingCount = markUploadsAndCount(requiredForms, uploadedForms); // returns count directly
       } catch(_) {}
       memberData = {
-        paid: Number(user?.paid) || 0,
-        owed: Number(user?.owed) || 0,
+        paid: (Number(user?.paid) || 0) / 100,   // cents → dollars
+        owed: (Number(user?.owed) || 0) / 100,   // cents → dollars
         section: user?.section || null,
         instrument: user?.instrument || null,
         contractedCorps: user?.contractedCorps ? 1 : 0,
@@ -9364,10 +9425,16 @@ app.get("/api/mobile/parent/child/:id/transactions", mobileAuth, (req, res) => {
     const childId = Number(req.params.id);
     const child = db.prepare("SELECT id, firstname, lastname, paid, owed, parentId FROM users WHERE id = ?").get(childId);
     if (!child || Number(child.parentId) !== Number(req.user.userid)) return res.status(403).json({ ok: false, message: "Forbidden" });
-    const payments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(childId);
-    return res.json({ ok: true, paid: Number(child.paid) || 0, owed: Number(child.owed) || 0, payments });
+    const rawPayments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(childId);
+    const payments = rawPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 }));
+    return res.json({
+      ok: true,
+      paid: (Number(child.paid) || 0) / 100,
+      owed: (Number(child.owed) || 0) / 100,
+      payments,
+    });
   } catch (e) {
-    return res.status(500).json({ ok: false, message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });
 
@@ -9414,9 +9481,128 @@ app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
     const totalOwed = db.prepare("SELECT COALESCE(SUM(owed),0) as s FROM users").get().s;
     const totalPaid = db.prepare("SELECT COALESCE(SUM(paid),0) as s FROM users").get().s;
     const recentPayments = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC LIMIT 10").all();
-    return res.json({ ok: true, totalMembers: Number(totalMembers), contractedCorps: Number(contractedCorps), contractedIndependent: Number(contractedIndependent), totalOwed: Number(totalOwed), totalPaid: Number(totalPaid), recentPayments });
+    return res.json({
+      ok: true,
+      totalMembers: Number(totalMembers),
+      contractedCorps: Number(contractedCorps),
+      contractedIndependent: Number(contractedIndependent),
+      totalOwed: (Number(totalOwed) || 0) / 100,   // cents → dollars
+      totalPaid: (Number(totalPaid) || 0) / 100,   // cents → dollars
+      recentPayments: recentPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 })),
+    });
   } catch (e) {
-    return res.status(500).json({ ok: false, message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// ── Schedules ──────────────────────────────────────────────────────────────
+// GET /api/mobile/schedules
+// Returns upcoming schedules (today + future), with blocks filtered by the
+// requesting user's section.  Staff/admin see all blocks.
+app.get("/api/mobile/schedules", mobileAuth, (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const userSection = (() => {
+      try {
+        const u = db.prepare("SELECT section, indoorSection, staff, admin FROM users WHERE id = ?").get(req.user.userid);
+        return { section: u?.section || null, indoorSection: u?.indoorSection || null, isStaff: !!(u?.staff || u?.admin) };
+      } catch (_) { return { section: null, indoorSection: null, isStaff: false }; }
+    })();
+
+    const schedules = db.prepare(`
+      SELECT id, title, date, location, call_time, dismissal_time, notes, scope
+      FROM schedules
+      WHERE date >= ?
+      ORDER BY date ASC, call_time ASC
+      LIMIT 30
+    `).all(today);
+
+    const result = schedules.map(s => {
+      const allBlocks = db.prepare(`
+        SELECT id, title, start_time, end_time, location, section, block_type, notes, sort_order
+        FROM schedule_blocks
+        WHERE schedule_id = ?
+        ORDER BY sort_order ASC, start_time ASC
+      `).all(s.id);
+
+      // Filter blocks by section unless staff/admin
+      const blocks = userStaffAdmin => allBlocks.filter(b => {
+        if (userStaffAdmin) return true;
+        return b.section === 'all' || b.section === userSection.section || b.section === userSection.indoorSection;
+      });
+
+      return { ...s, blocks: blocks(userSection.isStaff) };
+    });
+
+    return res.json({ ok: true, schedules: result });
+  } catch (e) {
+    console.error('[Mobile API] schedules error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// GET /api/mobile/schedules/:id  – single schedule detail (all blocks for staff)
+app.get("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
+  try {
+    const scheduleId = Number(req.params.id);
+    const schedule = db.prepare("SELECT * FROM schedules WHERE id = ?").get(scheduleId);
+    if (!schedule) return res.status(404).json({ ok: false, message: "Schedule not found" });
+
+    const isStaffAdmin = !!(req.admin || req.staff);
+    const allBlocks = db.prepare(`
+      SELECT id, title, start_time, end_time, location, section, block_type, notes, sort_order
+      FROM schedule_blocks WHERE schedule_id = ? ORDER BY sort_order ASC, start_time ASC
+    `).all(scheduleId);
+
+    let blocks = allBlocks;
+    if (!isStaffAdmin) {
+      // For regular members, only show blocks for their section + 'all' blocks
+      const u = db.prepare("SELECT section, indoorSection FROM users WHERE id = ?").get(req.user.userid);
+      const memberSection = u?.section || null;
+      const memberIndoor = u?.indoorSection || null;
+      blocks = allBlocks.filter(b => b.section === 'all' || b.section === memberSection || b.section === memberIndoor);
+    }
+
+    // Staff notes only for staff/admin
+    const { staff_notes, ...publicSchedule } = schedule;
+    const payload = isStaffAdmin ? schedule : publicSchedule;
+
+    return res.json({ ok: true, schedule: payload, blocks });
+  } catch (e) {
+    console.error('[Mobile API] schedule detail error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// POST /api/mobile/schedules  – create a schedule (staff/admin only)
+app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
+  try {
+    if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff or admin only" });
+    const { title, date, location, call_time, dismissal_time, notes, staff_notes, scope, blocks } = req.body;
+    if (!title || !date) return res.status(400).json({ ok: false, message: "title and date are required" });
+
+    const now = Date.now();
+    const info = db.prepare(`
+      INSERT INTO schedules (title, date, location, call_time, dismissal_time, notes, staff_notes, scope, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(title, date, location || null, call_time || null, dismissal_time || null, notes || null, staff_notes || null, scope || 'all', req.user.userid, now, now);
+
+    const scheduleId = info.lastInsertRowid;
+
+    if (Array.isArray(blocks)) {
+      const insertBlock = db.prepare(`
+        INSERT INTO schedule_blocks (schedule_id, title, start_time, end_time, location, section, block_type, notes, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      blocks.forEach((b, i) => {
+        insertBlock.run(scheduleId, b.title || 'Block', b.start_time || '08:00', b.end_time || null, b.location || null, b.section || 'all', b.block_type || 'rehearsal', b.notes || null, b.sort_order ?? i);
+      });
+    }
+
+    return res.json({ ok: true, scheduleId });
+  } catch (e) {
+    console.error('[Mobile API] create schedule error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });
 

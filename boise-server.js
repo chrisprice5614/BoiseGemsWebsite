@@ -9369,9 +9369,22 @@ app.get("/api/mobile/forms", mobileAuth, (req, res) => {
 // GET /api/mobile/staff
 app.get("/api/mobile/staff", (req, res) => {
   try {
-    const staff = db.prepare("SELECT id, firstname, lastname, slug, title, category, bio, img, sort_order FROM staff ORDER BY sort_order ASC, lastname COLLATE NOCASE").all();
+    const staff = db.prepare(
+      "SELECT id, first, last, slug, position, category, bio, image, sort_order FROM staff ORDER BY sort_order ASC, last COLLATE NOCASE"
+    ).all().map(s => ({
+      id:        s.id,
+      firstname: s.first  || "",
+      lastname:  s.last   || "",
+      slug:      s.slug   || null,
+      role:      s.position || null,
+      section:   s.category || null,
+      bio:       s.bio    || null,
+      img:       s.image  ? `/img/publicupload/${s.image}` : null,
+      sort_order: s.sort_order,
+    }));
     return res.json({ ok: true, staff });
   } catch (e) {
+    console.error("[Mobile API] staff error:", e.message || e);
     return res.status(500).json({ ok: false, message: "Server error" });
   }
 });

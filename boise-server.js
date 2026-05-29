@@ -2706,6 +2706,10 @@ app.get('/contact', (req,res) => {
   return res.render('contact')
 })
 
+app.get("/privacy", (req, res) => {
+  return res.render("privacy");
+})
+
 app.get("/support/issue", mustBeLoggedInAny, (req, res) => {
   let role = "Member";
   if (req.admin) role = "Admin";
@@ -9417,61 +9421,157 @@ app.get("/api/mobile/files/folder/:id", mobileAuth, (req, res) => {
 });
 
 // GET /api/mobile/dashboard
+// Returns role-tailored data so each account type sees what matters most.
 app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
   try {
-    const userId = req.user.userid;
-    const now = new Date().toISOString().slice(0, 19);
+    const userId  = req.user.userid;
+    const today   = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const nowISO  = new Date().toISOString().slice(0, 19);
 
+    // ── Shared: upcoming events & latest news ─────────────────────────────
     const upcomingEvents = db.prepare(`
       SELECT id, title, slug, datetime, type, location
       FROM events WHERE datetime >= ? ORDER BY datetime ASC LIMIT 5
-    `).all(now);
+    `).all(nowISO);
 
     const latestNews = db.prepare(`
       SELECT id, title, slug, hero, created_at FROM news ORDER BY created_at DESC LIMIT 3
     `).all();
 
-    let memberData = null;
-    let parentData = null;
-    let adminData = null;
+    // ── Shared helper: next schedule ──────────────────────────────────────
+    function getNextSchedule(includeStaffNotes) {
+      try {
+        const s = db.prepare(`
+          SELECT id, title, date, location, call_time, dismissal_time, notes
+          ${includeStaffNotes ? ', staff_notes' : ''}
+          FROM schedules WHERE date >= ? ORDER BY date ASC, call_time ASC LIMIT 1
+        `).get(today);
+        if (!s) return null;
+        const blocks = db.prepare(`
+          SELECT id, title, start_time, end_time, location, section, block_type, notes, sort_order
+          FROM schedule_blocks WHERE schedule_id = ? ORDER BY sort_order ASC, start_time ASC
+        `).all(s.id);
+        return { ...s, blocks };
+      } catch(_) { return null; }
+    }
 
-    if (!req.parent && !req.fan) {
+    // ── Member data ───────────────────────────────────────────────────────
+    let memberData = null;
+    if (!req.parent && !req.fan && !req.staff && !req.admin && !req.director) {
       const user = db.prepare("SELECT paid, owed, section, instrument, contractedCorps, contractedIndependent, contractedAffiliate FROM users WHERE id = ?").get(userId);
-      let missingCount = 0;
+      let missingFormsCount = 0;
       try {
         const requiredForms = getRequiredFormsForUser(userId);
         const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(userId);
-        missingCount = markUploadsAndCount(requiredForms, uploadedForms); // returns count directly
+        missingFormsCount = markUploadsAndCount(requiredForms, uploadedForms);
       } catch(_) {}
+      const nextSchedule = getNextSchedule(false);
       memberData = {
-        paid: (Number(user?.paid) || 0) / 100,   // cents → dollars
-        owed: (Number(user?.owed) || 0) / 100,   // cents → dollars
-        section: user?.section || null,
-        instrument: user?.instrument || null,
-        contractedCorps: user?.contractedCorps ? 1 : 0,
-        contractedIndependent: user?.contractedIndependent ? 1 : 0,
-        contractedAffiliate: user?.contractedAffiliate ? 1 : 0,
-        missingFormsCount: missingCount,
+        paid:                 (Number(user?.paid) || 0) / 100,
+        owed:                 (Number(user?.owed) || 0) / 100,
+        section:              user?.section || null,
+        instrument:           user?.instrument || null,
+        contractedCorps:      user?.contractedCorps ? 1 : 0,
+        contractedIndependent:user?.contractedIndependent ? 1 : 0,
+        contractedAffiliate:  user?.contractedAffiliate ? 1 : 0,
+        missingFormsCount,
+        nextSchedule,
       };
     }
 
+    // ── Parent data ───────────────────────────────────────────────────────
+    let parentData = null;
     if (req.parent) {
       const children = db.prepare(`
         SELECT id, firstname, lastname, section, instrument, paid, owed, img,
                contractedCorps, contractedIndependent, contractedAffiliate
         FROM users WHERE parentId = ?
       `).all(userId).map(serializeUser);
-      parentData = { children };
+
+      // Count missing forms across all children
+      let totalMissingForms = 0;
+      for (const child of children) {
+        try {
+          const requiredForms = getRequiredFormsForUser(child.id);
+          const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(child.id);
+          totalMissingForms += markUploadsAndCount(requiredForms, uploadedForms);
+        } catch(_) {}
+      }
+
+      const nextSchedule = getNextSchedule(false);
+      parentData = { children, totalMissingForms, nextSchedule };
     }
 
-    if (req.admin) {
-      const totalMembers = db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get().c;
+    // ── Staff data ────────────────────────────────────────────────────────
+    let staffData = null;
+    if (req.staff && !req.admin && !req.director) {
+      const nextSchedule = getNextSchedule(true); // staff sees staff_notes
+
+      // Count of active members for roster awareness
+      let memberCount = 0;
+      try { memberCount = Number(db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0) AND (staff IS NULL OR staff=0)").get().c); } catch(_) {}
+
+      staffData = { nextSchedule, memberCount };
+    }
+
+    // ── Director data ─────────────────────────────────────────────────────
+    let directorData = null;
+    if (req.director) {
+      const nextSchedule = getNextSchedule(true);
+
+      let memberCount = 0, contractedCorps = 0, contractedIndependent = 0;
+      try {
+        const r = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN contractedCorps=1 THEN 1 ELSE 0 END) as corps, SUM(CASE WHEN contractedIndependent=1 THEN 1 ELSE 0 END) as indep FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get();
+        memberCount = Number(r.total); contractedCorps = Number(r.corps); contractedIndependent = Number(r.indep);
+      } catch(_) {}
+
       let pendingContracts = 0;
-      try { pendingContracts = db.prepare("SELECT COUNT(*) as c FROM contractExtension").get().c; } catch(_) {}
-      adminData = { totalMembers: Number(totalMembers), pendingContracts: Number(pendingContracts) };
+      try { pendingContracts = Number(db.prepare("SELECT COUNT(*) as c FROM contractExtension").get().c); } catch(_) {}
+
+      let staffCount = 0;
+      try { staffCount = Number(db.prepare("SELECT COUNT(*) as c FROM staff").get().c); } catch(_) {}
+
+      directorData = { nextSchedule, memberCount, contractedCorps, contractedIndependent, pendingContracts, staffCount };
     }
 
-    return res.json({ ok: true, upcomingEvents, latestNews, memberData, parentData, adminData });
+    // ── Admin data ────────────────────────────────────────────────────────
+    let adminData = null;
+    if (req.admin) {
+      let memberCount = 0, contractedCorps = 0, contractedIndependent = 0;
+      try {
+        const r = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN contractedCorps=1 THEN 1 ELSE 0 END) as corps, SUM(CASE WHEN contractedIndependent=1 THEN 1 ELSE 0 END) as indep FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get();
+        memberCount = Number(r.total); contractedCorps = Number(r.corps); contractedIndependent = Number(r.indep);
+      } catch(_) {}
+
+      let pendingContracts = 0;
+      try { pendingContracts = Number(db.prepare("SELECT COUNT(*) as c FROM contractExtension").get().c); } catch(_) {}
+
+      // Members with outstanding balance
+      let outstandingCount = 0;
+      try { outstandingCount = Number(db.prepare("SELECT COUNT(*) as c FROM users WHERE owed > paid AND (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get().c); } catch(_) {}
+
+      // Total outstanding amount
+      let totalOutstanding = 0;
+      try {
+        const r = db.prepare("SELECT SUM(owed - paid) as total FROM users WHERE owed > paid AND (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0)").get();
+        totalOutstanding = (Number(r?.total) || 0) / 100;
+      } catch(_) {}
+
+      // Volunteer contact count
+      let volunteerCount = 0;
+      try { volunteerCount = Number(db.prepare("SELECT COUNT(*) as c FROM volunteer_contacts").get().c); } catch(_) {}
+
+      const nextSchedule = getNextSchedule(true);
+
+      // Recent activity: last 3 news + upcoming events already in upcomingEvents
+      adminData = {
+        memberCount, contractedCorps, contractedIndependent,
+        pendingContracts, outstandingCount, totalOutstanding,
+        volunteerCount, nextSchedule,
+      };
+    }
+
+    return res.json({ ok: true, upcomingEvents, latestNews, memberData, parentData, staffData, directorData, adminData });
   } catch (e) {
     console.error("mobile dashboard error", e);
     return res.status(500).json({ ok: false, message: "Server error loading dashboard" });

@@ -356,8 +356,13 @@ async function sendEmail(to, subject, html, attachments = []) {
           <!-- Footer -->
           <tr>
             <td align="center" style="font-size: 12px; color: #999999; padding-top: 32px;">
-              Â© 2025 Boise Gems Drum & Bugle Corps Â·
+              © 2026 Boise Gems Drum & Bugle Corps
               <a href="https://www.boisegems.org/" style="color: #999999; text-decoration: underline;">www.boisegems.org</a>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="font-size: 16px; line-height: 1.6; color: #333333; padding-top: 24px;">
+              Please do not respond to this email. Thank you.
             </td>
           </tr>
         </table>

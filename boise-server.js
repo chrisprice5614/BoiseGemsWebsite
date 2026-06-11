@@ -406,6 +406,37 @@ function slugify(text) {
     .replace(/^-+|-+$/g, '');    // Trim hyphens from start/end
 }
 
+function buildUserNameSearchClause(search) {
+  const trimmed = String(search || "").trim();
+  if (!trimmed) return null;
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  const fullLike = `%${trimmed}%`;
+  const clauses = [
+    "firstname LIKE ?",
+    "lastname LIKE ?",
+    "(firstname || ' ' || lastname) LIKE ?",
+    "(lastname || ' ' || firstname) LIKE ?",
+  ];
+  const params = [fullLike, fullLike, fullLike, fullLike];
+
+  if (tokens.length > 1) {
+    const tokenClauses = tokens.map(
+      () => "(firstname LIKE ? OR lastname LIKE ?)"
+    );
+    clauses.push(`(${tokenClauses.join(" AND ")})`);
+    tokens.forEach((token) => {
+      const like = `%${token}%`;
+      params.push(like, like);
+    });
+  }
+
+  return {
+    clause: `(${clauses.join(" OR ")})`,
+    params,
+  };
+}
+
 
 
 db.pragma("journal_mode = WAL") //Makes it faster
@@ -4049,8 +4080,11 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
   }
 
   if (search) {
-    where.push("(firstname LIKE ? OR lastname LIKE ?)");
-    params.push(`%${search}%`, `%${search}%`);
+    const nameSearch = buildUserNameSearchClause(search);
+    if (nameSearch) {
+      where.push(nameSearch.clause);
+      params.push(...nameSearch.params);
+    }
   }
 
   if (membership === "corps") {
@@ -4155,8 +4189,11 @@ app.get("/staff/members", mustBeStaffOrAdmin, (req, res) => {
   }
 
   if (search) {
-    where.push("(firstname LIKE ? OR lastname LIKE ?)");
-    params.push(`%${search}%`, `%${search}%`);
+    const nameSearch = buildUserNameSearchClause(search);
+    if (nameSearch) {
+      where.push(nameSearch.clause);
+      params.push(...nameSearch.params);
+    }
   }
 
   if (membership === "corps") {
@@ -4972,15 +5009,16 @@ app.post("/instruments/:id/checkin/:instId", mustBeAdmin, (req, res) => {
 app.get("/admin/users/search", mustBeAdmin, (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q || q.length < 2) return res.json([]);
-  const like = `%${q}%`;
+  const nameSearch = buildUserNameSearchClause(q);
+  if (!nameSearch) return res.json([]);
   const users = db.prepare(`
     SELECT id, firstname, lastname, section
     FROM users
-    WHERE (firstname LIKE ? OR lastname LIKE ?)
+    WHERE ${nameSearch.clause}
       AND (parent IS NULL OR parent = 0)
     ORDER BY lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
     LIMIT 15
-  `).all(like, like);
+  `).all(...nameSearch.params);
   return res.json(users);
 });
 

@@ -1449,6 +1449,42 @@ migrateFormsTable(db);
 
 // ── Schedules tables (NEW — not altering any existing table) ─────────────────
 // ⚠️  DO NOT modify existing tables here.  Add only new tables for new features.
+function migrateScheduleSubsections(db) {
+  try {
+    db.prepare('SELECT subsection_id FROM schedule_lanes LIMIT 1').get();
+  } catch (_) {
+    db.prepare(`
+      ALTER TABLE schedule_lanes
+      ADD COLUMN subsection_id INTEGER REFERENCES schedule_subsections(id) ON DELETE CASCADE
+    `).run();
+  }
+
+  const orphanLanes = db.prepare(`
+    SELECT id, section_id FROM schedule_lanes WHERE subsection_id IS NULL
+  `).all();
+  if (!orphanLanes.length) return;
+
+  const bySection = {};
+  for (const lane of orphanLanes) {
+    if (!bySection[lane.section_id]) bySection[lane.section_id] = [];
+    bySection[lane.section_id].push(lane.id);
+  }
+
+  for (const [sectionId, laneIds] of Object.entries(bySection)) {
+    const sec = db.prepare(`
+      SELECT start_time, duration_minutes FROM schedule_sections WHERE id = ?
+    `).get(sectionId);
+    if (!sec) continue;
+    const subInfo = db.prepare(`
+      INSERT INTO schedule_subsections (section_id, title, start_time, duration_minutes, sort_order)
+      VALUES (?, '', ?, ?, 0)
+    `).run(sectionId, sec.start_time || '08:00', Number(sec.duration_minutes) || 60);
+    const subId = subInfo.lastInsertRowid;
+    const upd = db.prepare('UPDATE schedule_lanes SET subsection_id = ? WHERE id = ?');
+    for (const laneId of laneIds) upd.run(subId, laneId);
+  }
+}
+
 function initSchedulesTables(db) {
   // Daily rehearsal / activity schedule
   db.prepare(`
@@ -1508,6 +1544,19 @@ function initSchedulesTables(db) {
       sort_order INTEGER NOT NULL DEFAULT 0
     )
   `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS schedule_subsections (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      section_id       INTEGER NOT NULL REFERENCES schedule_sections(id) ON DELETE CASCADE,
+      title            TEXT    NOT NULL DEFAULT '',
+      start_time       TEXT    NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 30,
+      sort_order       INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
+
+  migrateScheduleSubsections(db);
 
   db.prepare(`
     CREATE TABLE IF NOT EXISTS schedule_content_items (
@@ -9984,21 +10033,62 @@ function loadScheduleSectionsRaw(scheduleId) {
 
   if (sections.length > 0) {
     return sections.map(sec => {
-      const lanes = db.prepare(`
-        SELECT id, section_id, captions, sort_order
-        FROM schedule_lanes WHERE section_id = ?
+      const subsections = db.prepare(`
+        SELECT id, section_id, title, start_time, duration_minutes, sort_order
+        FROM schedule_subsections WHERE section_id = ?
+        ORDER BY sort_order ASC, start_time ASC
+      `).all(sec.id);
+
+      const loadLanes = (subsectionId) => db.prepare(`
+        SELECT id, section_id, subsection_id, captions, sort_order
+        FROM schedule_lanes WHERE subsection_id = ?
         ORDER BY sort_order ASC
-      `).all(sec.id).map(lane => {
+      `).all(subsectionId).map(lane => {
         const captions = parseScheduleCaptions(lane.captions);
         const items = db.prepare(`
           SELECT id, lane_id, start_time, description, location_type,
                  location_address, location_lat, location_lng, location_name, location_image, sort_order
           FROM schedule_content_items WHERE lane_id = ?
-          ORDER BY sort_order ASC, start_time ASC
+          ORDER BY start_time ASC, sort_order ASC
         `).all(lane.id);
         return { ...lane, captions, items };
       });
-      return { ...sec, lanes };
+
+      let subs = subsections.map(sub => ({
+        ...sub,
+        lanes: loadLanes(sub.id),
+      }));
+
+      // Legacy rows: lanes still tied only to section_id (pre-migration)
+      if (subs.length === 0) {
+        const legacyLanes = db.prepare(`
+          SELECT id, section_id, captions, sort_order
+          FROM schedule_lanes WHERE section_id = ? AND (subsection_id IS NULL OR subsection_id = 0)
+          ORDER BY sort_order ASC
+        `).all(sec.id).map(lane => {
+          const captions = parseScheduleCaptions(lane.captions);
+          const items = db.prepare(`
+            SELECT id, lane_id, start_time, description, location_type,
+                   location_address, location_lat, location_lng, location_name, location_image, sort_order
+            FROM schedule_content_items WHERE lane_id = ?
+            ORDER BY start_time ASC, sort_order ASC
+          `).all(lane.id);
+          return { ...lane, captions, items };
+        });
+        if (legacyLanes.length > 0) {
+          subs = [{
+            id: 0,
+            section_id: sec.id,
+            title: '',
+            start_time: sec.start_time,
+            duration_minutes: sec.duration_minutes,
+            sort_order: 0,
+            lanes: legacyLanes,
+          }];
+        }
+      }
+
+      return { ...sec, subsections: subs };
     });
   }
 
@@ -10026,23 +10116,31 @@ function loadScheduleSectionsRaw(scheduleId) {
       start_time: b.start_time || '08:00',
       duration_minutes: duration,
       sort_order: b.sort_order ?? i,
-      lanes: [{
-        id: b.id,
+      subsections: [{
+        id: 0,
         section_id: b.id,
-        captions,
+        title: '',
+        start_time: b.start_time || '08:00',
+        duration_minutes: duration,
         sort_order: 0,
-        items: [{
+        lanes: [{
           id: b.id,
-          lane_id: b.id,
-          start_time: b.start_time || '08:00',
-          description: b.notes || b.title || '',
-          location_type: b.location ? 'name' : null,
-          location_address: null,
-          location_lat: null,
-          location_lng: null,
-          location_name: b.location || null,
-          location_image: null,
+          section_id: b.id,
+          captions,
           sort_order: 0,
+          items: [{
+            id: b.id,
+            lane_id: b.id,
+            start_time: b.start_time || '08:00',
+            description: b.notes || b.title || '',
+            location_type: b.location ? 'name' : null,
+            location_address: null,
+            location_lat: null,
+            location_lng: null,
+            location_name: b.location || null,
+            location_image: null,
+            sort_order: 0,
+          }],
         }],
       }],
       legacy: true,
@@ -10054,8 +10152,11 @@ function filterScheduleSectionsForUser(sections, userCaption, isStaffAdmin) {
   if (isStaffAdmin) return sections;
   return sections.map(sec => ({
     ...sec,
-    lanes: (sec.lanes || []).filter(l => laneVisibleToUser(l.captions, userCaption)),
-  })).filter(sec => (sec.lanes || []).length > 0);
+    subsections: (sec.subsections || []).map(sub => ({
+      ...sub,
+      lanes: (sub.lanes || []).filter(l => laneVisibleToUser(l.captions, userCaption)),
+    })).filter(sub => (sub.lanes || []).length > 0),
+  })).filter(sec => (sec.subsections || []).length > 0);
 }
 
 function timeToMinutes(hhmm) {
@@ -10092,9 +10193,13 @@ function saveScheduleSections(scheduleId, sections) {
     INSERT INTO schedule_sections (schedule_id, title, color, start_time, duration_minutes, sort_order)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
+  const insertSubsection = db.prepare(`
+    INSERT INTO schedule_subsections (section_id, title, start_time, duration_minutes, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `);
   const insertLane = db.prepare(`
-    INSERT INTO schedule_lanes (section_id, captions, sort_order)
-    VALUES (?, ?, ?)
+    INSERT INTO schedule_lanes (section_id, subsection_id, captions, sort_order)
+    VALUES (?, ?, ?, ?)
   `);
   const insertItem = db.prepare(`
     INSERT INTO schedule_content_items
@@ -10112,25 +10217,52 @@ function saveScheduleSections(scheduleId, sections) {
       sec.sort_order ?? si,
     );
     const sectionId = secInfo.lastInsertRowid;
-    (sec.lanes || []).forEach((lane, li) => {
-      const caps = Array.isArray(lane.captions) && lane.captions.length
-        ? lane.captions.filter(c => SCHEDULE_CAPTIONS.includes(String(c).toLowerCase()))
-        : SCHEDULE_CAPTIONS.slice();
-      const laneInfo = insertLane.run(sectionId, JSON.stringify(caps), lane.sort_order ?? li);
-      const laneId = laneInfo.lastInsertRowid;
-      (lane.items || []).forEach((item, ii) => {
-        insertItem.run(
-          laneId,
-          item.start_time || sec.start_time || '08:00',
-          item.description || '',
-          item.location_type || null,
-          item.location_address || null,
-          item.location_lat != null ? Number(item.location_lat) : null,
-          item.location_lng != null ? Number(item.location_lng) : null,
-          item.location_name || null,
-          item.location_image || null,
-          item.sort_order ?? ii,
-        );
+
+    let subsections = Array.isArray(sec.subsections) ? sec.subsections : [];
+    if (subsections.length === 0 && Array.isArray(sec.lanes) && sec.lanes.length > 0) {
+      subsections = [{
+        title: '',
+        start_time: sec.start_time || '08:00',
+        duration_minutes: Number(sec.duration_minutes) || 60,
+        lanes: sec.lanes,
+      }];
+    }
+
+    subsections.forEach((sub, subi) => {
+      const subInfo = insertSubsection.run(
+        sectionId,
+        sub.title || '',
+        sub.start_time || sec.start_time || '08:00',
+        Number(sub.duration_minutes) || 30,
+        sub.sort_order ?? subi,
+      );
+      const subsectionId = subInfo.lastInsertRowid;
+
+      (sub.lanes || []).forEach((lane, li) => {
+        const caps = Array.isArray(lane.captions) && lane.captions.length
+          ? lane.captions.filter(c => SCHEDULE_CAPTIONS.includes(String(c).toLowerCase()))
+          : SCHEDULE_CAPTIONS.slice();
+        const laneInfo = insertLane.run(sectionId, subsectionId, JSON.stringify(caps), lane.sort_order ?? li);
+        const laneId = laneInfo.lastInsertRowid;
+        const sortedItems = [...(lane.items || [])].sort((a, b) => {
+          const ta = timeToMinutes(a.start_time) ?? 0;
+          const tb = timeToMinutes(b.start_time) ?? 0;
+          return ta - tb;
+        });
+        sortedItems.forEach((item, ii) => {
+          insertItem.run(
+            laneId,
+            item.start_time || sub.start_time || sec.start_time || '08:00',
+            item.description || '',
+            item.location_type || null,
+            item.location_address || null,
+            item.location_lat != null ? Number(item.location_lat) : null,
+            item.location_lng != null ? Number(item.location_lng) : null,
+            item.location_name || null,
+            item.location_image || null,
+            item.sort_order ?? ii,
+          );
+        });
       });
     });
   });

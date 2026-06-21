@@ -291,29 +291,14 @@ async function processMessageImage(buffer) {
 }
 
 async function processMessageVideo(buffer, originalName) {
-  const { execFile } = require("child_process");
-  const { promisify } = require("util");
-  const execFileAsync = promisify(execFile);
-  const tmpIn = path.join(MESSAGE_UPLOAD_DIR, "tmp_" + generateCustomFilename() + path.extname(originalName || ".mp4"));
-  const outName = generateCustomFilename() + ".mp4";
+  const ext = path.extname(originalName || "").toLowerCase() || ".mp4";
+  const safeExt = [".mp4", ".mov", ".m4v", ".webm", ".3gp", ".avi", ".mkv"].includes(ext) ? ext : ".mp4";
+  const outName = generateCustomFilename() + safeExt;
   const outPath = path.join(MESSAGE_UPLOAD_DIR, outName);
-  fs.writeFileSync(tmpIn, buffer);
-  try {
-    await execFileAsync("ffmpeg", [
-      "-y", "-i", tmpIn,
-      "-vf", "scale='min(1280,iw)':-2",
-      "-c:v", "libx264", "-crf", "28", "-preset", "fast",
-      "-c:a", "aac", "-b:a", "128k",
-      "-movflags", "+faststart",
-      outPath,
-    ], { timeout: 120000 });
-  } catch (e) {
-    fs.copyFileSync(tmpIn, outPath);
-  } finally {
-    try { fs.unlinkSync(tmpIn); } catch (_) {}
-  }
+  fs.writeFileSync(outPath, buffer);
   const stat = fs.statSync(outPath);
-  return { filename: outName, mime: "video/mp4", size: stat.size, type: "video" };
+  const mime = safeExt === ".mov" ? "video/quicktime" : "video/mp4";
+  return { filename: outName, mime, size: stat.size, type: "video" };
 }
 
 async function processMessageFile(buffer, originalName, mime) {

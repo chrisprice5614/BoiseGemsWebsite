@@ -9501,6 +9501,23 @@ app.get("/api/mobile/me", mobileAuth, (req, res) => {
   }
 });
 
+// POST /api/mobile/profile-photo
+app.post("/api/mobile/profile-photo", mobileAuth, imageUpload.single("photo"), processImage, (req, res) => {
+  try {
+    if (!req.savedFilename) {
+      return res.status(400).json({ ok: false, message: "Image is required" });
+    }
+    const imgPath = `/img/publicupload/${req.savedFilename}`;
+    db.prepare("UPDATE users SET img = ? WHERE id = ?").run(imgPath, Number(req.user.userid));
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!user) return res.status(404).json({ ok: false, message: "User not found" });
+    return res.json({ ok: true, user: serializeUser(user) });
+  } catch (e) {
+    console.error("[Mobile API] profile-photo error:", e.message || e);
+    return res.status(500).json({ ok: false, message: "Failed to upload profile photo" });
+  }
+});
+
 // GET /api/mobile/events  – upcoming events (next 12 months)
 app.get("/api/mobile/events", mobileAuthOptional, (req, res) => {
   try {
@@ -10070,7 +10087,7 @@ function serializeConversation(conv, forUserId) {
   `).all(conv.id);
   const myMember = members.find(m => Number(m.id) === Number(forUserId));
   const lastMsg = db.prepare(`
-    SELECT m.*, u.firstname, u.lastname
+    SELECT m.*, u.firstname, u.lastname, u.img
     FROM messages m JOIN users u ON u.id = m.sender_id
     WHERE m.conversation_id = ?
     ORDER BY m.created_at DESC LIMIT 1
@@ -10134,6 +10151,7 @@ function serializeMessage(m, forUserId, preview) {
     conversationId: Number(m.conversation_id),
     senderId: Number(m.sender_id),
     senderName: `${m.firstname || ""} ${m.lastname || ""}`.trim(),
+    senderImg: m.img || null,
     body: m.body || "",
     attachmentType: m.attachment_type || null,
     attachmentPath: m.attachment_path ? `/api/mobile/messages/attachments/${m.id}` : null,
@@ -10375,14 +10393,14 @@ app.get("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, res
     let rows;
     if (before) {
       rows = db.prepare(`
-        SELECT m.*, u.firstname, u.lastname FROM messages m
+        SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
         JOIN users u ON u.id = m.sender_id
         WHERE m.conversation_id = ? AND m.created_at < ?
         ORDER BY m.created_at DESC LIMIT ?
       `).all(convId, before, limit);
     } else {
       rows = db.prepare(`
-        SELECT m.*, u.firstname, u.lastname FROM messages m
+        SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
         JOIN users u ON u.id = m.sender_id
         WHERE m.conversation_id = ?
         ORDER BY m.created_at DESC LIMIT ?
@@ -10437,7 +10455,7 @@ app.post("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, re
     db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
 
     const m = db.prepare(`
-      SELECT m.*, u.firstname, u.lastname FROM messages m
+      SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
       JOIN users u ON u.id = m.sender_id WHERE m.id = ?
     `).get(msgId);
 
@@ -10482,7 +10500,7 @@ app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileAuth, m
     db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
 
     const m = db.prepare(`
-      SELECT m.*, u.firstname, u.lastname FROM messages m
+      SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
       JOIN users u ON u.id = m.sender_id WHERE m.id = ?
     `).get(msgId);
 
@@ -10565,7 +10583,7 @@ app.get("/api/mobile/messages/conversations/:id/search", mobileAuth, (req, res) 
     if (!q) return res.json({ ok: true, messages: [] });
 
     const rows = db.prepare(`
-      SELECT m.*, u.firstname, u.lastname FROM messages m
+      SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
       JOIN users u ON u.id = m.sender_id
       WHERE m.conversation_id = ? AND (
         LOWER(m.body) LIKE ? OR LOWER(m.attachment_name) LIKE ?
@@ -10588,7 +10606,7 @@ app.get("/api/mobile/messages/conversations/:id/media", mobileAuth, (req, res) =
     if (!getConversationOr403(req, res, convId, uid)) return;
     const type = String(req.query.type || "all");
     let sql = `
-      SELECT m.*, u.firstname, u.lastname FROM messages m
+      SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
       JOIN users u ON u.id = m.sender_id
       WHERE m.conversation_id = ? AND m.attachment_type IS NOT NULL
     `;

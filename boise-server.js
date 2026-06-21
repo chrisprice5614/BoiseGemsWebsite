@@ -10212,6 +10212,54 @@ app.get("/api/mobile/schedules", mobileAuth, (req, res) => {
   }
 });
 
+// POST /api/mobile/schedules/location-image  (before :id routes)
+app.post("/api/mobile/schedules/location-image", mobileAuth, (req, res, next) => {
+  imageUpload.single("image")(req, res, (err) => {
+    if (err) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "Image is too large (max 25 MB)." : (err.message || "Upload failed");
+      return res.status(400).json({ ok: false, message: msg });
+    }
+    next();
+  });
+}, processImageJpg, (req, res) => {
+  try {
+    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+    if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Image is required" });
+    return res.json({ ok: true, url: `/img/publicupload/${req.savedFilename}` });
+  } catch (e) {
+    console.error('[Mobile API] schedule location image error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Failed to upload image" });
+  }
+});
+
+function handleScheduleUpdate(req, res, scheduleId) {
+  if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+  const existing = db.prepare("SELECT id FROM schedules WHERE id = ?").get(scheduleId);
+  if (!existing) return res.status(404).json({ ok: false, message: "Schedule not found" });
+
+  const { title, date, location, notes, staff_notes, scope, sections } = req.body;
+  if (!date) return res.status(400).json({ ok: false, message: "date is required" });
+
+  const times = deriveScheduleTimes(sections || []);
+  const now = Date.now();
+  db.prepare(`
+    UPDATE schedules SET title = ?, date = ?, location = ?, call_time = ?, dismissal_time = ?,
+      notes = ?, staff_notes = ?, scope = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    title || date, date, location || null,
+    times.call_time, times.dismissal_time,
+    notes || null, staff_notes || null, scope || 'all',
+    now, scheduleId,
+  );
+
+  if (Array.isArray(sections)) {
+    saveScheduleSections(scheduleId, sections);
+  }
+
+  return res.json({ ok: true, scheduleId });
+}
+
 // GET /api/mobile/schedules/:id  – single schedule detail (all blocks for staff)
 app.get("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
   try {
@@ -10275,32 +10323,19 @@ app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
 // PUT /api/mobile/schedules/:id
 app.put("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
   try {
-    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
-    const scheduleId = Number(req.params.id);
-    const existing = db.prepare("SELECT id FROM schedules WHERE id = ?").get(scheduleId);
-    if (!existing) return res.status(404).json({ ok: false, message: "Schedule not found" });
+    return handleScheduleUpdate(req, res, Number(req.params.id));
+  } catch (e) {
+    console.error('[Mobile API] update schedule error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
 
-    const { title, date, location, notes, staff_notes, scope, sections } = req.body;
-    if (!date) return res.status(400).json({ ok: false, message: "date is required" });
-
-    const times = deriveScheduleTimes(sections || []);
-    const now = Date.now();
-    db.prepare(`
-      UPDATE schedules SET title = ?, date = ?, location = ?, call_time = ?, dismissal_time = ?,
-        notes = ?, staff_notes = ?, scope = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      title || date, date, location || null,
-      times.call_time, times.dismissal_time,
-      notes || null, staff_notes || null, scope || 'all',
-      now, scheduleId,
-    );
-
-    if (Array.isArray(sections)) {
-      saveScheduleSections(scheduleId, sections);
-    }
-
-    return res.json({ ok: true, scheduleId });
+// POST /api/mobile/schedules/update  – same as PUT (works when PUT is blocked by proxy)
+app.post("/api/mobile/schedules/update", mobileAuth, (req, res) => {
+  try {
+    const scheduleId = Number(req.body.id);
+    if (!scheduleId) return res.status(400).json({ ok: false, message: "id is required" });
+    return handleScheduleUpdate(req, res, scheduleId);
   } catch (e) {
     console.error('[Mobile API] update schedule error:', e.message || e);
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
@@ -10319,26 +10354,6 @@ app.delete("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
   } catch (e) {
     console.error('[Mobile API] delete schedule error:', e.message || e);
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
-});
-
-// POST /api/mobile/schedules/location-image
-app.post("/api/mobile/schedules/location-image", mobileAuth, (req, res, next) => {
-  imageUpload.single("image")(req, res, (err) => {
-    if (err) {
-      const msg = err.code === "LIMIT_FILE_SIZE" ? "Image is too large (max 25 MB)." : (err.message || "Upload failed");
-      return res.status(400).json({ ok: false, message: msg });
-    }
-    next();
-  });
-}, processImageJpg, (req, res) => {
-  try {
-    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
-    if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Image is required" });
-    return res.json({ ok: true, url: `/img/publicupload/${req.savedFilename}` });
-  } catch (e) {
-    console.error('[Mobile API] schedule location image error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Failed to upload image" });
   }
 });
 

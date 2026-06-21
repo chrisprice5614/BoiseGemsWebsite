@@ -270,6 +270,97 @@ const processImageJpgOptional = async (req, res, next) => {
   }
 };
 
+const messageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
+
+const MESSAGE_UPLOAD_DIR = path.join(__dirname, "private", "uploads", "messages");
+fs.mkdirSync(MESSAGE_UPLOAD_DIR, { recursive: true });
+
+async function processMessageImage(buffer) {
+  const name = generateCustomFilename() + ".jpg";
+  const outPath = path.join(MESSAGE_UPLOAD_DIR, name);
+  await sharp(buffer)
+    .rotate()
+    .resize({ width: 1280, height: 1280, fit: "inside" })
+    .jpeg({ quality: 75, mozjpeg: true })
+    .toFile(outPath);
+  const stat = fs.statSync(outPath);
+  return { filename: name, mime: "image/jpeg", size: stat.size, type: "image" };
+}
+
+async function processMessageVideo(buffer, originalName) {
+  const { execFile } = require("child_process");
+  const { promisify } = require("util");
+  const execFileAsync = promisify(execFile);
+  const tmpIn = path.join(MESSAGE_UPLOAD_DIR, "tmp_" + generateCustomFilename() + path.extname(originalName || ".mp4"));
+  const outName = generateCustomFilename() + ".mp4";
+  const outPath = path.join(MESSAGE_UPLOAD_DIR, outName);
+  fs.writeFileSync(tmpIn, buffer);
+  try {
+    await execFileAsync("ffmpeg", [
+      "-y", "-i", tmpIn,
+      "-vf", "scale='min(1280,iw)':-2",
+      "-c:v", "libx264", "-crf", "28", "-preset", "fast",
+      "-c:a", "aac", "-b:a", "128k",
+      "-movflags", "+faststart",
+      outPath,
+    ], { timeout: 120000 });
+  } catch (e) {
+    fs.copyFileSync(tmpIn, outPath);
+  } finally {
+    try { fs.unlinkSync(tmpIn); } catch (_) {}
+  }
+  const stat = fs.statSync(outPath);
+  return { filename: outName, mime: "video/mp4", size: stat.size, type: "video" };
+}
+
+async function processMessageFile(buffer, originalName, mime) {
+  const ext = path.extname(originalName || "") || "";
+  const name = generateCustomFilename() + ext;
+  const outPath = path.join(MESSAGE_UPLOAD_DIR, name);
+  fs.writeFileSync(outPath, buffer);
+  const stat = fs.statSync(outPath);
+  const isPdf = (mime === "application/pdf") || ext.toLowerCase() === ".pdf";
+  return { filename: name, mime: mime || "application/octet-stream", size: stat.size, type: "file", isPdf };
+}
+
+let firebaseAdmin = null;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    const sa = JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, "utf8"));
+    firebaseAdmin = require("firebase-admin");
+    if (!firebaseAdmin.apps.length) {
+      firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(sa) });
+    }
+  }
+} catch (e) {
+  console.warn("[Messaging] Firebase not configured:", e.message);
+}
+
+async function sendPushToUser(userId, title, body, data = {}) {
+  if (!firebaseAdmin) return;
+  const tokens = db.prepare("SELECT token FROM device_tokens WHERE user_id = ?").all(Number(userId));
+  if (!tokens.length) return;
+  const messaging = firebaseAdmin.messaging();
+  for (const row of tokens) {
+    try {
+      await messaging.send({
+        token: row.token,
+        notification: { title, body },
+        data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
+        android: { priority: "high" },
+        apns: { payload: { aps: { sound: "default" } } },
+      });
+    } catch (e) {
+      if (e.code === "messaging/registration-token-not-registered") {
+        db.prepare("DELETE FROM device_tokens WHERE token = ?").run(row.token);
+      }
+    }
+  }
+}
+
 
 //mailing function
 async function sendEmail(to, subject, html, attachments = []) {
@@ -1390,6 +1481,74 @@ function initSchedulesTables(db) {
   `).run();
 }
 initSchedulesTables(db);
+
+// ── Messaging tables (NEW — not altering any existing table) ─────────────────
+function initMessagingTables(db) {
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      type        TEXT    NOT NULL DEFAULT 'direct',
+      title       TEXT,
+      pinned      INTEGER NOT NULL DEFAULT 0,
+      created_by  INTEGER,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS conversation_members (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id  INTEGER NOT NULL,
+      user_id          INTEGER NOT NULL,
+      muted            INTEGER NOT NULL DEFAULT 0,
+      joined_at        INTEGER NOT NULL,
+      UNIQUE(conversation_id, user_id)
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_conv_members_user ON conversation_members(user_id)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_conv_members_conv ON conversation_members(conversation_id)`).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id  INTEGER NOT NULL,
+      sender_id        INTEGER NOT NULL,
+      body             TEXT,
+      attachment_type  TEXT,
+      attachment_path  TEXT,
+      attachment_name  TEXT,
+      attachment_mime  TEXT,
+      attachment_size  INTEGER,
+      created_at       INTEGER NOT NULL
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at DESC)`).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS message_status (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id    INTEGER NOT NULL,
+      user_id       INTEGER NOT NULL,
+      delivered_at  INTEGER,
+      read_at       INTEGER,
+      UNIQUE(message_id, user_id)
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_msg_status_user ON message_status(user_id)`).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS device_tokens (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      token       TEXT    NOT NULL,
+      platform    TEXT,
+      updated_at  INTEGER NOT NULL,
+      UNIQUE(user_id, token)
+    )
+  `).run();
+}
+initMessagingTables(db);
 // ─────────────────────────────────────────────────────────────────────────────
 
 const app = express()
@@ -9821,6 +9980,632 @@ app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
   } catch (e) {
     console.error('[Mobile API] create schedule error:', e.message || e);
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// ─── Messaging helpers ───────────────────────────────────────────────────────
+
+function messagingEffectiveUserId(req) {
+  const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
+  if (viewAs && req.director && !req.body?._sendAttempt) {
+    return viewAs;
+  }
+  return Number(req.user.userid);
+}
+
+function isConversationMember(conversationId, userId) {
+  return !!db.prepare(
+    "SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+  ).get(conversationId, userId);
+}
+
+function getConversationOr403(req, res, conversationId, viewAsUserId) {
+  const uid = viewAsUserId ?? messagingEffectiveUserId(req);
+  if (!isConversationMember(conversationId, uid)) {
+    res.status(403).json({ ok: false, message: "Not a member of this conversation" });
+    return null;
+  }
+  return uid;
+}
+
+function findDirectConversation(userA, userB) {
+  return db.prepare(`
+    SELECT c.* FROM conversations c
+    WHERE c.type = 'direct'
+      AND (SELECT COUNT(*) FROM conversation_members cm WHERE cm.conversation_id = c.id) = 2
+      AND EXISTS (SELECT 1 FROM conversation_members WHERE conversation_id = c.id AND user_id = ?)
+      AND EXISTS (SELECT 1 FROM conversation_members WHERE conversation_id = c.id AND user_id = ?)
+  `).get(userA, userB);
+}
+
+function serializeMessageUser(u) {
+  if (!u) return null;
+  return {
+    id: Number(u.id),
+    firstname: u.firstname || "",
+    lastname: u.lastname || "",
+    img: u.img || null,
+  };
+}
+
+function getConversationTitle(conv, forUserId) {
+  if (conv.type === "group" && conv.title) return conv.title;
+  const members = db.prepare(`
+    SELECT u.* FROM conversation_members cm
+    JOIN users u ON u.id = cm.user_id
+    WHERE cm.conversation_id = ? AND cm.user_id != ?
+  `).all(conv.id, forUserId);
+  if (conv.type === "direct" && members.length === 1) {
+    return `${members[0].firstname || ""} ${members[0].lastname || ""}`.trim();
+  }
+  if (members.length <= 3) {
+    return members.map(m => `${m.firstname || ""} ${m.lastname || ""}`.trim()).join(", ");
+  }
+  return `${members.slice(0, 2).map(m => m.firstname).join(", ")} +${members.length - 2}`;
+}
+
+function serializeConversation(conv, forUserId) {
+  const members = db.prepare(`
+    SELECT u.id, u.firstname, u.lastname, u.img, cm.muted
+    FROM conversation_members cm
+    JOIN users u ON u.id = cm.user_id
+    WHERE cm.conversation_id = ?
+  `).all(conv.id);
+  const myMember = members.find(m => Number(m.id) === Number(forUserId));
+  const lastMsg = db.prepare(`
+    SELECT m.*, u.firstname, u.lastname
+    FROM messages m JOIN users u ON u.id = m.sender_id
+    WHERE m.conversation_id = ?
+    ORDER BY m.created_at DESC LIMIT 1
+  `).get(conv.id);
+  const unread = db.prepare(`
+    SELECT COUNT(*) AS c FROM messages m
+    WHERE m.conversation_id = ? AND m.sender_id != ?
+      AND NOT EXISTS (
+        SELECT 1 FROM message_status ms
+        WHERE ms.message_id = m.id AND ms.user_id = ? AND ms.read_at IS NOT NULL
+      )
+  `).get(conv.id, forUserId, forUserId);
+
+  return {
+    id: Number(conv.id),
+    type: conv.type,
+    title: getConversationTitle(conv, forUserId),
+    pinned: conv.pinned ? 1 : 0,
+    muted: myMember?.muted ? 1 : 0,
+    memberCount: members.length,
+    members: members.map(m => ({
+      id: Number(m.id),
+      firstname: m.firstname || "",
+      lastname: m.lastname || "",
+      img: m.img || null,
+      muted: m.muted ? 1 : 0,
+    })),
+    lastMessage: lastMsg ? serializeMessage(lastMsg, forUserId, true) : null,
+    unreadCount: unread?.c || 0,
+    updatedAt: Number(conv.updated_at),
+  };
+}
+
+function getMessageStatuses(messageId, senderId) {
+  const rows = db.prepare(`
+    SELECT user_id, delivered_at, read_at FROM message_status
+    WHERE message_id = ? AND user_id != ?
+  `).all(messageId, senderId);
+  const total = rows.length;
+  const delivered = rows.filter(r => r.delivered_at).length;
+  const read = rows.filter(r => r.read_at).length;
+  return {
+    sent: true,
+    delivered: total === 0 || delivered >= total,
+    read: total === 0 || read >= total,
+    deliveredCount: delivered,
+    readCount: read,
+    recipientCount: total,
+  };
+}
+
+function serializeMessage(m, forUserId, preview) {
+  const isSender = Number(m.sender_id) === Number(forUserId);
+  const status = isSender ? getMessageStatuses(m.id, m.sender_id) : null;
+  const myStatus = !isSender ? db.prepare(
+    "SELECT delivered_at, read_at FROM message_status WHERE message_id = ? AND user_id = ?"
+  ).get(m.id, forUserId) : null;
+
+  const item = {
+    id: Number(m.id),
+    conversationId: Number(m.conversation_id),
+    senderId: Number(m.sender_id),
+    senderName: `${m.firstname || ""} ${m.lastname || ""}`.trim(),
+    body: m.body || "",
+    attachmentType: m.attachment_type || null,
+    attachmentPath: m.attachment_path ? `/api/mobile/messages/attachments/${m.id}` : null,
+    attachmentName: m.attachment_name || null,
+    attachmentMime: m.attachment_mime || null,
+    attachmentSize: m.attachment_size != null ? Number(m.attachment_size) : null,
+    createdAt: Number(m.created_at),
+    status,
+    myDeliveredAt: myStatus?.delivered_at || null,
+    myReadAt: myStatus?.read_at || null,
+  };
+  if (preview && item.body && item.body.length > 120) {
+    item.body = item.body.slice(0, 120) + "…";
+  }
+  return item;
+}
+
+function createMessageStatuses(messageId, conversationId, senderId) {
+  const members = db.prepare(
+    "SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ?"
+  ).all(conversationId, senderId);
+  const insert = db.prepare(
+    "INSERT OR IGNORE INTO message_status (message_id, user_id, delivered_at, read_at) VALUES (?, ?, NULL, NULL)"
+  );
+  for (const m of members) insert.run(messageId, m.user_id);
+}
+
+async function notifyConversationMembers(conversationId, senderId, previewText) {
+  const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(conversationId);
+  const sender = db.prepare("SELECT firstname, lastname FROM users WHERE id = ?").get(senderId);
+  const senderName = `${sender?.firstname || ""} ${sender?.lastname || ""}`.trim();
+  const title = getConversationTitle(conv, senderId);
+  const body = previewText || "New message";
+  const members = db.prepare(
+    "SELECT cm.user_id, cm.muted FROM conversation_members cm WHERE cm.conversation_id = ? AND cm.user_id != ?"
+  ).all(conversationId, senderId);
+  for (const m of members) {
+    if (m.muted && !conv.pinned) continue;
+    await sendPushToUser(m.user_id, title || senderName, body, {
+      type: "message",
+      conversationId: String(conversationId),
+    });
+  }
+}
+
+// POST /api/mobile/device-token
+app.post("/api/mobile/device-token", mobileAuth, (req, res) => {
+  try {
+    const token = String(req.body.token || "").trim();
+    const platform = String(req.body.platform || "unknown");
+    if (!token) return res.status(400).json({ ok: false, message: "Token required" });
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO device_tokens (user_id, token, platform, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, token) DO UPDATE SET platform = excluded.platform, updated_at = excluded.updated_at
+    `).run(Number(req.user.userid), token, platform, now);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[Mobile API] device-token error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/users?q=
+app.get("/api/mobile/messages/users", mobileAuth, (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const limit = Math.min(Number(req.query.limit) || 30, 50);
+    let rows;
+    if (q) {
+      rows = db.prepare(`
+        SELECT id, firstname, lastname, email, img, admin, staff, director, parent, volunteer, fan
+        FROM users WHERE verified = 1 AND id != ?
+          AND (LOWER(firstname || ' ' || lastname) LIKE ? OR LOWER(email) LIKE ?)
+        ORDER BY lastname, firstname LIMIT ?
+      `).all(Number(req.user.userid), `%${q}%`, `%${q}%`, limit);
+    } else {
+      rows = db.prepare(`
+        SELECT id, firstname, lastname, email, img, admin, staff, director, parent, volunteer, fan
+        FROM users WHERE verified = 1 AND id != ?
+        ORDER BY lastname, firstname LIMIT ?
+      `).all(Number(req.user.userid), limit);
+    }
+    return res.json({ ok: true, users: rows.map(serializeUser) });
+  } catch (e) {
+    console.error("[Mobile API] messages/users error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/view-as-users (directors only)
+app.get("/api/mobile/messages/view-as-users", mobileAuth, (req, res) => {
+  try {
+    if (!req.director && !req.admin) {
+      return res.status(403).json({ ok: false, message: "Director access required" });
+    }
+    const q = String(req.query.q || "").trim().toLowerCase();
+    let rows;
+    if (q) {
+      rows = db.prepare(`
+        SELECT id, firstname, lastname, email, img FROM users WHERE verified = 1
+          AND (LOWER(firstname || ' ' || lastname) LIKE ? OR LOWER(email) LIKE ?)
+        ORDER BY lastname, firstname LIMIT 50
+      `).all(`%${q}%`, `%${q}%`);
+    } else {
+      rows = db.prepare(`
+        SELECT id, firstname, lastname, email, img FROM users WHERE verified = 1
+        ORDER BY lastname, firstname LIMIT 50
+      `).all();
+    }
+    return res.json({ ok: true, users: rows.map(serializeUser) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/conversations
+app.get("/api/mobile/messages/conversations", mobileAuth, (req, res) => {
+  try {
+    const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
+    if (viewAs && !req.director && !req.admin) {
+      return res.status(403).json({ ok: false, message: "Director access required" });
+    }
+    const uid = viewAs || Number(req.user.userid);
+    const q = String(req.query.q || "").trim().toLowerCase();
+
+    let convs = db.prepare(`
+      SELECT c.* FROM conversations c
+      JOIN conversation_members cm ON cm.conversation_id = c.id
+      WHERE cm.user_id = ?
+      ORDER BY c.pinned DESC, c.updated_at DESC
+    `).all(uid);
+
+    if (q) {
+      convs = convs.filter(c => {
+        const title = getConversationTitle(c, uid).toLowerCase();
+        if (title.includes(q)) return true;
+        const memberMatch = db.prepare(`
+          SELECT 1 FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+          WHERE cm.conversation_id = ?
+            AND (LOWER(u.firstname || ' ' || u.lastname) LIKE ? OR LOWER(u.email) LIKE ?)
+        `).get(c.id, `%${q}%`, `%${q}%`);
+        return !!memberMatch;
+      });
+    }
+
+    const readOnly = !!(viewAs && (req.director || req.admin));
+    return res.json({
+      ok: true,
+      readOnly,
+      viewAsUserId: viewAs || null,
+      conversations: convs.map(c => serializeConversation(c, uid)),
+    });
+  } catch (e) {
+    console.error("[Mobile API] conversations error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/messages/conversations
+app.post("/api/mobile/messages/conversations", mobileAuth, (req, res) => {
+  try {
+    if (req.director && req.body.viewAsUserId) {
+      return res.status(403).json({ ok: false, message: "Cannot create conversations while viewing as another user" });
+    }
+    const memberIds = (req.body.memberIds || []).map(Number).filter(id => id > 0);
+    const uniqueIds = [...new Set(memberIds)];
+    const myId = Number(req.user.userid);
+    if (!uniqueIds.length) return res.status(400).json({ ok: false, message: "Select at least one user" });
+    if (uniqueIds.some(id => id === myId)) {
+      return res.status(400).json({ ok: false, message: "Cannot include yourself in memberIds" });
+    }
+
+    const allMembers = [myId, ...uniqueIds].sort((a, b) => a - b);
+
+    if (uniqueIds.length === 1) {
+      const existing = findDirectConversation(myId, uniqueIds[0]);
+      if (existing) {
+        return res.json({ ok: true, conversation: serializeConversation(existing, myId), existing: true });
+      }
+    }
+
+    const now = Date.now();
+    const type = uniqueIds.length === 1 ? "direct" : "group";
+    const title = type === "group" ? String(req.body.title || "").trim() || null : null;
+    const result = db.prepare(
+      "INSERT INTO conversations (type, title, pinned, created_by, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)"
+    ).run(type, title, myId, now, now);
+    const convId = result.lastInsertRowid;
+    const insertMember = db.prepare(
+      "INSERT INTO conversation_members (conversation_id, user_id, muted, joined_at) VALUES (?, ?, 0, ?)"
+    );
+    for (const id of allMembers) insertMember.run(convId, id, now);
+
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(conv, myId), existing: false });
+  } catch (e) {
+    console.error("[Mobile API] create conversation error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/conversations/:id
+app.get("/api/mobile/messages/conversations/:id", mobileAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
+    if (viewAs && !req.director && !req.admin) {
+      return res.status(403).json({ ok: false, message: "Director access required" });
+    }
+    const uid = viewAs || Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    const readOnly = !!(viewAs && (req.director || req.admin));
+    return res.json({
+      ok: true,
+      readOnly,
+      conversation: serializeConversation(conv, uid),
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/conversations/:id/messages
+app.get("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
+    if (viewAs && !req.director && !req.admin) {
+      return res.status(403).json({ ok: false, message: "Director access required" });
+    }
+    const uid = viewAs || Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+
+    const before = req.query.before ? Number(req.query.before) : null;
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    let rows;
+    if (before) {
+      rows = db.prepare(`
+        SELECT m.*, u.firstname, u.lastname FROM messages m
+        JOIN users u ON u.id = m.sender_id
+        WHERE m.conversation_id = ? AND m.created_at < ?
+        ORDER BY m.created_at DESC LIMIT ?
+      `).all(convId, before, limit);
+    } else {
+      rows = db.prepare(`
+        SELECT m.*, u.firstname, u.lastname FROM messages m
+        JOIN users u ON u.id = m.sender_id
+        WHERE m.conversation_id = ?
+        ORDER BY m.created_at DESC LIMIT ?
+      `).all(convId, limit);
+    }
+    rows.reverse();
+
+    if (!viewAs) {
+      const now = Date.now();
+      const markDelivered = db.prepare(`
+        UPDATE message_status SET delivered_at = ?
+        WHERE message_id = ? AND user_id = ? AND delivered_at IS NULL
+      `);
+      for (const m of rows) {
+        if (Number(m.sender_id) !== uid) {
+          markDelivered.run(now, m.id, uid);
+        }
+      }
+    }
+
+    return res.json({
+      ok: true,
+      messages: rows.map(m => serializeMessage(m, uid)),
+      hasMore: rows.length >= limit,
+    });
+  } catch (e) {
+    console.error("[Mobile API] messages list error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/messages/conversations/:id/messages
+app.post("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, res) => {
+  try {
+    if (req.director && req.body.viewAsUserId) {
+      return res.status(403).json({ ok: false, message: "Cannot send messages while viewing as another user" });
+    }
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+
+    const body = String(req.body.body || "").trim();
+    if (!body) return res.status(400).json({ ok: false, message: "Message body required" });
+
+    const now = Date.now();
+    const result = db.prepare(`
+      INSERT INTO messages (conversation_id, sender_id, body, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(convId, uid, body, now);
+    const msgId = result.lastInsertRowid;
+    createMessageStatuses(msgId, convId, uid);
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
+
+    const m = db.prepare(`
+      SELECT m.*, u.firstname, u.lastname FROM messages m
+      JOIN users u ON u.id = m.sender_id WHERE m.id = ?
+    `).get(msgId);
+
+    notifyConversationMembers(convId, uid, body.slice(0, 100)).catch(() => {});
+
+    return res.json({ ok: true, message: serializeMessage(m, uid) });
+  } catch (e) {
+    console.error("[Mobile API] send message error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/messages/conversations/:id/messages/upload
+app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileAuth, messageUpload.single("file"), async (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    if (!req.file) return res.status(400).json({ ok: false, message: "File required" });
+
+    const caption = String(req.body.body || "").trim();
+    const mime = req.file.mimetype || "";
+    const originalName = req.file.originalname || "file";
+    let processed;
+
+    if (mime.startsWith("image/")) {
+      processed = await processMessageImage(req.file.buffer);
+    } else if (mime.startsWith("video/")) {
+      processed = await processMessageVideo(req.file.buffer, originalName);
+    } else {
+      processed = await processMessageFile(req.file.buffer, originalName, mime);
+    }
+
+    const now = Date.now();
+    const result = db.prepare(`
+      INSERT INTO messages (conversation_id, sender_id, body, attachment_type, attachment_path, attachment_name, attachment_mime, attachment_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(convId, uid, caption, processed.type, processed.filename, originalName, processed.mime, processed.size, now);
+    const msgId = result.lastInsertRowid;
+    createMessageStatuses(msgId, convId, uid);
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
+
+    const m = db.prepare(`
+      SELECT m.*, u.firstname, u.lastname FROM messages m
+      JOIN users u ON u.id = m.sender_id WHERE m.id = ?
+    `).get(msgId);
+
+    const preview = processed.type === "image" ? "📷 Photo"
+      : processed.type === "video" ? "🎬 Video"
+      : `📎 ${originalName}`;
+    notifyConversationMembers(convId, uid, caption || preview).catch(() => {});
+
+    return res.json({ ok: true, message: serializeMessage(m, uid) });
+  } catch (e) {
+    console.error("[Mobile API] message upload error:", e.message);
+    return res.status(500).json({ ok: false, message: "Upload failed: " + e.message });
+  }
+});
+
+// POST /api/mobile/messages/conversations/:id/read
+app.post("/api/mobile/messages/conversations/:id/read", mobileAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const now = Date.now();
+    db.prepare(`
+      UPDATE message_status SET read_at = ?, delivered_at = COALESCE(delivered_at, ?)
+      WHERE user_id = ? AND message_id IN (
+        SELECT id FROM messages WHERE conversation_id = ? AND sender_id != ?
+      ) AND read_at IS NULL
+    `).run(now, now, uid, convId, uid);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// PUT /api/mobile/messages/conversations/:id/mute
+app.put("/api/mobile/messages/conversations/:id/mute", mobileAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT pinned FROM conversations WHERE id = ?").get(convId);
+    if (conv.pinned) {
+      return res.status(400).json({ ok: false, message: "Pinned conversations cannot be muted" });
+    }
+    const muted = req.body.muted ? 1 : 0;
+    db.prepare("UPDATE conversation_members SET muted = ? WHERE conversation_id = ? AND user_id = ?")
+      .run(muted, convId, uid);
+    return res.json({ ok: true, muted });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// PUT /api/mobile/messages/conversations/:id/pin (admin only)
+app.put("/api/mobile/messages/conversations/:id/pin", mobileAuth, (req, res) => {
+  try {
+    if (!req.admin) return res.status(403).json({ ok: false, message: "Admin access required" });
+    const convId = Number(req.params.id);
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv) return res.status(404).json({ ok: false, message: "Conversation not found" });
+    const pinned = req.body.pinned ? 1 : 0;
+    db.prepare("UPDATE conversations SET pinned = ? WHERE id = ?").run(pinned, convId);
+    if (pinned) {
+      db.prepare("UPDATE conversation_members SET muted = 0 WHERE conversation_id = ?").run(convId);
+    }
+    return res.json({ ok: true, pinned });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/conversations/:id/search?q=
+app.get("/api/mobile/messages/conversations/:id/search", mobileAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
+    const uid = viewAs || Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const q = String(req.query.q || "").trim().toLowerCase();
+    if (!q) return res.json({ ok: true, messages: [] });
+
+    const rows = db.prepare(`
+      SELECT m.*, u.firstname, u.lastname FROM messages m
+      JOIN users u ON u.id = m.sender_id
+      WHERE m.conversation_id = ? AND (
+        LOWER(m.body) LIKE ? OR LOWER(m.attachment_name) LIKE ?
+      )
+      ORDER BY m.created_at DESC LIMIT 100
+    `).all(convId, `%${q}%`, `%${q}%`);
+
+    return res.json({ ok: true, messages: rows.map(m => serializeMessage(m, uid)) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/conversations/:id/media?type=image|video|file
+app.get("/api/mobile/messages/conversations/:id/media", mobileAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
+    const uid = viewAs || Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const type = String(req.query.type || "all");
+    let sql = `
+      SELECT m.*, u.firstname, u.lastname FROM messages m
+      JOIN users u ON u.id = m.sender_id
+      WHERE m.conversation_id = ? AND m.attachment_type IS NOT NULL
+    `;
+    const params = [convId];
+    if (type === "image" || type === "video" || type === "file") {
+      sql += " AND m.attachment_type = ?";
+      params.push(type);
+    }
+    sql += " ORDER BY m.created_at DESC LIMIT 200";
+    const rows = db.prepare(sql).all(...params);
+    return res.json({ ok: true, messages: rows.map(m => serializeMessage(m, uid)) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/mobile/messages/attachments/:messageId — authenticated download
+app.get("/api/mobile/messages/attachments/:messageId", mobileAuth, (req, res) => {
+  try {
+    const msgId = Number(req.params.messageId);
+    const m = db.prepare("SELECT * FROM messages WHERE id = ?").get(msgId);
+    if (!m || !m.attachment_path) return res.status(404).json({ ok: false, message: "Not found" });
+    const uid = Number(req.user.userid);
+    if (!isConversationMember(m.conversation_id, uid) && !req.director && !req.admin) {
+      return res.status(403).json({ ok: false, message: "Forbidden" });
+    }
+    const filePath = path.join(MESSAGE_UPLOAD_DIR, m.attachment_path);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ ok: false, message: "File not found" });
+    res.setHeader("Content-Type", m.attachment_mime || "application/octet-stream");
+    if (m.attachment_name) {
+      res.setHeader("Content-Disposition", `inline; filename="${m.attachment_name.replace(/"/g, "")}"`);
+    }
+    return fs.createReadStream(filePath).pipe(res);
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
   }
 });
 

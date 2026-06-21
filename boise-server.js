@@ -10288,10 +10288,16 @@ app.get("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
   }
 });
 
-// POST /api/mobile/schedules  – create a schedule (admin/director only)
+// POST /api/mobile/schedules  – create or update (admin/director only)
 app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
   try {
     if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+
+    const existingId = Number(req.body.id);
+    if (existingId > 0) {
+      return handleScheduleUpdate(req, res, existingId);
+    }
+
     const { title, date, location, notes, staff_notes, scope, sections } = req.body;
     if (!date) return res.status(400).json({ ok: false, message: "date is required" });
 
@@ -10315,7 +10321,7 @@ app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
 
     return res.json({ ok: true, scheduleId });
   } catch (e) {
-    console.error('[Mobile API] create schedule error:', e.message || e);
+    console.error('[Mobile API] save schedule error:', e.message || e);
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });

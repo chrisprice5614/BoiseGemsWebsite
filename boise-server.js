@@ -326,6 +326,23 @@ async function processMessageFile(buffer, originalName, mime) {
   return { filename: name, mime: mime || "application/octet-stream", size: stat.size, type: "file", isPdf };
 }
 
+function detectMessageMediaType(mime, originalName, buffer) {
+  const ext = path.extname(originalName || "").toLowerCase();
+  const videoExts = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".3gp", ".mpeg", ".mpg"]);
+  const imageExts = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp"]);
+
+  if (mime.startsWith("video/") || videoExts.has(ext)) return "video";
+  if (mime.startsWith("image/") || imageExts.has(ext)) return "image";
+
+  if (buffer && buffer.length >= 12) {
+    if (buffer.slice(4, 8).toString("ascii") === "ftyp") return "video";
+    if (buffer[0] === 0xff && buffer[1] === 0xd8) return "image";
+    if (buffer[0] === 0x89 && buffer.slice(1, 4).toString("ascii") === "PNG") return "image";
+    if (buffer.slice(0, 4).toString("ascii") === "RIFF" && buffer.slice(8, 12).toString("ascii") === "WEBP") return "image";
+  }
+  return "file";
+}
+
 let firebaseAdmin = null;
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
@@ -10444,11 +10461,12 @@ app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileAuth, m
     const caption = String(req.body.body || "").trim();
     const mime = req.file.mimetype || "";
     const originalName = req.file.originalname || "file";
+    const mediaType = detectMessageMediaType(mime, originalName, req.file.buffer);
     let processed;
 
-    if (mime.startsWith("image/")) {
+    if (mediaType === "image") {
       processed = await processMessageImage(req.file.buffer);
-    } else if (mime.startsWith("video/")) {
+    } else if (mediaType === "video") {
       processed = await processMessageVideo(req.file.buffer, originalName);
     } else {
       processed = await processMessageFile(req.file.buffer, originalName, mime);

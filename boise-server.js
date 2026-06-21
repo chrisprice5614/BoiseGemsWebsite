@@ -192,7 +192,7 @@ const pdfUploadSecure = multer({
 
 const imageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // optional: 5MB limit
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter(req, file, cb) {
     if (!file.mimetype.startsWith('image/')) {
       cb(new Error('Only images are allowed'), false);
@@ -9487,7 +9487,17 @@ app.get("/api/mobile/me", mobileAuth, (req, res) => {
 });
 
 // POST /api/mobile/profile-photo
-app.post("/api/mobile/profile-photo", mobileAuth, imageUpload.single("photo"), processImage, (req, res) => {
+app.post("/api/mobile/profile-photo", mobileAuth, (req, res, next) => {
+  imageUpload.single("photo")(req, res, (err) => {
+    if (err) {
+      const msg = err.code === "LIMIT_FILE_SIZE"
+        ? "Photo is too large (max 25 MB)."
+        : (err.message || "Upload failed");
+      return res.status(400).json({ ok: false, message: msg });
+    }
+    next();
+  });
+}, processImageJpg, (req, res) => {
   try {
     if (!req.savedFilename) {
       return res.status(400).json({ ok: false, message: "Image is required" });

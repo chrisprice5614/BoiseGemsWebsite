@@ -1481,6 +1481,44 @@ function initSchedulesTables(db) {
       sort_order  INTEGER NOT NULL DEFAULT 0
     )
   `).run();
+
+  // Designer sections (vertical blocks within a day)
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS schedule_sections (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_id      INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+      title            TEXT    NOT NULL,
+      color            TEXT    NOT NULL DEFAULT '#9D76BB',
+      start_time       TEXT    NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 60,
+      sort_order       INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS schedule_lanes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      section_id INTEGER NOT NULL REFERENCES schedule_sections(id) ON DELETE CASCADE,
+      captions   TEXT    NOT NULL DEFAULT '["brass","percussion","guard"]',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS schedule_content_items (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      lane_id           INTEGER NOT NULL REFERENCES schedule_lanes(id) ON DELETE CASCADE,
+      start_time        TEXT    NOT NULL,
+      description       TEXT    NOT NULL DEFAULT '',
+      location_type     TEXT,
+      location_address  TEXT,
+      location_lat      REAL,
+      location_lng      REAL,
+      location_name     TEXT,
+      location_image    TEXT,
+      sort_order        INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
 }
 initSchedulesTables(db);
 
@@ -9678,11 +9716,14 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
           FROM schedules WHERE date >= ? ORDER BY date ASC, call_time ASC LIMIT 1
         `).get(today);
         if (!s) return null;
-        const blocks = db.prepare(`
-          SELECT id, title, start_time, end_time, location, section, block_type, notes, sort_order
-          FROM schedule_blocks WHERE schedule_id = ? ORDER BY sort_order ASC, start_time ASC
-        `).all(s.id);
-        return { ...s, blocks };
+        const sections = loadScheduleSectionsRaw(s.id);
+        const times = deriveScheduleTimes(sections);
+        return {
+          ...s,
+          call_time: s.call_time || times.call_time,
+          dismissal_time: s.dismissal_time || times.dismissal_time,
+          sections,
+        };
       } catch(_) { return null; }
     }
 
@@ -9902,42 +9943,266 @@ app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
 });
 
 // ── Schedules ──────────────────────────────────────────────────────────────
+
+const SCHEDULE_CAPTIONS = ['brass', 'percussion', 'guard'];
+
+function mapUserToScheduleCaption(section, indoorSection) {
+  const s = String(section || indoorSection || '').toLowerCase();
+  if (s === 'brass') return 'brass';
+  if (s === 'guard') return 'guard';
+  if (['drumline', 'frontensemble', 'drummajor', 'percussion'].includes(s)) return 'percussion';
+  return null;
+}
+
+function parseScheduleCaptions(raw) {
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(c => SCHEDULE_CAPTIONS.includes(String(c).toLowerCase()));
+  } catch (_) {
+    return [];
+  }
+}
+
+function laneVisibleToUser(captions, userCaption) {
+  if (!captions || captions.length === 0 || captions.length >= 3) return true;
+  if (!userCaption) return false;
+  return captions.includes(userCaption);
+}
+
+function loadScheduleSectionsRaw(scheduleId) {
+  const sections = db.prepare(`
+    SELECT id, schedule_id, title, color, start_time, duration_minutes, sort_order
+    FROM schedule_sections WHERE schedule_id = ?
+    ORDER BY sort_order ASC, start_time ASC
+  `).all(scheduleId);
+
+  if (sections.length > 0) {
+    return sections.map(sec => {
+      const lanes = db.prepare(`
+        SELECT id, section_id, captions, sort_order
+        FROM schedule_lanes WHERE section_id = ?
+        ORDER BY sort_order ASC
+      `).all(sec.id).map(lane => {
+        const captions = parseScheduleCaptions(lane.captions);
+        const items = db.prepare(`
+          SELECT id, lane_id, start_time, description, location_type,
+                 location_address, location_lat, location_lng, location_name, location_image, sort_order
+          FROM schedule_content_items WHERE lane_id = ?
+          ORDER BY sort_order ASC, start_time ASC
+        `).all(lane.id);
+        return { ...lane, captions, items };
+      });
+      return { ...sec, lanes };
+    });
+  }
+
+  // Legacy fallback: convert schedule_blocks into a single pseudo-section per block
+  const blocks = db.prepare(`
+    SELECT id, title, start_time, end_time, location, section, notes, sort_order
+    FROM schedule_blocks WHERE schedule_id = ?
+    ORDER BY sort_order ASC, start_time ASC
+  `).all(scheduleId);
+
+  return blocks.map((b, i) => {
+    const captions = b.section && b.section !== 'all'
+      ? [b.section === 'guard' ? 'guard' : (b.section === 'brass' ? 'brass' : 'percussion')]
+      : SCHEDULE_CAPTIONS.slice();
+    const endMins = timeToMinutes(b.end_time);
+    const startMins = timeToMinutes(b.start_time);
+    const duration = endMins != null && startMins != null && endMins > startMins
+      ? endMins - startMins
+      : 60;
+    return {
+      id: b.id,
+      schedule_id: scheduleId,
+      title: b.title,
+      color: '#9D76BB',
+      start_time: b.start_time || '08:00',
+      duration_minutes: duration,
+      sort_order: b.sort_order ?? i,
+      lanes: [{
+        id: b.id,
+        section_id: b.id,
+        captions,
+        sort_order: 0,
+        items: [{
+          id: b.id,
+          lane_id: b.id,
+          start_time: b.start_time || '08:00',
+          description: b.notes || b.title || '',
+          location_type: b.location ? 'name' : null,
+          location_address: null,
+          location_lat: null,
+          location_lng: null,
+          location_name: b.location || null,
+          location_image: null,
+          sort_order: 0,
+        }],
+      }],
+      legacy: true,
+    };
+  });
+}
+
+function filterScheduleSectionsForUser(sections, userCaption, isStaffAdmin) {
+  if (isStaffAdmin) return sections;
+  return sections.map(sec => ({
+    ...sec,
+    lanes: (sec.lanes || []).filter(l => laneVisibleToUser(l.captions, userCaption)),
+  })).filter(sec => (sec.lanes || []).length > 0);
+}
+
+function timeToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== 'string') return null;
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function minutesToTime(total) {
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function deriveScheduleTimes(sections) {
+  if (!sections || sections.length === 0) return { call_time: null, dismissal_time: null };
+  const starts = sections.map(s => timeToMinutes(s.start_time)).filter(v => v != null);
+  const ends = sections.map(s => {
+    const start = timeToMinutes(s.start_time);
+    if (start == null) return null;
+    return start + (Number(s.duration_minutes) || 0);
+  }).filter(v => v != null);
+  return {
+    call_time: starts.length ? minutesToTime(Math.min(...starts)) : null,
+    dismissal_time: ends.length ? minutesToTime(Math.max(...ends)) : null,
+  };
+}
+
+function saveScheduleSections(scheduleId, sections) {
+  db.prepare('DELETE FROM schedule_sections WHERE schedule_id = ?').run(scheduleId);
+
+  const insertSection = db.prepare(`
+    INSERT INTO schedule_sections (schedule_id, title, color, start_time, duration_minutes, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const insertLane = db.prepare(`
+    INSERT INTO schedule_lanes (section_id, captions, sort_order)
+    VALUES (?, ?, ?)
+  `);
+  const insertItem = db.prepare(`
+    INSERT INTO schedule_content_items
+      (lane_id, start_time, description, location_type, location_address, location_lat, location_lng, location_name, location_image, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  (sections || []).forEach((sec, si) => {
+    const secInfo = insertSection.run(
+      scheduleId,
+      sec.title || 'Section',
+      sec.color || '#9D76BB',
+      sec.start_time || '08:00',
+      Number(sec.duration_minutes) || 60,
+      sec.sort_order ?? si,
+    );
+    const sectionId = secInfo.lastInsertRowid;
+    (sec.lanes || []).forEach((lane, li) => {
+      const caps = Array.isArray(lane.captions) && lane.captions.length
+        ? lane.captions.filter(c => SCHEDULE_CAPTIONS.includes(String(c).toLowerCase()))
+        : SCHEDULE_CAPTIONS.slice();
+      const laneInfo = insertLane.run(sectionId, JSON.stringify(caps), lane.sort_order ?? li);
+      const laneId = laneInfo.lastInsertRowid;
+      (lane.items || []).forEach((item, ii) => {
+        insertItem.run(
+          laneId,
+          item.start_time || sec.start_time || '08:00',
+          item.description || '',
+          item.location_type || null,
+          item.location_address || null,
+          item.location_lat != null ? Number(item.location_lat) : null,
+          item.location_lng != null ? Number(item.location_lng) : null,
+          item.location_name || null,
+          item.location_image || null,
+          item.sort_order ?? ii,
+        );
+      });
+    });
+  });
+}
+
+function getScheduleUserContext(userId) {
+  try {
+    const u = db.prepare('SELECT section, indoorSection, staff, admin, director FROM users WHERE id = ?').get(userId);
+    return {
+      section: u?.section || null,
+      indoorSection: u?.indoorSection || null,
+      isStaffAdmin: !!(u?.staff || u?.admin || u?.director),
+      isEditor: !!(u?.admin || u?.director),
+      userCaption: mapUserToScheduleCaption(u?.section, u?.indoorSection),
+    };
+  } catch (_) {
+    return { section: null, indoorSection: null, isStaffAdmin: false, isEditor: false, userCaption: null };
+  }
+}
+
+function formatScheduleRow(schedule, sections, ctx) {
+  const filtered = filterScheduleSectionsForUser(sections, ctx.userCaption, ctx.isStaffAdmin);
+  const times = deriveScheduleTimes(filtered.length ? filtered : sections);
+  return {
+    id: schedule.id,
+    title: schedule.title,
+    date: schedule.date,
+    location: schedule.location || null,
+    call_time: schedule.call_time || times.call_time,
+    dismissal_time: schedule.dismissal_time || times.dismissal_time,
+    notes: schedule.notes || null,
+    scope: schedule.scope || 'all',
+    sections: filtered,
+  };
+}
+
 // GET /api/mobile/schedules
 // Returns upcoming schedules (today + future), with blocks filtered by the
 // requesting user's section.  Staff/admin see all blocks.
 app.get("/api/mobile/schedules", mobileAuth, (req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const userSection = (() => {
-      try {
-        const u = db.prepare("SELECT section, indoorSection, staff, admin FROM users WHERE id = ?").get(req.user.userid);
-        return { section: u?.section || null, indoorSection: u?.indoorSection || null, isStaff: !!(u?.staff || u?.admin) };
-      } catch (_) { return { section: null, indoorSection: null, isStaff: false }; }
-    })();
+    const today = new Date().toISOString().slice(0, 10);
+    const ctx = getScheduleUserContext(req.user.userid);
+    const dateFilter = req.query.date ? String(req.query.date) : null;
+    const listAll = req.query.all === '1' && ctx.isEditor;
 
-    const schedules = db.prepare(`
-      SELECT id, title, date, location, call_time, dismissal_time, notes, scope
-      FROM schedules
-      WHERE date >= ?
-      ORDER BY date ASC, call_time ASC
-      LIMIT 30
-    `).all(today);
+    let schedules;
+    if (listAll) {
+      schedules = db.prepare(`
+        SELECT id, title, date, location, call_time, dismissal_time, notes, scope, created_at, updated_at
+        FROM schedules ORDER BY date DESC, id DESC LIMIT 120
+      `).all();
+    } else if (dateFilter) {
+      schedules = db.prepare(`
+        SELECT id, title, date, location, call_time, dismissal_time, notes, scope
+        FROM schedules WHERE date = ? ORDER BY id DESC
+      `).all(dateFilter);
+    } else {
+      schedules = db.prepare(`
+        SELECT id, title, date, location, call_time, dismissal_time, notes, scope
+        FROM schedules WHERE date >= ? ORDER BY date ASC, call_time ASC LIMIT 30
+      `).all(today);
+    }
 
     const result = schedules.map(s => {
-      const allBlocks = db.prepare(`
-        SELECT id, title, start_time, end_time, location, section, block_type, notes, sort_order
-        FROM schedule_blocks
-        WHERE schedule_id = ?
-        ORDER BY sort_order ASC, start_time ASC
-      `).all(s.id);
-
-      // Filter blocks by section unless staff/admin
-      const blocks = userStaffAdmin => allBlocks.filter(b => {
-        if (userStaffAdmin) return true;
-        return b.section === 'all' || b.section === userSection.section || b.section === userSection.indoorSection;
-      });
-
-      return { ...s, blocks: blocks(userSection.isStaff) };
+      const sections = loadScheduleSectionsRaw(s.id);
+      if (listAll) {
+        return {
+          id: s.id,
+          title: s.title,
+          date: s.date,
+          sectionCount: sections.length,
+          call_time: s.call_time || deriveScheduleTimes(sections).call_time,
+          dismissal_time: s.dismissal_time || deriveScheduleTimes(sections).dismissal_time,
+        };
+      }
+      return formatScheduleRow(s, sections, ctx);
     });
 
     return res.json({ ok: true, schedules: result });
@@ -9954,61 +10219,126 @@ app.get("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
     const schedule = db.prepare("SELECT * FROM schedules WHERE id = ?").get(scheduleId);
     if (!schedule) return res.status(404).json({ ok: false, message: "Schedule not found" });
 
-    const isStaffAdmin = !!(req.admin || req.staff);
-    const allBlocks = db.prepare(`
-      SELECT id, title, start_time, end_time, location, section, block_type, notes, sort_order
-      FROM schedule_blocks WHERE schedule_id = ? ORDER BY sort_order ASC, start_time ASC
-    `).all(scheduleId);
+    const ctx = getScheduleUserContext(req.user.userid);
+    const sections = loadScheduleSectionsRaw(scheduleId);
+    const filtered = filterScheduleSectionsForUser(sections, ctx.userCaption, ctx.isStaffAdmin);
+    const times = deriveScheduleTimes(sections);
 
-    let blocks = allBlocks;
-    if (!isStaffAdmin) {
-      // For regular members, only show blocks for their section + 'all' blocks
-      const u = db.prepare("SELECT section, indoorSection FROM users WHERE id = ?").get(req.user.userid);
-      const memberSection = u?.section || null;
-      const memberIndoor = u?.indoorSection || null;
-      blocks = allBlocks.filter(b => b.section === 'all' || b.section === memberSection || b.section === memberIndoor);
-    }
-
-    // Staff notes only for staff/admin
     const { staff_notes, ...publicSchedule } = schedule;
-    const payload = isStaffAdmin ? schedule : publicSchedule;
+    const payload = ctx.isStaffAdmin ? schedule : publicSchedule;
+    const row = {
+      ...payload,
+      call_time: payload.call_time || times.call_time,
+      dismissal_time: payload.dismissal_time || times.dismissal_time,
+      sections: ctx.isEditor ? sections : filtered,
+    };
 
-    return res.json({ ok: true, schedule: payload, blocks });
+    return res.json({ ok: true, schedule: row });
   } catch (e) {
     console.error('[Mobile API] schedule detail error:', e.message || e);
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
 });
 
-// POST /api/mobile/schedules  – create a schedule (staff/admin only)
+// POST /api/mobile/schedules  – create a schedule (admin/director only)
 app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
   try {
-    if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff or admin only" });
-    const { title, date, location, call_time, dismissal_time, notes, staff_notes, scope, blocks } = req.body;
-    if (!title || !date) return res.status(400).json({ ok: false, message: "title and date are required" });
+    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+    const { title, date, location, notes, staff_notes, scope, sections } = req.body;
+    if (!date) return res.status(400).json({ ok: false, message: "date is required" });
 
+    const scheduleTitle = title || date;
     const now = Date.now();
+    const times = deriveScheduleTimes(sections || []);
     const info = db.prepare(`
       INSERT INTO schedules (title, date, location, call_time, dismissal_time, notes, staff_notes, scope, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(title, date, location || null, call_time || null, dismissal_time || null, notes || null, staff_notes || null, scope || 'all', req.user.userid, now, now);
+    `).run(
+      scheduleTitle, date, location || null,
+      times.call_time, times.dismissal_time,
+      notes || null, staff_notes || null, scope || 'all',
+      req.user.userid, now, now,
+    );
 
     const scheduleId = info.lastInsertRowid;
-
-    if (Array.isArray(blocks)) {
-      const insertBlock = db.prepare(`
-        INSERT INTO schedule_blocks (schedule_id, title, start_time, end_time, location, section, block_type, notes, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      blocks.forEach((b, i) => {
-        insertBlock.run(scheduleId, b.title || 'Block', b.start_time || '08:00', b.end_time || null, b.location || null, b.section || 'all', b.block_type || 'rehearsal', b.notes || null, b.sort_order ?? i);
-      });
+    if (Array.isArray(sections) && sections.length) {
+      saveScheduleSections(scheduleId, sections);
     }
 
     return res.json({ ok: true, scheduleId });
   } catch (e) {
     console.error('[Mobile API] create schedule error:', e.message || e);
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// PUT /api/mobile/schedules/:id
+app.put("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
+  try {
+    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+    const scheduleId = Number(req.params.id);
+    const existing = db.prepare("SELECT id FROM schedules WHERE id = ?").get(scheduleId);
+    if (!existing) return res.status(404).json({ ok: false, message: "Schedule not found" });
+
+    const { title, date, location, notes, staff_notes, scope, sections } = req.body;
+    if (!date) return res.status(400).json({ ok: false, message: "date is required" });
+
+    const times = deriveScheduleTimes(sections || []);
+    const now = Date.now();
+    db.prepare(`
+      UPDATE schedules SET title = ?, date = ?, location = ?, call_time = ?, dismissal_time = ?,
+        notes = ?, staff_notes = ?, scope = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      title || date, date, location || null,
+      times.call_time, times.dismissal_time,
+      notes || null, staff_notes || null, scope || 'all',
+      now, scheduleId,
+    );
+
+    if (Array.isArray(sections)) {
+      saveScheduleSections(scheduleId, sections);
+    }
+
+    return res.json({ ok: true, scheduleId });
+  } catch (e) {
+    console.error('[Mobile API] update schedule error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// DELETE /api/mobile/schedules/:id
+app.delete("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
+  try {
+    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+    const scheduleId = Number(req.params.id);
+    const existing = db.prepare("SELECT id FROM schedules WHERE id = ?").get(scheduleId);
+    if (!existing) return res.status(404).json({ ok: false, message: "Schedule not found" });
+    db.prepare("DELETE FROM schedules WHERE id = ?").run(scheduleId);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[Mobile API] delete schedule error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// POST /api/mobile/schedules/location-image
+app.post("/api/mobile/schedules/location-image", mobileAuth, (req, res, next) => {
+  imageUpload.single("image")(req, res, (err) => {
+    if (err) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "Image is too large (max 25 MB)." : (err.message || "Upload failed");
+      return res.status(400).json({ ok: false, message: msg });
+    }
+    next();
+  });
+}, processImageJpg, (req, res) => {
+  try {
+    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
+    if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Image is required" });
+    return res.json({ ok: true, url: `/img/publicupload/${req.savedFilename}` });
+  } catch (e) {
+    console.error('[Mobile API] schedule location image error:', e.message || e);
+    return res.status(500).json({ ok: false, message: "Failed to upload image" });
   }
 });
 

@@ -4706,6 +4706,17 @@ input[type="button"]:disabled {
   line-height: 1.55;
   text-shadow: none;
 }
+#test-site-overlay a,
+#test-site-overlay a:visited,
+#test-site-overlay a:hover,
+footer #test-site-overlay a,
+footer #test-site-overlay a:visited,
+footer #test-site-overlay a:hover {
+  color: #60437D !important;
+  text-shadow: none !important;
+  text-decoration: underline !important;
+  text-decoration-color: #60437D !important;
+}
 .confirm-dialog__actions {
   display: flex;
   justify-content: center;

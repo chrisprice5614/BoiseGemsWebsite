@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>RSVPs & Forms — Boise Gems</title>
+  <title>RSVPs & Forms - Boise Gems</title>
   <%- include("includes/head") %>
 </head>
 <body>
@@ -27,7 +27,7 @@
           <option value="">-- choose an event --</option>
           <% allEvents.forEach(function(e){ %>
             <option value="<%= e.id %>" <%= selectedEventId == e.id ? "selected" : "" %>>
-              <%= new Date(e.datetime).toLocaleString("en-US") %> — <%= e.title %>
+              <%= new Date(e.datetime).toLocaleString("en-US") %> - <%= e.title %>
             </option>
           <% }); %>
         </select>

@@ -1,114 +1,202 @@
-<% headerLinks = 
-`
-<a href="/">Home</a>
-<div class="about-dropdown">
-    <span class="about-trigger">About ▼</span>
-    <div class="about-dropdown-menu">
+<div class="header-inner">
+
+  <!-- Logo: gem + text logo (both link to home) -->
+  <div class="header-left">
+    <a href="/" class="header-gem-link">
+      <img src="/img/ui/gem.png" alt="Boise Gems">
+    </a>
+    <a href="/" class="header-text-link">
+      <img src="/img/ui/text-logo.png" alt="Boise Gems">
+    </a>
+  </div>
+
+  <!-- Desktop nav -->
+  <nav class="header-nav">
+    <div class="nav-dropdown">
+      <span class="nav-trigger">BGPA</span>
+      <div class="nav-dropdown-menu">
         <a href="/our-history-about">Our History</a>
         <a href="/boise-gems-corps-about">Boise Gems Drum &amp; Bugle Corps</a>
         <a href="/boise-gems-independent">Boise Gems Independent</a>
+      </div>
     </div>
-</div>
-<a href="/news">News</a>
-<a href="/contact">Contact</a>
-<div class="about-dropdown">
-    <span class="about-trigger">Support the Gems ▼</span>
-    <div class="about-dropdown-menu">
+    <div class="nav-dropdown">
+      <span class="nav-trigger">Support Us</span>
+      <div class="nav-dropdown-menu">
         <a href="/donate">Donate</a>
-        <a href="/volunteer">Volunteer</a>
-    </div>
-</div>
-<a href="/calendar">Calendar</a>
-<a href="/join-corps">Audition Info</a>
-`
-
-if(user)
-{
-    headerLinks += `
-    <a href="/logout"><button>Log Out</button></a>`
-}
-else
-{
-    headerLinks += `<a href="/login"><button>Log In</button></a>`
-}
-%>
-
-<div style="display: grid; grid-template-columns: 1fr 2fr; align-items: center; width: 100%;">
-    <div style="display: flex; align-items: center;">
-        <div style="text-align: left; height: 96px; padding: 16px;">
-            <a href="/">
-                <img src="/img/ui/gem.png" alt="Gems logo" style="height: 90%;">
-            </a>
-        </div>
-        <% if(user.admin) { %>
-            <a href="/admin-portal"><button>Admin Portal</button></a>
-        <% } else if(user.parent) { %>
-            <a href="/parent-portal"><button>Parent Portal</button></a>
-        <% } else if(user.staff) { %>
-            <a href="/member-portal"><button>Staff Portal</button></a>
-        <% } else if(user.fan) { %>
-            <a href="/fan-portal"><button>Fan Portal</button></a>
-        <% } else if(user) { %>
-            <a href="/member-portal"><button>Member Portal</button></a>
+        <% if (typeof merchEnabled !== 'undefined' && merchEnabled) { %>
+        <a href="/store">Store</a>
         <% } %>
+        <a href="/volunteer">Volunteer</a>
+      </div>
     </div>
-    <div style="text-align: right; padding-right: 32px;">
-        <div class="hidden-desktop" style="text-align: right; font-size: x-large;" onclick="toggleHamburger()">
-            <span id="hamburger">☰</span>
-            <div id="mobile-menu">
-                <%- headerLinks %>
-            </div>
-        </div>
-        <div class="hidden-mobile">
-            <%- headerLinks %>
-        </div>
+    <div class="nav-dropdown">
+      <span class="nav-trigger">Info</span>
+      <div class="nav-dropdown-menu">
+        <a href="/news">News</a>
+        <a href="/calendar">Calendar</a>
+        <a href="/join-corps">Audition Info</a>
+      </div>
     </div>
+    <a href="/contact"><button>Contact</button></a>
+    <% if(user && user.admin) { %>
+      <a href="/admin-portal"><button>Admin Portal</button></a>
+    <% } else if(user && user.parent) { %>
+      <a href="/parent-portal"><button>Parent Portal</button></a>
+    <% } else if(user && user.staff) { %>
+      <a href="/member-portal"><button>Staff Portal</button></a>
+    <% } else if(user && user.fan) { %>
+      <a href="/fan-portal"><button>Fan Portal</button></a>
+    <% } else if(user) { %>
+      <a href="/member-portal"><button>Member Portal</button></a>
+    <% } %>
+    <% if(user) { %>
+      <a href="/logout"><button>Log Out</button></a>
+    <% } else { %>
+      <a href="/login"><button>Log In</button></a>
+    <% } %>
+  </nav>
+
+  <!-- Mobile hamburger -->
+  <button class="hamburger-btn" id="hamburger-btn" onclick="openMobileMenu()" aria-label="Open menu">
+    <span class="hamburger-bar"></span>
+    <span class="hamburger-bar"></span>
+    <span class="hamburger-bar"></span>
+  </button>
+
 </div>
-<script>
-    let hamburger = false;
 
-    const hamburgerText = document.getElementById("hamburger")
-    const mobileMenu = document.getElementById("mobile-menu")
-    function toggleHamburger() {
-        hamburger = !hamburger;
-
-        if(hamburger){
-            hamburgerText.innerHTML='X'
-
-            mobileMenu.classList.add('active')
-        }
-
-        if(!hamburger){
-            hamburgerText.innerHTML='☰'
-            mobileMenu.classList.remove('active')
-        }
-    };
-</script>
-
-<div id="stickyMessage" style="display: none;">Hello</div>
-
-<div id="confirm-overlay" style="
-  display: none;
-  position: fixed;
-  z-index: 9999;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  align-items: center;
-  justify-content: center;
-">
-  <div style="
-    background: white;
-    padding: 2rem;
-    border-radius: 10px;
-    text-align: center;
-    max-width: 300px;
-    width: 100%;
-  ">
-    <p style="margin-bottom: 1.5rem; color: #000;">Are you sure you want to continue?</p>
-    <div style="display: flex; justify-content: center; gap: 1rem;">
-      <button id="confirm-yes" style="padding: 0.5rem 1rem; background: red; color: white; border: none; border-radius: 6px;">Yes</button>
-      <button id="confirm-no" style="padding: 0.5rem 1rem; background: #ccc; border: none; border-radius: 6px;">No</button>
+<!-- Mobile fullscreen overlay -->
+<div id="mobile-overlay" class="mobile-overlay">
+  <div class="mobile-overlay-top">
+    <div class="mobile-overlay-left">
+      <a href="/" class="header-gem-link">
+        <img src="/img/ui/gem.png" alt="Boise Gems">
+      </a>
+      <button class="mobile-back-btn" id="mobile-back-btn" onclick="closeSubMenu()" aria-label="Back">&#9664;</button>
     </div>
+    <button class="hamburger-btn hamburger-btn--close" onclick="closeMobileMenu()" aria-label="Close menu">
+      <span class="hamburger-bar"></span>
+      <span class="hamburger-bar"></span>
+      <span class="hamburger-bar"></span>
+    </button>
+  </div>
+
+  <div class="mobile-menu-container">
+
+    <!-- Main menu view -->
+    <div id="mobile-main-menu" class="mobile-menu-view">
+      <button class="mobile-nav-link" onclick="openSubMenu('bgpa')">BGPA</button>
+      <button class="mobile-nav-link" onclick="openSubMenu('support')">Support</button>
+      <button class="mobile-nav-link" onclick="openSubMenu('info')">Info</button>
+      <a href="/contact" class="mobile-nav-link">Contact</a>
+      <% if(user && user.admin) { %>
+        <a href="/admin-portal" class="mobile-nav-link">Admin Portal</a>
+      <% } else if(user && user.parent) { %>
+        <a href="/parent-portal" class="mobile-nav-link">Parent Portal</a>
+      <% } else if(user && user.staff) { %>
+        <a href="/member-portal" class="mobile-nav-link">Staff Portal</a>
+      <% } else if(user && user.fan) { %>
+        <a href="/fan-portal" class="mobile-nav-link">Fan Portal</a>
+      <% } else if(user) { %>
+        <a href="/member-portal" class="mobile-nav-link">Member Portal</a>
+      <% } %>
+      <% if(user) { %>
+        <a href="/logout" class="mobile-nav-link">Log Out</a>
+      <% } else { %>
+        <a href="/login" class="mobile-nav-link">Log In</a>
+      <% } %>
+    </div>
+
+    <!-- BGPA submenu -->
+    <div id="mobile-sub-bgpa" class="mobile-submenu-view">
+      <a href="/our-history-about" class="mobile-nav-link">Our History</a>
+      <a href="/boise-gems-corps-about" class="mobile-nav-link">Boise Gems Drum &amp; Bugle Corps</a>
+      <a href="/boise-gems-independent" class="mobile-nav-link">Boise Gems Independent</a>
+    </div>
+
+    <!-- Support submenu -->
+    <div id="mobile-sub-support" class="mobile-submenu-view">
+      <a href="/donate" class="mobile-nav-link">Donate</a>
+      <% if (typeof merchEnabled !== 'undefined' && merchEnabled) { %>
+      <a href="/store" class="mobile-nav-link">Store</a>
+      <% } %>
+      <a href="/volunteer" class="mobile-nav-link">Volunteer</a>
+    </div>
+
+    <!-- Info submenu -->
+    <div id="mobile-sub-info" class="mobile-submenu-view">
+      <a href="/news" class="mobile-nav-link">News</a>
+      <a href="/calendar" class="mobile-nav-link">Calendar</a>
+      <a href="/join-corps" class="mobile-nav-link">Audition Info</a>
+    </div>
+
   </div>
 </div>
 
+<script>
+  const _mobileOverlay = document.getElementById('mobile-overlay');
+  const _hamburgerBtn  = document.getElementById('hamburger-btn');
+  const _mobileMain    = document.getElementById('mobile-main-menu');
+  const _mobileBackBtn = document.getElementById('mobile-back-btn');
+  let _currentSub = null;
+  let _menuHistoryPushed = false;
+
+  function openMobileMenu() {
+    _mobileOverlay.classList.add('is-open');
+    _hamburgerBtn.classList.add('is-open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeMobileMenu() {
+    _mobileOverlay.classList.remove('is-open');
+    _hamburgerBtn.classList.remove('is-open');
+    document.body.style.overflow = '';
+    if (_currentSub) {
+      var hadMenuHistory = _menuHistoryPushed;
+      closeSubMenu(true);
+      if (hadMenuHistory) history.back();
+    }
+    _mobileBackBtn.classList.remove('is-visible');
+  }
+
+  function openSubMenu(id, fromHistory) {
+    const sub = document.getElementById('mobile-sub-' + id);
+    if (!sub) return;
+    _mobileMain.classList.add('slide-out-left');
+    sub.classList.add('slide-in');
+    _currentSub = sub;
+    _mobileBackBtn.classList.add('is-visible');
+    if (!fromHistory) {
+      history.pushState({ bgMenuSub: id }, '', window.location.href);
+      _menuHistoryPushed = true;
+    }
+  }
+
+  function closeSubMenu(fromHistory) {
+    if (!_currentSub) return;
+    _mobileMain.classList.remove('slide-out-left');
+    _currentSub.classList.remove('slide-in');
+    _currentSub = null;
+    _mobileBackBtn.classList.remove('is-visible');
+    if (fromHistory) {
+      _menuHistoryPushed = false;
+      return;
+    }
+    if (_menuHistoryPushed) {
+      _menuHistoryPushed = false;
+      history.back();
+    }
+  }
+
+  window.addEventListener('popstate', function (e) {
+    if (!_mobileOverlay.classList.contains('is-open')) return;
+    if (e.state && e.state.bgMenuSub) {
+      openSubMenu(e.state.bgMenuSub, true);
+      return;
+    }
+    if (_currentSub) closeSubMenu(true);
+  });
+</script>
+
+<div id="stickyMessage" style="display: none;">Hello</div>

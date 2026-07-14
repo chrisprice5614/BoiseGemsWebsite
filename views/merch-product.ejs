@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= full.product.name %> | Boise Gems Shop</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+</head>
+<body class="merch-page merch-product-page">
+<header><%- include("includes/header") %></header>
+<%- include("includes/merch-floating-cart", { cartCount }) %>
+
+<main class="merch-page-main">
+  <%- include("includes/merch-shop-hero") %>
+
+  <nav class="merch-breadcrumb" aria-label="Breadcrumb">
+    <a href="/store">Shop</a>
+    <span class="merch-breadcrumb__sep" aria-hidden="true">/</span>
+    <span class="merch-breadcrumb__current"><%= full.product.name %></span>
+  </nav>
+
+  <% if (locals.flash) { %><div class="merch-flash merch-product-flash"><%= flash %></div><% } %>
+
+  <%
+    function galleryUrlsForColor(c) {
+      var urls = [];
+      if (c && c.images && c.images.length) {
+        c.images.forEach(function(img) { urls.push('/img/merch/' + img.filename); });
+      }
+      if (!urls.length && full.product.default_image) urls.push('/img/merch/' + full.product.default_image);
+      if (!urls.length) urls.push('/img/ui/gem.png');
+      return urls;
+    }
+    var colorGalleries = {};
+    full.colors.forEach(function(c) {
+      if (!c.enabled) return;
+      colorGalleries[c.id] = galleryUrlsForColor(c);
+    });
+    var initialGallery = full.colors.length
+      ? galleryUrlsForColor(full.colors.find(function(c) { return c.enabled; }) || full.colors[0])
+      : (full.product.default_image ? ['/img/merch/' + full.product.default_image] : ['/img/ui/gem.png']);
+  %>
+
+  <div class="merch-product-layout">
+    <div class="merch-product-gallery">
+      <button type="button" class="merch-gallery-btn merch-gallery-btn--prev" id="merchGalleryPrev" aria-label="Previous image">&#8592;</button>
+      <div class="merch-gallery-frame">
+        <img id="merchMainImg" src="<%= initialGallery[0] %>" alt="<%= full.product.name %>">
+      </div>
+      <button type="button" class="merch-gallery-btn merch-gallery-btn--next" id="merchGalleryNext" aria-label="Next image">&#8594;</button>
+    </div>
+
+    <div class="merch-product-details">
+      <h1 class="merch-product-title"><%= full.product.name %></h1>
+      <p class="merch-product-price">$<%= (full.product.price_cents / 100).toFixed(2) %></p>
+
+      <% if (full.product.description) { %>
+      <div class="merch-desc"><%- full.product.description.replace(/\n/g, '<br>') %></div>
+      <% } %>
+
+      <% if (alreadyOwns) { %>
+        <p class="merch-notice merch-notice--ok">You already own this download. Check your portal.</p>
+      <% } else if (Number(full.product.out_of_stock)) { %>
+        <p class="merch-notice merch-notice--warn">Currently out of stock.</p>
+      <% } else { %>
+      <form action="/store/cart/add" method="POST" id="merchAddForm" class="merch-product-form">
+        <input type="hidden" name="product_id" value="<%= full.product.id %>">
+
+        <% if (full.product.product_type === 'physical' && full.skus.length && sizeLabels.length) { %>
+        <div class="merch-form-group">
+          <label class="merch-form-label" for="merchSizeSelect">Select a size</label>
+          <select id="merchSizeSelect" name="size" class="merch-select" required>
+            <option value="">Select size</option>
+          </select>
+        </div>
+        <% } %>
+
+        <% if (full.product.product_type === 'physical' && full.colors.length) { %>
+        <div class="merch-form-group">
+          <label class="merch-form-label" for="merchColorSelect">Select a color</label>
+          <select id="merchColorSelect" name="color_id" class="merch-select" required>
+            <% full.colors.forEach(function(c) {
+              if (!c.enabled) return;
+            %>
+            <option value="<%= c.id %>"><%= c.color_name %></option>
+            <% }) %>
+          </select>
+        </div>
+        <% } %>
+
+        <% if (children && children.length) { %>
+        <div class="merch-form-group">
+          <label class="merch-form-label" for="beneficiarySelect">Purchase for</label>
+          <select name="beneficiary_user_id" id="beneficiarySelect" class="merch-select">
+            <option value="">Myself</option>
+            <% children.forEach(function(ch) { %>
+            <option value="<%= ch.id %>"><%= ch.firstname %> <%= ch.lastname %></option>
+            <% }) %>
+          </select>
+        </div>
+        <% } %>
+
+        <% if (full.product.product_type !== 'digital') { %>
+        <div class="merch-form-group">
+          <label class="merch-form-label" for="merchQty">Quantity</label>
+          <div class="merch-qty-stepper">
+            <button type="button" class="merch-qty-btn" id="merchQtyMinus" aria-label="Decrease quantity">−</button>
+            <input type="number" id="merchQty" name="qty" class="merch-qty-input" value="1" min="1" max="99" step="1" inputmode="numeric">
+            <button type="button" class="merch-qty-btn" id="merchQtyPlus" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
+        <% } %>
+
+        <button type="submit" class="button merch-add-btn">Add to cart</button>
+      </form>
+      <% } %>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script>
+(function() {
+  var skus = <%- JSON.stringify(full.skus) %>;
+  var sizeLabels = <%- JSON.stringify(sizeLabels) %>;
+  var colorGalleries = <%- JSON.stringify(colorGalleries) %>;
+  var defaultGallery = <%- JSON.stringify(initialGallery) %>;
+  var colorSelect = document.getElementById('merchColorSelect');
+  var sizeSelect = document.getElementById('merchSizeSelect');
+  var mainImg = document.getElementById('merchMainImg');
+  var prevBtn = document.getElementById('merchGalleryPrev');
+  var nextBtn = document.getElementById('merchGalleryNext');
+  var addForm = document.getElementById('merchAddForm');
+  var qtyInput = document.getElementById('merchQty');
+  var qtyMinus = document.getElementById('merchQtyMinus');
+  var qtyPlus = document.getElementById('merchQtyPlus');
+
+  var gallery = defaultGallery.slice();
+  var galleryIndex = 0;
+
+  function activeColorId() {
+    return colorSelect ? Number(colorSelect.value) : null;
+  }
+
+  function setGallery(urls) {
+    gallery = urls && urls.length ? urls.slice() : defaultGallery.slice();
+    galleryIndex = 0;
+    updateGalleryImage();
+    updateGalleryButtons();
+  }
+
+  function updateGalleryImage() {
+    if (!mainImg || !gallery.length) return;
+    mainImg.src = gallery[galleryIndex];
+  }
+
+  function updateGalleryButtons() {
+    var multi = gallery.length > 1;
+    if (prevBtn) prevBtn.hidden = !multi;
+    if (nextBtn) nextBtn.hidden = !multi;
+  }
+
+  function stepGallery(delta) {
+    if (gallery.length < 2) return;
+    galleryIndex = (galleryIndex + delta + gallery.length) % gallery.length;
+    updateGalleryImage();
+  }
+
+  if (prevBtn) prevBtn.addEventListener('click', function() { stepGallery(-1); });
+  if (nextBtn) nextBtn.addEventListener('click', function() { stepGallery(1); });
+
+  function rebuildSizes() {
+    if (!sizeSelect || !sizeLabels.length) return;
+    var colorId = activeColorId();
+    var prev = sizeSelect.value;
+    sizeSelect.innerHTML = '<option value="">Select size</option>';
+    var available = [];
+    sizeLabels.forEach(function(sz) {
+      var sku = skus.find(function(s) { return s.color_id === colorId && s.size_label === sz; });
+      var ok = sku && sku.enabled && (sku.stock_qty == null || sku.stock_qty > 0);
+      if (ok) available.push(sz);
+    });
+    available.forEach(function(sz) {
+      var opt = document.createElement('option');
+      opt.value = sz;
+      opt.textContent = sz;
+      sizeSelect.appendChild(opt);
+    });
+    if (available.indexOf(prev) !== -1) {
+      sizeSelect.value = prev;
+    } else if (available.length === 1) {
+      sizeSelect.value = available[0];
+    }
+  }
+
+  function updateGalleryForColor() {
+    if (!colorSelect) return;
+    var id = String(colorSelect.value);
+    setGallery(colorGalleries[id] || defaultGallery);
+  }
+
+  if (colorSelect) {
+    colorSelect.addEventListener('change', function() {
+      updateGalleryForColor();
+      rebuildSizes();
+    });
+    updateGalleryForColor();
+  } else {
+    setGallery(defaultGallery);
+  }
+
+  rebuildSizes();
+
+  function clampQty() {
+    if (!qtyInput) return;
+    var n = parseInt(qtyInput.value, 10);
+    if (isNaN(n) || n < 1) n = 1;
+    if (n > 99) n = 99;
+    qtyInput.value = String(n);
+  }
+
+  if (qtyMinus) {
+    qtyMinus.addEventListener('click', function() {
+      if (!qtyInput) return;
+      qtyInput.value = String(Math.max(1, (parseInt(qtyInput.value, 10) || 1) - 1));
+    });
+  }
+  if (qtyPlus) {
+    qtyPlus.addEventListener('click', function() {
+      if (!qtyInput) return;
+      qtyInput.value = String(Math.min(99, (parseInt(qtyInput.value, 10) || 1) + 1));
+    });
+  }
+  if (qtyInput) {
+    qtyInput.addEventListener('change', clampQty);
+    qtyInput.addEventListener('blur', clampQty);
+  }
+
+  if (!addForm) return;
+
+  addForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (sizeSelect && sizeLabels.length && !sizeSelect.value) {
+      if (window.bgAlert) bgAlert('Please select a size.');
+      return;
+    }
+    var params = new URLSearchParams();
+    new FormData(addForm).forEach(function(value, key) {
+      params.append(key, value);
+    });
+    fetch('/store/cart/add', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+      },
+      body: params.toString(),
+      credentials: 'same-origin'
+    })
+      .then(function(r) {
+        return r.json().then(function(data) {
+          return { ok: r.ok, data: data };
+        }).catch(function() {
+          return { ok: false, data: { message: 'Server error. Please try again.' } };
+        });
+      })
+      .then(function(res) {
+        if (!res.ok || !res.data.ok) {
+          if (window.bgAlert) bgAlert(res.data && res.data.message ? res.data.message : 'Could not add to cart.');
+          return;
+        }
+        var badge = document.getElementById('merchFloatCartBadge');
+        if (badge) {
+          badge.textContent = res.data.count;
+          badge.hidden = res.data.count <= 0;
+        }
+        if (window.bgAlert) bgAlert('Added to cart!');
+      })
+      .catch(function() {
+        if (window.bgAlert) bgAlert('Could not add to cart. Please try again.');
+      });
+  });
+})();
+</script>
+</body>
+</html>

@@ -6,7 +6,8 @@
   <title><%= meta.title %></title>
   <%- include("includes/head") %>
 
-  <meta name="description" content="<%= meta.description %>">
+  <% if (!testSite) { %>
+<meta name="description" content="<%= meta.description %>">
   <link rel="canonical" href="<%= meta.url %>">
   <meta property="og:type" content="profile">
   <meta property="og:title" content="<%= meta.title %>">
@@ -14,43 +15,81 @@
   <% if (meta.image) { %><meta property="og:image" content="<%= meta.image %>"><% } %>
   <meta property="og:url" content="<%= meta.url %>">
   <meta name="twitter:card" content="summary_large_image">
+<% } %>
+
 </head>
 <body style="background: #eee;">
 <header><%- include("includes/header") %></header>
 
-<!-- Feature image -->
-<section style="position:relative; overflow:hidden;">
-  <div style="height:44vh; min-height:280px; background:#222 url('/img/publicupload/<%= s.image || "/img/ui/gem.png" %>') center center;">
-    <div style="height:44vh; min-height:280px; background:#222 url('/img/publicupload/<%= s.image || "/img/ui/gem.png" %>') center center; background-repeat: no-repeat; background-size: auto 100%;">
-      <div style="height:100%; background:linear-gradient(180deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,.6) 100%); display:flex; align-items:flex-end;">
-        <div style="padding:16px; width:100%; max-width:1100px; margin:0 auto; color:#fff;">
-          <h1 style="margin:0 0 6px;"><%= s.first_name %> <%= s.last_name %></h1>
-          <p style="margin:0; opacity:.95;"><%= s.position %> — <span class="muted" style="color:rgba(255,255,255,.85)"><%= s.category %></span></p>
-        </div>
-      </div>
-    </div>
+<% var heroImg = s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png'; %>
+<section class="staff-profile-hero">
+  <div class="staff-profile-hero__backdrop" style="background-image:url('<%= heroImg %>');" aria-hidden="true"></div>
+  <div class="staff-profile-hero__frame" aria-hidden="true">
+    <img class="staff-profile-hero__img" src="<%= heroImg %>" alt="">
+  </div>
+  <div class="staff-profile-hero__shade"></div>
+  <div class="staff-profile-hero__content">
+    <h1><%= s.first %> <%= s.last %></h1>
+    <% if (placements && placements.length) { %>
+      <p class="staff-profile-hero__roles">
+        <% placements.forEach(function(p, i) { %>
+          <span><%= p.position_title %><% if (i < placements.length - 1) { %> · <% } %></span>
+        <% }); %>
+      </p>
+    <% } else { %>
+      <p class="staff-profile-hero__roles"><%= s.position %></p>
+    <% } %>
   </div>
 </section>
 
-<!-- Content -->
 <section style="margin:12px;">
   <div class="duple-to-single" style="gap:16px;">
     <div style="margin:4px;">
       <div class="card" style="padding:16px;">
-        <h3 style="margin:0 0 8px;">About <%= s.first_name %></h3>
+        <h3 style="margin:0 0 8px;">About <%= s.first %></h3>
         <p style="white-space:pre-wrap; line-height:1.6;"><%= s.bio || "Bio coming soon." %></p>
       </div>
     </div>
 
     <div style="margin:4px;">
       <div class="card" style="padding:16px;">
-        <h3 style="margin:0 0 8px;">Quick Info</h3>
-        <ul style="list-style:none; padding:0; margin:0;">
-          <li style="padding:6px 0; border-top:1px solid #eee;"><b>Position:</b> <span><%= s.position %></span></li>
-          <li style="padding:6px 0; border-top:1px solid #eee;"><b>Category:</b> <span><%= s.category %></span></li>
+        <h3 style="margin:0 0 8px;">Roles</h3>
+        <% if (placements && placements.length) { %>
+        <ul class="staff-profile-roles-list">
+          <% placements.forEach(function(p) { %>
+          <li><strong><%= p.section_title || p.category_name %></strong> - <%= p.position_title %></li>
+          <% }); %>
         </ul>
+        <% } else { %>
+        <p><%= s.position %></p>
+        <% } %>
+
+        <% if (s.email || (s.phone && phoneTelHref)) { %>
+        <h4 class="staff-profile-contact-heading">Contact</h4>
+        <ul class="staff-profile-contact">
+          <% if (s.email) { %>
+          <li>
+            <ion-icon name="mail-outline" aria-hidden="true"></ion-icon>
+            <a href="mailto:<%= s.email %>"><%= s.email %></a>
+          </li>
+          <% } %>
+          <% if (s.phone && phoneTelHref) { %>
+          <li>
+            <ion-icon name="call-outline" aria-hidden="true"></ion-icon>
+            <a href="<%= phoneTelHref %>"><%= s.phone %></a>
+          </li>
+          <% } %>
+        </ul>
+        <% if (hasStaffVCard) { %>
+        <a class="staff-profile-add-contact-btn" href="/staff/<%= s.slug %>/contact.vcf" download>
+          <ion-icon name="person-add-outline" aria-hidden="true"></ion-icon>
+          Add Contact
+        </a>
+        <% } %>
+        <% } %>
+
         <br>
-        <a href="/about"><button>Back to Staff</button></a>
+        <a href="/our-history-about"><button>Back to Staff</button></a>
       </div>
     </div>
   </div>

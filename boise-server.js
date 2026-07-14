@@ -1,5 +1,8 @@
 ﻿require("dotenv").config() // Makes it so we can access .env file
 const jwt = require("jsonwebtoken")//npm install jsonwebtoken dotenv
+
+/** When true: noindex SEO, test-site modal, TEST SERVER email banner. Missing/any other value => false. */
+const TEST_SITE = String(process.env.test_site || "").trim().toLowerCase() === "true";
 const bcrypt = require("bcrypt") //npm install bcrypt
 const cookieParser = require("cookie-parser")//npm install cookie-parser
 const express = require("express")//npm install express
@@ -15,6 +18,14 @@ const axios = require("axios");
 const marked = require('marked');
 const session = require('express-session');
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const scheduleSystem = require("./schedule-system");
+const staffDisplay = require("./staff-display");
+const joinCorpsContent = require("./join-corps-content");
+const ourHistoryContent = require("./our-history-content");
+const seasonRosterSystem = require("./season-roster-system");
+const parentLinks = require("./parent-links");
+const merchSystem = require("./merch-system");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 // When true, we will attempt to automatically send Chris's 3% share
 // to his connected Stripe account using Stripe Connect. When false,
@@ -56,6 +67,24 @@ const { verify } = require("crypto")
 
 const CONTRACT_EXTENSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+function parentIsOf(parentUserId, childId) {
+  return parentLinks.isParentOf(db, parentUserId, childId);
+}
+
+function getChildForParent(parentUserId, childId) {
+  const child = db.prepare("SELECT * FROM users WHERE id = ?").get(childId);
+  if (!child || !parentIsOf(parentUserId, childId)) return null;
+  return child;
+}
+
+function canUserAccessContract(ext, userId) {
+  if (!ext || !userId) return false;
+  if (Number(ext.user_id) === Number(userId)) return true;
+  if (Number(ext.child_id) === Number(userId)) return true;
+  if (ext.child_id && parentIsOf(userId, ext.child_id)) return true;
+  return false;
+}
+
 function ensureActiveContractExtension(req, res, next) {
   const id = Number(req.params.id);
   if (!id) return res.redirect("/");
@@ -67,12 +96,7 @@ function ensureActiveContractExtension(req, res, next) {
   // No extension row
   if (!ext) return res.redirect("/");
 
-  // Wrong user — allow both the designated signer (user_id) and the member
-  // themselves (child_id) to access the contract page.
-  if (
-    !req.user ||
-    (ext.user_id !== req.user.userid && ext.child_id !== req.user.userid)
-  ) {
+  if (!req.user || !canUserAccessContract(ext, req.user.userid)) {
     return res.redirect("/");
   }
 
@@ -207,6 +231,23 @@ const imageUpload = multer({
   }
 });
 
+const PRESS_KIT_DIR = path.join(__dirname, "public", "img", "press-kit");
+
+const pressKitUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 40 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    const mime = (file.mimetype || "").toLowerCase();
+    const name = (file.originalname || "").toLowerCase();
+    const ok = mime.startsWith("image/")
+      || mime === "application/pdf"
+      || mime === "image/svg+xml"
+      || /\.(jpe?g|png|webp|gif|svg|pdf|heic|heif)$/i.test(name);
+    if (!ok) return cb(new Error("Only images, SVG, or PDF files are allowed"));
+    cb(null, true);
+  }
+});
+
 
 
 const processImage = async (req, res, next) => {
@@ -217,11 +258,12 @@ const processImage = async (req, res, next) => {
 
   try {
     await sharp(req.file.buffer)
+      .rotate() // apply EXIF orientation before crop/resize
       .resize(640, 640, {
-        fit: "cover",   // always crop to exact 640x640
-        position: "center" // crop from center
+        fit: "cover",
+        position: "center"
       })
-      .webp({ quality: 80 }) // save as webp, good balance of quality/speed
+      .webp({ quality: 80 })
       .toFile(outputPath);
 
     req.savedFilename = customName;
@@ -272,6 +314,29 @@ const processImageJpgOptional = async (req, res, next) => {
     next();
   } catch (err) {
     next(err);
+  }
+};
+
+/** Join Corps inline images: webp, long side max 720px */
+const processJoinCorpsImageWebp = async (req, res, next) => {
+  if (!req.file) {
+    return res.status(400).json({ ok: false, message: "No image provided." });
+  }
+  try {
+    const customName = generateCustomFilename() + ".webp";
+    const outDir = path.join(__dirname, "public", "img", "publicupload");
+    fs.mkdirSync(outDir, { recursive: true });
+    const outputPath = path.join(outDir, customName);
+    await sharp(req.file.buffer)
+      .rotate()
+      .resize(720, 720, { fit: "inside", withoutEnlargement: false })
+      .webp({ quality: 82 })
+      .toFile(outputPath);
+    req.savedFilename = customName;
+    next();
+  } catch (err) {
+    console.error("Join Corps image upload error:", err);
+    return res.status(500).json({ ok: false, message: "Image processing failed." });
   }
 };
 
@@ -383,6 +448,22 @@ async function sendEmail(to, subject, html, attachments = []) {
     return;
   }
 
+  const testBannerHtml = TEST_SITE
+    ? `
+          <tr>
+            <td style="padding:0 0 16px 0;">
+              <div style="background:repeating-linear-gradient(135deg,#111 0,#111 12px,#f5c400 12px,#f5c400 24px);height:14px;width:100%;"></div>
+              <div style="background:#111;color:#f5c400;text-align:center;padding:18px 12px;font-family:Arial,Helvetica,sans-serif;">
+                <div style="font-size:36px;line-height:1.1;font-weight:900;letter-spacing:0.08em;">TEST SERVER</div>
+                <div style="font-size:14px;margin-top:8px;color:#fff;letter-spacing:0.02em;">
+                  This message was sent from the Boise Gems test server — not production.
+                </div>
+              </div>
+              <div style="background:repeating-linear-gradient(135deg,#111 0,#111 12px,#f5c400 12px,#f5c400 24px);height:14px;width:100%;"></div>
+            </td>
+          </tr>`
+    : "";
+
   const form = new FormData();
   form.append("from", fromAddress);
   form.append("to", to);
@@ -423,6 +504,7 @@ async function sendEmail(to, subject, html, attachments = []) {
       <td align="center" style="padding: 24px;">
         <!-- Centered content table -->
         <table class="content" width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; padding: 32px; font-family: Arial, sans-serif; color: #333333; border-radius: 6px; max-width: 600px; width: 100%;">
+          ${testBannerHtml}
           <!-- Logo -->
           <tr>
             <td align="center" style="padding-bottom: 24px;">
@@ -734,6 +816,14 @@ const createTables = db.transaction(() => {
         `
     ).run()
 
+    const formUploadCols = db.prepare(`PRAGMA table_info(formUploads)`).all().map((c) => c.name);
+    if (!formUploadCols.includes("field_values_json")) {
+      db.prepare(`ALTER TABLE formUploads ADD COLUMN field_values_json TEXT`).run();
+    }
+    if (!formUploadCols.includes("signers_log_json")) {
+      db.prepare(`ALTER TABLE formUploads ADD COLUMN signers_log_json TEXT`).run();
+    }
+
     db.prepare(
         `
         CREATE TABLE IF NOT EXISTS paymentHistory (
@@ -768,6 +858,12 @@ const createTables = db.transaction(() => {
     }
     if (!cmCols.includes("paymentMethod")) {
       db.prepare("ALTER TABLE contractedMembers ADD COLUMN paymentMethod TEXT").run();
+    }
+    if (!cmCols.includes("field_values_json")) {
+      db.prepare("ALTER TABLE contractedMembers ADD COLUMN field_values_json TEXT").run();
+    }
+    if (!cmCols.includes("signers_log_json")) {
+      db.prepare("ALTER TABLE contractedMembers ADD COLUMN signers_log_json TEXT").run();
     }
 
     db.prepare(
@@ -1107,6 +1203,17 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
     ).run();
   }
 
+  if (!contractExtCols.includes("field_values_json")) {
+    db.prepare(
+      "ALTER TABLE contractExtension ADD COLUMN field_values_json TEXT"
+    ).run();
+  }
+  if (!contractExtCols.includes("signers_log_json")) {
+    db.prepare(
+      "ALTER TABLE contractExtension ADD COLUMN signers_log_json TEXT"
+    ).run();
+  }
+
   // donor_list: comma-separated names editable by admins, shown on /donate
   db.prepare(`
     CREATE TABLE IF NOT EXISTS donor_list (
@@ -1130,6 +1237,85 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
   if (!vnRow) {
     db.prepare("INSERT INTO volunteer_needs (id, needs) VALUES (1, '')").run();
   }
+
+  // site_settings: singleton website toggles (admin System section)
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      messaging_all_users INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
+  const ssRow = db.prepare("SELECT id FROM site_settings WHERE id = 1").get();
+  if (!ssRow) {
+    db.prepare("INSERT INTO site_settings (id, messaging_all_users, updated_at) VALUES (1, 1, ?)").run(Date.now());
+  }
+  const ssCols = db.prepare("PRAGMA table_info(site_settings)").all().map((c) => c.name);
+  if (!ssCols.includes("join_corps_markdown")) {
+    db.prepare('ALTER TABLE site_settings ADD COLUMN join_corps_markdown TEXT NOT NULL DEFAULT ""').run();
+  }
+  if (!ssCols.includes("join_corps_topo_opacity")) {
+    db.prepare("ALTER TABLE site_settings ADD COLUMN join_corps_topo_opacity REAL NOT NULL DEFAULT 0.12").run();
+  }
+  if (!ssCols.includes("join_corps_body_html")) {
+    db.prepare('ALTER TABLE site_settings ADD COLUMN join_corps_body_html TEXT NOT NULL DEFAULT ""').run();
+  }
+  const ssContent = db.prepare("SELECT join_corps_markdown, join_corps_body_html FROM site_settings WHERE id = 1").get();
+  if (ssContent && !String(ssContent.join_corps_body_html || "").trim()) {
+    const html = String(ssContent.join_corps_markdown || "").trim()
+      ? joinCorpsContent.renderJoinCorpsMarkdown(ssContent.join_corps_markdown)
+      : joinCorpsContent.getDefaultJoinCorpsHtml();
+    db.prepare("UPDATE site_settings SET join_corps_body_html = ? WHERE id = 1").run(html);
+  }
+  if (ssContent && !String(ssContent.join_corps_markdown || "").trim() && !String(ssContent.join_corps_body_html || "").trim()) {
+    db.prepare("UPDATE site_settings SET join_corps_body_html = ? WHERE id = 1").run(
+      joinCorpsContent.getDefaultJoinCorpsHtml()
+    );
+  }
+  if (!ssCols.includes("our_history_body_html")) {
+    db.prepare('ALTER TABLE site_settings ADD COLUMN our_history_body_html TEXT NOT NULL DEFAULT ""').run();
+  }
+  const ohRow = db.prepare("SELECT our_history_body_html FROM site_settings WHERE id = 1").get();
+  if (ohRow && !String(ohRow.our_history_body_html || "").trim()) {
+    db.prepare("UPDATE site_settings SET our_history_body_html = ? WHERE id = 1").run(
+      ourHistoryContent.getDefaultOurHistoryHtml()
+    );
+  }
+
+  // press_kit: singleton metadata for the public press kit page
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS press_kit (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      location TEXT NOT NULL DEFAULT 'Boise, Idaho',
+      founded TEXT NOT NULL DEFAULT '2022',
+      description TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `).run();
+  const pkRow = db.prepare("SELECT id FROM press_kit WHERE id = 1").get();
+  if (!pkRow) {
+    db.prepare(`
+      INSERT INTO press_kit (id, location, founded, description, updated_at)
+      VALUES (1, 'Boise, Idaho', '2022', '', ?)
+    `).run(Date.now());
+  }
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS press_kit_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL CHECK (category IN ('logo', 'action')),
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT,
+      size INTEGER,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+  db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_press_kit_images_category
+    ON press_kit_images(category, sort_order, created_at)
+  `).run();
 
   // volunteer_contacts: form submissions from the volunteer page
   db.prepare(`
@@ -1173,7 +1359,7 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
   if (!fanCols.includes("stripe_customer_id")) {
     db.prepare("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT").run();
   }
-  // Mobile app role columns — safe to add to existing databases
+  // Mobile app role columns - safe to add to existing databases
   if (!fanCols.includes("director")) {
     db.prepare("ALTER TABLE users ADD COLUMN director INTEGER DEFAULT 0").run();
   }
@@ -1214,9 +1400,352 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
     db.prepare("ALTER TABLE potential_donation ADD COLUMN shirt_sizes TEXT").run();
   }
 
+  // ── Announcements ────────────────────────────────────────────────────────
+  // Admin-posted feed entries; audience flags control visibility per group.
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS announcements (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      author_id       INTEGER NOT NULL,
+      body_md         TEXT    NOT NULL,
+      body_html       TEXT    NOT NULL,
+      aud_parents     INTEGER NOT NULL DEFAULT 0,
+      aud_fans        INTEGER NOT NULL DEFAULT 0,
+      aud_corps       INTEGER NOT NULL DEFAULT 0,
+      aud_independent INTEGER NOT NULL DEFAULT 0,
+      aud_uncontracted INTEGER NOT NULL DEFAULT 0,
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL,
+      FOREIGN KEY (author_id) REFERENCES users(id)
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_ann_created ON announcements(created_at DESC)`).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS announcement_images (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      announcement_id INTEGER NOT NULL,
+      filename        TEXT    NOT NULL,
+      created_at      INTEGER NOT NULL,
+      FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE
+    )
+  `).run();
+
 })
 
 createTables();
+
+// ── Announcement helpers ─────────────────────────────────────────────────────
+function getAnnouncementsForUser(userRow) {
+  const base = `
+    SELECT a.*, u.firstname AS author_first, u.lastname AS author_last, u.img AS author_img
+    FROM announcements a
+    JOIN users u ON u.id = a.author_id
+  `;
+  // Admin and staff always see everything
+  if (userRow.admin || userRow.staff) {
+    const rows = db.prepare(base + `ORDER BY a.created_at DESC`).all();
+    return attachAnnouncementImages(rows);
+  }
+  const conds = [];
+  if (userRow.parent)               conds.push("a.aud_parents = 1");
+  if (userRow.fan)                   conds.push("a.aud_fans = 1");
+  if (userRow.contractedCorps)       conds.push("a.aud_corps = 1");
+  if (userRow.contractedIndependent) conds.push("a.aud_independent = 1");
+  const isMember = !userRow.parent && !userRow.fan;
+  const isUncontracted = isMember && !userRow.contractedCorps && !userRow.contractedIndependent && !userRow.contractedAffiliate;
+  if (isUncontracted)                conds.push("a.aud_uncontracted = 1");
+  if (!conds.length) return [];
+  const rows = db.prepare(base + `WHERE ${conds.join(" OR ")} ORDER BY a.created_at DESC`).all();
+  return attachAnnouncementImages(rows);
+}
+
+function attachAnnouncementImages(rows) {
+  return rows.map(a => {
+    a.images = db.prepare("SELECT * FROM announcement_images WHERE announcement_id = ? ORDER BY id").all(a.id);
+    return a;
+  });
+}
+
+function getPressKitMeta() {
+  return db.prepare("SELECT * FROM press_kit WHERE id = 1").get();
+}
+
+function getSiteSettings() {
+  const row = db.prepare(`
+    SELECT messaging_all_users, join_corps_markdown, join_corps_body_html,
+           join_corps_topo_opacity, our_history_body_html,
+           merch_enabled, merch_tax_percent, merch_pass_stripe_fee,
+           merch_shipping_domestic_cents, merch_shipping_intl_cents, merch_order_notify_emails,
+           updated_at
+    FROM site_settings WHERE id = 1
+  `).get();
+  return (
+    row || {
+      messaging_all_users: 1,
+      join_corps_markdown: "",
+      join_corps_body_html: joinCorpsContent.getDefaultJoinCorpsHtml(),
+      join_corps_topo_opacity: 0.12,
+      our_history_body_html: ourHistoryContent.getDefaultOurHistoryHtml(),
+      merch_enabled: 0,
+      merch_tax_percent: 0,
+      merch_pass_stripe_fee: 0,
+      merch_shipping_domestic_cents: 899,
+      merch_shipping_intl_cents: 1499,
+      merch_order_notify_emails: "info@fermataworks.com",
+      updated_at: 0,
+    }
+  );
+}
+
+/** Dashboard stats for admin portal + mobile admin API. Amounts in cents. */
+function getAdminStats() {
+  const memberWhere = `(parent IS NULL OR parent = 0) AND (fan IS NULL OR fan = 0) AND (admin IS NULL OR admin = 0) AND (staff IS NULL OR staff = 0)`;
+
+  const totalMembers = Number(db.prepare(`SELECT COUNT(*) AS c FROM users WHERE ${memberWhere}`).get().c);
+  const contractedCorps = Number(db.prepare(`SELECT COUNT(*) AS c FROM users WHERE contractedCorps = 1 AND ${memberWhere}`).get().c);
+  const contractedIndependent = Number(db.prepare(`SELECT COUNT(*) AS c FROM users WHERE contractedIndependent = 1 AND ${memberWhere}`).get().c);
+  const contractedAffiliate = Number(db.prepare(`SELECT COUNT(*) AS c FROM users WHERE contractedAffiliate = 1 AND ${memberWhere}`).get().c);
+  const totalContracted = Number(db.prepare(`
+    SELECT COUNT(*) AS c FROM users WHERE ${memberWhere}
+      AND (contractedCorps = 1 OR contractedIndependent = 1 OR contractedAffiliate = 1)
+  `).get().c);
+
+  const owedRow = db.prepare(`
+    SELECT COALESCE(SUM(owed), 0) AS total, COUNT(*) AS withBalance
+    FROM users WHERE ${memberWhere} AND owed > 0
+  `).get();
+
+  return {
+    totalMembers,
+    contractedCorps,
+    contractedIndependent,
+    contractedAffiliate,
+    totalContracted,
+    uncontractedMembers: Math.max(0, totalMembers - totalContracted),
+    totalOwedCents: Number(owedRow.total) || 0,
+    membersWithBalanceDue: Number(owedRow.withBalance) || 0,
+    totalPaidCents: Number(db.prepare(`SELECT COALESCE(SUM(paid), 0) AS s FROM users WHERE ${memberWhere}`).get().s) || 0,
+    staffCount: Number(db.prepare("SELECT COUNT(*) AS c FROM users WHERE staff = 1").get().c),
+    parentCount: Number(db.prepare("SELECT COUNT(*) AS c FROM users WHERE parent = 1").get().c),
+    pendingContracts: Number(db.prepare("SELECT COUNT(*) AS c FROM pendingContractExtension").get().c),
+    instrumentsCheckedOut: Number(db.prepare("SELECT COUNT(*) AS c FROM instruments WHERE checked_in_date IS NULL").get().c),
+  };
+}
+
+function canUseMessaging(user) {
+  if (!user || !user.userid) return false;
+  if (Number(getSiteSettings().messaging_all_users) === 1) return true;
+  return !!(Number(user.admin) || Number(user.staff));
+}
+
+function tableExists(name) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+}
+
+function tryDeleteFile(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn("[deleteUser] file delete failed:", filePath, e.message);
+  }
+}
+
+function cleanupMessagingForUser(uid) {
+  db.prepare("DELETE FROM message_status WHERE user_id = ?").run(uid);
+
+  const sentMsgs = db.prepare("SELECT id, attachment_path FROM messages WHERE sender_id = ?").all(uid);
+  for (const m of sentMsgs) {
+    if (m.attachment_path) tryDeleteFile(path.join(MESSAGE_UPLOAD_DIR, m.attachment_path));
+    db.prepare("DELETE FROM message_status WHERE message_id = ?").run(m.id);
+  }
+  db.prepare("DELETE FROM messages WHERE sender_id = ?").run(uid);
+  db.prepare("DELETE FROM conversation_members WHERE user_id = ?").run(uid);
+
+  const orphanConvs = db.prepare(`
+    SELECT c.id FROM conversations c
+    LEFT JOIN conversation_members cm ON cm.conversation_id = c.id
+    WHERE cm.user_id IS NULL
+  `).all();
+  for (const c of orphanConvs) {
+    const msgs = db.prepare("SELECT id, attachment_path FROM messages WHERE conversation_id = ?").all(c.id);
+    for (const m of msgs) {
+      if (m.attachment_path) tryDeleteFile(path.join(MESSAGE_UPLOAD_DIR, m.attachment_path));
+      db.prepare("DELETE FROM message_status WHERE message_id = ?").run(m.id);
+    }
+    db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(c.id);
+    db.prepare("DELETE FROM conversations WHERE id = ?").run(c.id);
+  }
+
+  db.prepare("DELETE FROM device_tokens WHERE user_id = ?").run(uid);
+}
+
+function deleteUserAccount(userId, actorId) {
+  const uid = Number(userId);
+  const actor = Number(actorId);
+  if (!uid) return { ok: false, message: "Invalid user id." };
+  if (uid === actor) return { ok: false, message: "You cannot delete your own account." };
+
+  const target = db.prepare("SELECT * FROM users WHERE id = ?").get(uid);
+  if (!target) return { ok: false, message: "User not found." };
+
+  if (Number(target.admin) === 1) {
+    const adminCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE admin = 1").get().c;
+    if (adminCount <= 1) {
+      return { ok: false, message: "Cannot delete the last administrator account." };
+    }
+  }
+
+  const run = db.transaction(() => {
+    cleanupMessagingForUser(uid);
+
+    parentLinks.cleanupUserParentLinks(db, uid);
+    db.prepare("DELETE FROM userVerify WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM forgotPassword WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM folder_views WHERE user_id = ?").run(uid);
+    db.prepare("UPDATE file_items SET uploader_id = NULL WHERE uploader_id = ?").run(uid);
+
+    db.prepare("DELETE FROM instruments WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM allergies WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM emergencyContacts WHERE user_id = ?").run(uid);
+
+    const formRows = db.prepare("SELECT id, upload_path FROM formUploads WHERE user_id = ?").all(uid);
+    for (const row of formRows) {
+      if (row.upload_path) tryDeleteFile(path.join(__dirname, row.upload_path.replace(/^\//, "")));
+    }
+    db.prepare("DELETE FROM formUploads WHERE user_id = ?").run(uid);
+
+    db.prepare("DELETE FROM paymentHistory WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM contractedMembers WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM permissions WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM contractExtension WHERE user_id = ? OR child_id = ? OR extender = ?").run(uid, uid, uid);
+    db.prepare("DELETE FROM pendingContractExtension WHERE member_id = ? OR requested_by = ?").run(uid, uid);
+    db.prepare("DELETE FROM rsvp WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM viewed WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM potential_event_rsvp WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM fan_subscriptions WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM potential_payment WHERE user_id = ? OR child_id = ? OR parent_id = ?").run(uid, uid, uid);
+
+    db.prepare("UPDATE donations SET user_id = NULL WHERE user_id = ?").run(uid);
+    db.prepare("UPDATE potential_donation SET user_id = NULL WHERE user_id = ?").run(uid);
+    db.prepare("UPDATE schedules SET created_by = NULL WHERE created_by = ?").run(uid);
+
+    if (tableExists("support_tickets")) {
+      db.prepare("DELETE FROM support_tickets WHERE user_id = ?").run(uid);
+    }
+    if (tableExists("bug_report_comments")) {
+      db.prepare("DELETE FROM bug_report_comments WHERE user_id = ?").run(uid);
+    }
+    if (tableExists("bug_reports")) {
+      db.prepare("DELETE FROM bug_reports WHERE user_id = ?").run(uid);
+    }
+    if (tableExists("forum_comments")) {
+      db.prepare("DELETE FROM forum_comments WHERE user_id = ?").run(uid);
+    }
+    if (tableExists("forum_posts")) {
+      db.prepare("DELETE FROM forum_posts WHERE user_id = ?").run(uid);
+    }
+
+    const annIds = db.prepare("SELECT id FROM announcements WHERE author_id = ?").all(uid).map(r => r.id);
+    if (annIds.length) {
+      const placeholders = annIds.map(() => "?").join(",");
+      db.prepare(`DELETE FROM announcement_images WHERE announcement_id IN (${placeholders})`).run(...annIds);
+      db.prepare(`DELETE FROM announcements WHERE id IN (${placeholders})`).run(...annIds);
+    }
+
+    if (target.img && target.img.startsWith("/img/publicupload/")) {
+      tryDeleteFile(path.join(__dirname, "public", target.img.replace(/^\//, "")));
+    }
+
+    db.prepare("DELETE FROM users WHERE id = ?").run(uid);
+  });
+
+  try {
+    run();
+    return { ok: true, message: `Deleted ${target.firstname} ${target.lastname}.` };
+  } catch (e) {
+    console.error("[deleteUser] failed:", e);
+    return { ok: false, message: "Could not delete user. The account may still be linked to protected data." };
+  }
+}
+
+function getPressKitImages(category) {
+  if (category) {
+    return db.prepare(`
+      SELECT * FROM press_kit_images
+      WHERE category = ?
+      ORDER BY sort_order ASC, created_at DESC, id DESC
+    `).all(category);
+  }
+  return db.prepare(`
+    SELECT * FROM press_kit_images
+    ORDER BY category ASC, sort_order ASC, created_at DESC, id DESC
+  `).all();
+}
+
+async function savePressKitFile(file) {
+  fs.mkdirSync(PRESS_KIT_DIR, { recursive: true });
+  const base = generateCustomFilename();
+  const originalName = file.originalname || "file";
+  const ext = path.extname(originalName).toLowerCase();
+  const mime = (file.mimetype || "").toLowerCase();
+
+  if (mime === "application/pdf" || ext === ".pdf") {
+    const filename = base + ".pdf";
+    fs.writeFileSync(path.join(PRESS_KIT_DIR, filename), file.buffer);
+    return {
+      filename,
+      original_name: originalName,
+      mime_type: "application/pdf",
+      size: file.buffer.length,
+    };
+  }
+
+  if (mime === "image/svg+xml" || ext === ".svg") {
+    const filename = base + ".svg";
+    fs.writeFileSync(path.join(PRESS_KIT_DIR, filename), file.buffer);
+    return {
+      filename,
+      original_name: originalName,
+      mime_type: "image/svg+xml",
+      size: file.buffer.length,
+    };
+  }
+
+  const meta = await sharp(file.buffer).metadata();
+  const hasAlpha = Boolean(meta.hasAlpha);
+  const filename = hasAlpha ? base + ".png" : base + ".jpg";
+  const outputPath = path.join(PRESS_KIT_DIR, filename);
+  let pipeline = sharp(file.buffer).resize({
+    width: 2400,
+    height: 2400,
+    fit: "inside",
+    withoutEnlargement: true,
+  });
+  if (hasAlpha) {
+    await pipeline.png({ compressionLevel: 8 }).toFile(outputPath);
+  } else {
+    await pipeline.jpeg({ quality: 92 }).toFile(outputPath);
+  }
+  const stat = fs.statSync(outputPath);
+  return {
+    filename,
+    original_name: originalName,
+    mime_type: hasAlpha ? "image/png" : "image/jpeg",
+    size: stat.size,
+  };
+}
+
+function deletePressKitImageRecord(row) {
+  if (!row) return;
+  const filePath = path.join(PRESS_KIT_DIR, row.filename);
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.error("Press kit file delete failed:", e.message);
+  }
+  db.prepare("DELETE FROM press_kit_images WHERE id = ?").run(row.id);
+}
 
 function addChrisShare(baseAmountCents, source) {
   ////ADD THIS TO EVERY TRANSACTION!!!
@@ -1249,7 +1778,7 @@ function addChrisShare(baseAmountCents, source) {
 
 
 function ensureDefaultFolders() {
-  const FILE_YEAR = 2026;
+  const FILE_YEARS = [2026, 2027];
   const now = Date.now();
 
   const corpsSections = ["Brass", "Drumline", "Front Ensemble", "Guard"];
@@ -1269,50 +1798,53 @@ function ensureDefaultFolders() {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  ["corps", "indoor"].forEach(scope => {
-    // Year folder (e.g., "2026")
-    let yearFolder = getYearFolder.get(scope, FILE_YEAR, String(FILE_YEAR));
-    if (!yearFolder) {
-      const info = insertFolder.run(
-        null,
-        scope,
-        FILE_YEAR,
-        null,
-        String(FILE_YEAR),
-        now,
-        now
-      );
-      yearFolder = { id: info.lastInsertRowid, scope, year: FILE_YEAR, section: null, name: String(FILE_YEAR) };
-    }
-
-    const sections = scope === "corps" ? corpsSections : indoorSections;
-    sections.forEach(sectionName => {
-      const row = db.prepare(`
-        SELECT * FROM file_folders
-        WHERE parent_id = ?
-          AND scope = ?
-          AND year = ?
-          AND section = ?
-          AND name = ?
-        LIMIT 1
-      `).get(yearFolder.id, scope, FILE_YEAR, sectionName, sectionName);
-
-      if (!row) {
-        insertFolder.run(
-          yearFolder.id,
+  FILE_YEARS.forEach((FILE_YEAR) => {
+    ["corps", "indoor"].forEach((scope) => {
+      // Year folder (e.g., "2027")
+      let yearFolder = getYearFolder.get(scope, FILE_YEAR, String(FILE_YEAR));
+      if (!yearFolder) {
+        const info = insertFolder.run(
+          null,
           scope,
           FILE_YEAR,
-          sectionName,
-          sectionName,
+          null,
+          String(FILE_YEAR),
           now,
           now
         );
+        yearFolder = { id: info.lastInsertRowid, scope, year: FILE_YEAR, section: null, name: String(FILE_YEAR) };
       }
+
+      const sections = scope === "corps" ? corpsSections : indoorSections;
+      sections.forEach((sectionName) => {
+        const row = db.prepare(`
+          SELECT * FROM file_folders
+          WHERE parent_id = ?
+            AND scope = ?
+            AND year = ?
+            AND section = ?
+            AND name = ?
+          LIMIT 1
+        `).get(yearFolder.id, scope, FILE_YEAR, sectionName, sectionName);
+
+        if (!row) {
+          insertFolder.run(
+            yearFolder.id,
+            scope,
+            FILE_YEAR,
+            sectionName,
+            sectionName,
+            now,
+            now
+          );
+        }
+      });
     });
   });
 }
 
 ensureDefaultFolders();
+seasonRosterSystem.initSeasonRosters(db);
 
 function migrateFormsTable(db) {
   // 1) Ensure base table exists (as in your original)
@@ -1422,6 +1954,67 @@ function migrateFormsTable(db) {
     `).run();
   }
 
+  // Multi-audience checkboxes + online field regions on the PDF
+  const formCols2 = db.prepare(`PRAGMA table_info(forms)`).all().map((c) => c.name);
+  const formAudienceCols = [
+    ["audience_corps", "INTEGER DEFAULT 0"],
+    ["audience_independent", "INTEGER DEFAULT 0"],
+    ["audience_affiliate", "INTEGER DEFAULT 0"],
+    ["audience_staff", "INTEGER DEFAULT 0"],
+    ["fields_json", "TEXT"],
+  ];
+  for (const [col, def] of formAudienceCols) {
+    if (!formCols2.includes(col)) {
+      db.prepare(`ALTER TABLE forms ADD COLUMN ${col} ${def}`).run();
+    }
+  }
+
+  // Backfill audiences from older ensemble_type / role_scope once
+  db.prepare(`
+    UPDATE forms
+    SET audience_corps = 1,
+        audience_independent = 1,
+        audience_affiliate = 1
+    WHERE COALESCE(audience_corps, 0) = 0
+      AND COALESCE(audience_independent, 0) = 0
+      AND COALESCE(audience_affiliate, 0) = 0
+      AND COALESCE(audience_staff, 0) = 0
+      AND LOWER(COALESCE(ensemble_type, 'all')) = 'all'
+      AND LOWER(COALESCE(role_scope, 'member')) = 'member'
+  `).run();
+  db.prepare(`
+    UPDATE forms SET audience_corps = 1
+    WHERE COALESCE(audience_corps, 0) = 0
+      AND COALESCE(audience_independent, 0) = 0
+      AND COALESCE(audience_affiliate, 0) = 0
+      AND COALESCE(audience_staff, 0) = 0
+      AND LOWER(COALESCE(ensemble_type, '')) = 'corps'
+  `).run();
+  db.prepare(`
+    UPDATE forms SET audience_independent = 1
+    WHERE COALESCE(audience_corps, 0) = 0
+      AND COALESCE(audience_independent, 0) = 0
+      AND COALESCE(audience_affiliate, 0) = 0
+      AND COALESCE(audience_staff, 0) = 0
+      AND LOWER(COALESCE(ensemble_type, '')) = 'independent'
+  `).run();
+  db.prepare(`
+    UPDATE forms SET audience_affiliate = 1
+    WHERE COALESCE(audience_corps, 0) = 0
+      AND COALESCE(audience_independent, 0) = 0
+      AND COALESCE(audience_affiliate, 0) = 0
+      AND COALESCE(audience_staff, 0) = 0
+      AND LOWER(COALESCE(ensemble_type, '')) = 'affiliate'
+  `).run();
+  db.prepare(`
+    UPDATE forms SET audience_staff = 1
+    WHERE COALESCE(audience_corps, 0) = 0
+      AND COALESCE(audience_independent, 0) = 0
+      AND COALESCE(audience_affiliate, 0) = 0
+      AND COALESCE(audience_staff, 0) = 0
+      AND LOWER(COALESCE(role_scope, '')) IN ('staff', 'admin')
+  `).run();
+
   // ---- Deposit amount on tuitionFees (per ensemble) ----
   const tfCols = db.prepare(`PRAGMA table_info(tuitionFees)`).all().map(c => c.name);
   if (!tfCols.includes("deposit_amount")) {
@@ -1444,139 +2037,21 @@ function migrateFormsTable(db) {
     )
   `).run();
 
+  const contractPdfCols = db.prepare(`PRAGMA table_info(contractPdfs)`).all().map((c) => c.name);
+  if (!contractPdfCols.includes("fields_json")) {
+    db.prepare(`ALTER TABLE contractPdfs ADD COLUMN fields_json TEXT`).run();
+  }
+
 // call it on boot
 migrateFormsTable(db);
 
-// ── Schedules tables (NEW — not altering any existing table) ─────────────────
-// ⚠️  DO NOT modify existing tables here.  Add only new tables for new features.
-function migrateScheduleSubsections(db) {
-  try {
-    db.prepare('SELECT subsection_id FROM schedule_lanes LIMIT 1').get();
-  } catch (_) {
-    db.prepare(`
-      ALTER TABLE schedule_lanes
-      ADD COLUMN subsection_id INTEGER REFERENCES schedule_subsections(id) ON DELETE CASCADE
-    `).run();
-  }
+// ── Schedules tables (v2 - time slots + section entries) ─────────────────────
+scheduleSystem.initSchedulesV2(db);
+staffDisplay.initStaffDisplay(db);
+parentLinks.initParentLinks(db);
+merchSystem.initMerch(db);
 
-  const orphanLanes = db.prepare(`
-    SELECT id, section_id FROM schedule_lanes WHERE subsection_id IS NULL
-  `).all();
-  if (!orphanLanes.length) return;
-
-  const bySection = {};
-  for (const lane of orphanLanes) {
-    if (!bySection[lane.section_id]) bySection[lane.section_id] = [];
-    bySection[lane.section_id].push(lane.id);
-  }
-
-  for (const [sectionId, laneIds] of Object.entries(bySection)) {
-    const sec = db.prepare(`
-      SELECT start_time, duration_minutes FROM schedule_sections WHERE id = ?
-    `).get(sectionId);
-    if (!sec) continue;
-    const subInfo = db.prepare(`
-      INSERT INTO schedule_subsections (section_id, title, start_time, duration_minutes, sort_order)
-      VALUES (?, '', ?, ?, 0)
-    `).run(sectionId, sec.start_time || '08:00', Number(sec.duration_minutes) || 60);
-    const subId = subInfo.lastInsertRowid;
-    const upd = db.prepare('UPDATE schedule_lanes SET subsection_id = ? WHERE id = ?');
-    for (const laneId of laneIds) upd.run(subId, laneId);
-  }
-}
-
-function initSchedulesTables(db) {
-  // Daily rehearsal / activity schedule
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS schedules (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      title         TEXT    NOT NULL,
-      date          TEXT    NOT NULL,   -- YYYY-MM-DD
-      location      TEXT,
-      call_time     TEXT,               -- HH:MM (24h)
-      dismissal_time TEXT,              -- HH:MM (24h)
-      notes         TEXT,               -- member-visible notes
-      staff_notes   TEXT,               -- staff-only (never sent to regular members)
-      scope         TEXT    NOT NULL DEFAULT 'all', -- 'all','corps','indoor','bgi'
-      created_by    INTEGER,            -- user id of creator
-      created_at    INTEGER NOT NULL,
-      updated_at    INTEGER NOT NULL
-    )
-  `).run();
-
-  db.prepare(`CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date ASC)`).run();
-
-  // Individual time blocks within a schedule
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS schedule_blocks (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-      title       TEXT    NOT NULL,
-      start_time  TEXT    NOT NULL,     -- HH:MM (24h)
-      end_time    TEXT,                 -- HH:MM (24h)
-      location    TEXT,                 -- overrides parent schedule location
-      -- section filter: 'all','brass','guard','frontensemble','drumline','drummajor'
-      section     TEXT    NOT NULL DEFAULT 'all',
-      block_type  TEXT    NOT NULL DEFAULT 'rehearsal', -- rehearsal|meal|break|meeting|performance|travel|other
-      notes       TEXT,
-      sort_order  INTEGER NOT NULL DEFAULT 0
-    )
-  `).run();
-
-  // Designer sections (vertical blocks within a day)
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS schedule_sections (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      schedule_id      INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-      title            TEXT    NOT NULL,
-      color            TEXT    NOT NULL DEFAULT '#9D76BB',
-      start_time       TEXT    NOT NULL,
-      duration_minutes INTEGER NOT NULL DEFAULT 60,
-      sort_order       INTEGER NOT NULL DEFAULT 0
-    )
-  `).run();
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS schedule_lanes (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      section_id INTEGER NOT NULL REFERENCES schedule_sections(id) ON DELETE CASCADE,
-      captions   TEXT    NOT NULL DEFAULT '["brass","percussion","guard"]',
-      sort_order INTEGER NOT NULL DEFAULT 0
-    )
-  `).run();
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS schedule_subsections (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      section_id       INTEGER NOT NULL REFERENCES schedule_sections(id) ON DELETE CASCADE,
-      title            TEXT    NOT NULL DEFAULT '',
-      start_time       TEXT    NOT NULL,
-      duration_minutes INTEGER NOT NULL DEFAULT 30,
-      sort_order       INTEGER NOT NULL DEFAULT 0
-    )
-  `).run();
-
-  migrateScheduleSubsections(db);
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS schedule_content_items (
-      id                INTEGER PRIMARY KEY AUTOINCREMENT,
-      lane_id           INTEGER NOT NULL REFERENCES schedule_lanes(id) ON DELETE CASCADE,
-      start_time        TEXT    NOT NULL,
-      description       TEXT    NOT NULL DEFAULT '',
-      location_type     TEXT,
-      location_address  TEXT,
-      location_lat      REAL,
-      location_lng      REAL,
-      location_name     TEXT,
-      location_image    TEXT,
-      sort_order        INTEGER NOT NULL DEFAULT 0
-    )
-  `).run();
-}
-initSchedulesTables(db);
-
-// ── Messaging tables (NEW — not altering any existing table) ─────────────────
+// ── Messaging tables (NEW - not altering any existing table) ─────────────────
 function initMessagingTables(db) {
   db.prepare(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -1652,6 +2127,7 @@ app.set("views", path.join(__dirname, "views"));
 app.use(express.static("public")) //Using public folder
 app.use(cookieParser())
 app.use(express.static('/public'));
+app.use("/vendor/pdfjs", express.static(path.join(__dirname, "node_modules", "pdfjs-dist", "build")));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(body_parser.json())
@@ -1699,6 +2175,28 @@ function toCents(n) {
   // events.cost stored as integer dollars in your code; convert to cents safely
   const num = Number(n);
   return Number.isFinite(num) ? Math.round(num * 100) : 0;
+}
+
+async function verifyRecaptchaToken(token, req) {
+  if (!token) {
+    return { ok: false, message: "Captcha failed. Please try again." };
+  }
+  try {
+    const verifyURL = "https://www.google.com/recaptcha/api/siteverify";
+    const params = new URLSearchParams({
+      secret: process.env.RECAPTCHA_SECRET || "",
+      response: token,
+      remoteip: req.ip || "",
+    });
+    const { data } = await axios.post(verifyURL, params);
+    if (!data || !data.success) {
+      return { ok: false, message: "Captcha verification failed. Please try again." };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error("reCAPTCHA verify error:", err.message);
+    return { ok: false, message: "Captcha verification failed. Please try again." };
+  }
 }
 
 function mustBeAdmin(req, res, next){
@@ -1761,6 +2259,114 @@ function mustBeStaffOrAdmin(req, res, next) {
   return res.redirect("/");
 }
 
+function mustBeContractedForFiles(req, res, next) {
+  if (!req.user) return res.redirect("/");
+  if (req.admin || req.staff) return next();
+  const u = db.prepare(`
+    SELECT contractedCorps, contractedIndependent, contractedAffiliate
+    FROM users WHERE id = ?
+  `).get(req.user.userid);
+  if (u && (u.contractedCorps || u.contractedIndependent || u.contractedAffiliate)) return next();
+  return res.status(403).render("message", { message: "Music and Files is available to contracted members only." });
+}
+
+function userCanAccessFilesScope(userRow, scope) {
+  if (!userRow) return false;
+  if (userRow.admin || userRow.staff) return true;
+  const s = String(scope || "").toLowerCase();
+  if (s === "corps") return !!(userRow.contractedCorps || userRow.contractedAffiliate);
+  if (s === "indoor") return !!userRow.contractedIndependent;
+  return false;
+}
+
+function fileIconKind(mime, name) {
+  const m = String(mime || "").toLowerCase();
+  const n = String(name || "").toLowerCase();
+  if (m.startsWith("audio/") || /\.(mp3|wav|m4a|aac|ogg|flac|wma)$/i.test(n)) return "audio";
+  if (m.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|heif)$/i.test(n)) return "image";
+  return "pdf";
+}
+
+function fileTypeLabel(mime, name) {
+  const kind = fileIconKind(mime, name);
+  if (kind === "audio") return "Audio";
+  if (kind === "image") return "Image";
+  return "PDF";
+}
+
+/** Drop a trailing .ext so titles never show file type to users. */
+function stripFileExtension(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const stripped = raw.replace(/\.[A-Za-z0-9]{1,10}$/, "").trim();
+  return stripped || raw;
+}
+
+function titleLooksLikeHasExtension(name) {
+  return /\.[A-Za-z0-9]{1,10}$/.test(String(name || "").trim());
+}
+
+function isImageFileUpload(mime, name) {
+  return fileIconKind(mime, name) === "image";
+}
+
+/** Resize so long side is at most 720px, convert to PNG. Returns final absolute path + stats. */
+async function processFilesLibraryImage(absPath) {
+  const dir = path.dirname(absPath);
+  const base = path.basename(absPath, path.extname(absPath));
+  const outPath = path.join(dir, base + ".png");
+  const buf = await sharp(absPath)
+    .rotate()
+    .resize({
+      width: 720,
+      height: 720,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .png()
+    .toBuffer();
+  fs.writeFileSync(outPath, buf);
+  if (path.resolve(absPath) !== path.resolve(outPath) && fs.existsSync(absPath)) {
+    try { fs.unlinkSync(absPath); } catch (_) {}
+  }
+  return {
+    path: outPath,
+    mime: "image/png",
+    size: buf.length,
+    stored_path: "/uploads/files/" + path.basename(outPath),
+  };
+}
+
+function buildVisibilityFromChecks(body) {
+  const anyone = body.allow_anyone === "1" || body.allow_anyone === "true" || body.allow_anyone === true;
+  const corps = body.allow_corps === "1" || body.allow_corps === "true" || body.allow_corps === true;
+  const independent =
+    body.allow_independent === "1" || body.allow_independent === "true" || body.allow_independent === true;
+  if (anyone) {
+    return { allow_corps: 1, allow_independent: 1, allow_affiliate: 1, allow_noncontracted: 1 };
+  }
+  return {
+    allow_corps: corps ? 1 : 0,
+    allow_independent: independent ? 1 : 0,
+    allow_affiliate: 0,
+    allow_noncontracted: 0,
+  };
+}
+
+function collectDescendantFolderIds(rootId) {
+  const ids = [rootId];
+  const queue = [rootId];
+  while (queue.length) {
+    const parentId = queue.shift();
+    const kids = db.prepare("SELECT id FROM file_folders WHERE parent_id = ?").all(parentId);
+    for (const kid of kids) {
+      ids.push(kid.id);
+      queue.push(kid.id);
+    }
+  }
+  return ids;
+}
+
 
 //
 // === FORMS VISIBILITY + COMPLETENESS HELPERS ===
@@ -1769,73 +2375,60 @@ function mustBeStaffOrAdmin(req, res, next) {
 // Build the WHERE and params for "required forms this user must complete"
 function buildFormsQueryForUser(user) {
   const now = Date.now();
-
-  const wantCorps       = !!user?.contractedCorps;
+  const wantCorps = !!user?.contractedCorps;
   const wantIndependent = !!user?.contractedIndependent;
-  const wantAffiliate   = !!user?.contractedAffiliate;
+  const wantAffiliate = !!user?.contractedAffiliate;
+  const wantStaff = !!(user?.staff || user?.admin);
 
-  // 1) Not contracted to either group â†’ only general "all", non-contracted, member forms
-  if (!wantCorps && !wantIndependent && !wantAffiliate) {
+  const clauses = [];
+  const params = [now];
+
+  if (wantCorps) {
+    clauses.push("COALESCE(audience_corps, 0) = 1");
+  }
+  if (wantIndependent) {
+    clauses.push("COALESCE(audience_independent, 0) = 1");
+  }
+  if (wantAffiliate) {
+    clauses.push("COALESCE(audience_affiliate, 0) = 1");
+  }
+  if (wantStaff) {
+    clauses.push("COALESCE(audience_staff, 0) = 1");
+  }
+
+  // Legacy fallback for rows that never got audience flags backfilled
+  if (!wantStaff && !wantCorps && !wantIndependent && !wantAffiliate) {
     return {
       sql: `
         SELECT *
         FROM forms
         WHERE expire_date > ?
-          AND LOWER(COALESCE(ensemble_type, 'all')) = 'all'
-          AND COALESCE(contracted, 0) = 0
-          AND COALESCE(role_scope, 'member') = 'member'
+          AND 1 = 0
         ORDER BY due_date IS NULL, due_date ASC, id DESC
       `,
       params: [now],
     };
   }
 
-  // 2) Contracted to corps and/or independent
-  let sql = `
+  if (!clauses.length) {
+    return {
+      sql: `
+        SELECT *
+        FROM forms
+        WHERE expire_date > ?
+          AND 1 = 0
+        ORDER BY due_date IS NULL, due_date ASC, id DESC
+      `,
+      params: [now],
+    };
+  }
+
+  const sql = `
     SELECT *
     FROM forms
     WHERE expire_date > ?
-      AND COALESCE(role_scope, 'member') = 'member'
       AND (
-        (
-          LOWER(COALESCE(ensemble_type, 'all')) = 'all'
-          AND COALESCE(contracted, 0) = 0
-        )
-  `;
-  const params = [now];
-
-  // Add corps contracted forms
-  if (wantCorps) {
-    sql += `
-        OR (
-          LOWER(ensemble_type) = 'corps'
-          AND COALESCE(contracted, 0) = 1
-        )
-    `;
-  }
-
-  // Add independent contracted forms
-  if (wantIndependent) {
-    sql += `
-        OR (
-          LOWER(ensemble_type) = 'independent'
-          AND COALESCE(contracted, 0) = 1
-        )
-    `;
-  }
-
-  // Add affiliate contracted forms
-  if (wantAffiliate) {
-    sql += `
-        OR (
-          LOWER(ensemble_type) = 'affiliate'
-          AND COALESCE(contracted, 0) = 1
-        )
-    `;
-  }
-
-  // Close the big AND ( ... ) and finish query
-  sql += `
+        ${clauses.join("\n        OR ")}
       )
     ORDER BY due_date IS NULL, due_date ASC, id DESC
   `;
@@ -1843,18 +2436,320 @@ function buildFormsQueryForUser(user) {
   return { sql, params };
 }
 
+function parseFormFields(form) {
+  if (!form) return [];
+  try {
+    const raw = form.fields_json;
+    if (!raw) return [];
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function normalizeAudienceFromBody(body) {
+  const audience_corps = body.audience_corps === "1" || body.audience_corps === "on" || body.audience_corps === true ? 1 : 0;
+  const audience_independent =
+    body.audience_independent === "1" || body.audience_independent === "on" || body.audience_independent === true ? 1 : 0;
+  const audience_affiliate =
+    body.audience_affiliate === "1" || body.audience_affiliate === "on" || body.audience_affiliate === true ? 1 : 0;
+  const audience_staff = body.audience_staff === "1" || body.audience_staff === "on" || body.audience_staff === true ? 1 : 0;
+  return { audience_corps, audience_independent, audience_affiliate, audience_staff };
+}
+
+function listUsersNeedingForm(form) {
+  const clauses = [];
+  const params = [];
+  if (form.audience_corps) {
+    clauses.push("COALESCE(contractedCorps, 0) = 1");
+  }
+  if (form.audience_independent) {
+    clauses.push("COALESCE(contractedIndependent, 0) = 1");
+  }
+  if (form.audience_affiliate) {
+    clauses.push("COALESCE(contractedAffiliate, 0) = 1");
+  }
+  if (form.audience_staff) {
+    clauses.push("COALESCE(staff, 0) = 1");
+  }
+  if (!clauses.length) return [];
+  return db.prepare(`
+    SELECT id, email, firstname, lastname, parent
+    FROM users
+    WHERE email IS NOT NULL AND TRIM(email) != ''
+      AND (${clauses.join(" OR ")})
+  `).all(...params);
+}
+
+async function notifyFormAudience(form) {
+  const users = listUsersNeedingForm(form);
+  const emailed = new Set();
+  const due = form.due_date
+    ? new Date(form.due_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : null;
+  const subject = `Please sign: ${form.title}`;
+  const memberBody = (name) => `
+    Hi ${name || "there"},<br><br>
+    A new form needs your signature online: <strong>${form.title}</strong>.<br>
+    ${form.description ? `${form.description}<br><br>` : ""}
+    ${due ? `It is due by <strong>${due}</strong>.<br><br>` : ""}
+    Sign it here (no printing needed):<br>
+    <a href="https://boisegems.org/member-forms">https://boisegems.org/member-forms</a><br><br>
+    Thank you!<br>
+    Boise Gems
+  `;
+  const parentBody = (parentName, childName) => `
+    Hi ${parentName || "there"},<br><br>
+    A new form needs to be signed for <strong>${childName}</strong>: <strong>${form.title}</strong>.<br>
+    ${form.description ? `${form.description}<br><br>` : ""}
+    ${due ? `It is due by <strong>${due}</strong>.<br><br>` : ""}
+    You can sign it online in the parent portal (no printing needed):<br>
+    <a href="https://boisegems.org/parent-portal">https://boisegems.org/parent-portal</a><br><br>
+    Thank you!<br>
+    Boise Gems
+  `;
+
+  for (const u of users) {
+    if (u.email && !emailed.has(u.email.toLowerCase())) {
+      emailed.add(u.email.toLowerCase());
+      try {
+        await sendEmail(u.email, subject, memberBody(u.firstname));
+      } catch (err) {
+        console.error("Form notify email failed:", err);
+      }
+    }
+    // Parents of member users (not staff-only accounts)
+    if (!form.audience_staff || form.audience_corps || form.audience_independent || form.audience_affiliate) {
+      if (!u.parent) {
+        const parents = parentLinks.getParentsForChild(db, u.id);
+        for (const p of parents) {
+          if (!p.email || emailed.has(String(p.email).toLowerCase())) continue;
+          emailed.add(String(p.email).toLowerCase());
+          try {
+            await sendEmail(
+              p.email,
+              subject,
+              parentBody(p.firstname, `${u.firstname || ""} ${u.lastname || ""}`.trim())
+            );
+          } catch (err) {
+            console.error("Form notify parent email failed:", err);
+          }
+        }
+      }
+    }
+  }
+  return emailed.size;
+}
+
+async function stampFormPdf(form, fieldValues, meta) {
+  const fields = parseFormFields(form);
+  if (!form.document_path && !form.pdf_path) return null;
+  const rel = String(form.document_path || form.pdf_path || "").replace(/^\/+/, "");
+  const abs = path.join(__dirname, "public", rel);
+  if (!fs.existsSync(abs)) return null;
+
+  const bytes = fs.readFileSync(abs);
+  const pdfDoc = await PDFDocument.load(bytes);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const signFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  const pages = pdfDoc.getPages();
+
+  for (const field of fields) {
+    const pageIndex = Math.max(0, (Number(field.page) || 1) - 1);
+    if (pageIndex >= pages.length) continue;
+    const page = pages[pageIndex];
+    const { width, height } = page.getSize();
+    const fw = Math.max(0.02, Number(field.w) || 0.2) * width;
+    const fh = Math.max(0.015, Number(field.h) || 0.04) * height;
+    const x = Math.max(0, Number(field.x) || 0) * width;
+    const yTop = Math.max(0, Number(field.y) || 0) * height;
+    const y = height - yTop - fh;
+    const raw = fieldValues && fieldValues[field.id] != null ? String(fieldValues[field.id]) : "";
+    const value = raw.trim();
+    if (!value) continue;
+
+    const isSign = field.type === "signature" || field.type === "initials";
+    const useFont = isSign ? signFont : font;
+    let size = Math.min(14, Math.max(8, fh * 0.55));
+    const maxWidth = fw - 4;
+    while (size > 7 && useFont.widthOfTextAtSize(value, size) > maxWidth) size -= 0.5;
+
+    page.drawText(value.slice(0, 200), {
+      x: x + 2,
+      y: y + Math.max(2, (fh - size) / 2),
+      size,
+      font: useFont,
+      color: rgb(0.05, 0.05, 0.15),
+      maxWidth,
+    });
+  }
+
+  // Footer audit line(s) on last page
+  if (meta && (meta.signerName || (meta.signerLines && meta.signerLines.length))) {
+    const last = pages[pages.length - 1];
+    const lines = Array.isArray(meta.signerLines) && meta.signerLines.length
+      ? meta.signerLines
+      : [`Signed online by ${meta.signerName} on ${meta.signedAt || new Date().toLocaleString()}`];
+    lines.slice(-4).forEach((line, idx) => {
+      last.drawText(String(line).slice(0, 140), {
+        x: 24,
+        y: 16 + idx * 11,
+        size: 8,
+        font,
+        color: rgb(0.35, 0.35, 0.4),
+      });
+    });
+  }
+
+  const outBytes = await pdfDoc.save();
+  const outName = generateCustomFilename() + ".pdf";
+  const outDir = path.join(__dirname, "private", "pdf");
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, outName), outBytes);
+  return `/secure-pdf/${outName}`;
+}
+
+function parseContractFields(row) {
+  return parseFormFields({ fields_json: row && row.fields_json });
+}
+
+function parseFieldValuesObject(raw) {
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw || "{}") : raw;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch (_) {
+    return {};
+  }
+}
+
+/** Merge so prior non-empty values (especially signatures) are never wiped by blanks. */
+function mergeFieldValues(existing, incoming) {
+  const out = { ...parseFieldValuesObject(existing) };
+  const next = parseFieldValuesObject(incoming);
+  for (const [key, value] of Object.entries(next)) {
+    const trimmed = String(value == null ? "" : value).trim();
+    if (trimmed) out[key] = trimmed;
+  }
+  return out;
+}
+
+function parseSignersLog(raw) {
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function appendSignerLog(existingRaw, entry) {
+  const log = parseSignersLog(existingRaw);
+  log.push({
+    at: Date.now(),
+    ...entry,
+  });
+  return log;
+}
+
+function fieldLabel(field) {
+  if (!field) return "Field";
+  if (field.label && String(field.label).trim()) return String(field.label).trim();
+  const t = String(field.type || "text");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function summarizeFormFieldCompleteness(formOrFields, fieldValues) {
+  const fields = Array.isArray(formOrFields)
+    ? formOrFields
+    : parseFormFields(formOrFields);
+  const values = parseFieldValuesObject(fieldValues);
+  const filled = [];
+  const missing = [];
+  for (const f of fields) {
+    const label = fieldLabel(f);
+    const value = String(values[f.id] != null ? values[f.id] : "").trim();
+    if (value) filled.push({ id: f.id, type: f.type || "text", label, value });
+    else missing.push({ id: f.id, type: f.type || "text", label });
+  }
+  return { filled, missing, values };
+}
+
+function signerLinesFromLog(log) {
+  return (log || []).map((entry) => {
+    const when = entry.at
+      ? new Date(entry.at).toLocaleString()
+      : "";
+    const who = entry.name || entry.signature || "Signer";
+    const role = entry.role ? ` (${entry.role})` : "";
+    return `Signed online by ${who}${role}${when ? ` on ${when}` : ""}`;
+  });
+}
+
+function deleteSecurePdfIfExists(uploadPath) {
+  if (!uploadPath || !String(uploadPath).startsWith("/secure-pdf/")) return;
+  const oldFsPath = path.join(__dirname, "private", "pdf", path.basename(uploadPath));
+  try {
+    if (fs.existsSync(oldFsPath)) fs.unlinkSync(oldFsPath);
+  } catch (err) {
+    console.error("Failed to delete old secure pdf:", err);
+  }
+}
+
+async function stampContractPdf(contractRow, fieldValues, meta) {
+  if (!contractRow) return null;
+  return stampFormPdf(
+    { document_path: contractRow.pdf_path, fields_json: contractRow.fields_json },
+    fieldValues,
+    meta
+  );
+}
+
+function getLatestContractPdf(ensemble) {
+  return db
+    .prepare("SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1")
+    .get(ensemble);
+}
+
+function saveContractPdfEnsemble(ensemble, file, fieldsRaw) {
+  let fieldsJson = "[]";
+  try {
+    const parsed = JSON.parse(String(fieldsRaw || "[]"));
+    fieldsJson = JSON.stringify(Array.isArray(parsed) ? parsed : []);
+  } catch (_) {
+    fieldsJson = "[]";
+  }
+  const latest = getLatestContractPdf(ensemble);
+  const now = Date.now();
+  if (file) {
+    const pdfPath = `/pdf/publicpdf/${file.filename}`;
+    db.prepare(
+      "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at, fields_json) VALUES (?, ?, ?, ?)"
+    ).run(ensemble, pdfPath, now, fieldsJson);
+    return;
+  }
+  if (latest) {
+    db.prepare("UPDATE contractPdfs SET fields_json = ? WHERE id = ?").run(fieldsJson, latest.id);
+  }
+}
 
 function getRequiredFormsForUser(userId) {
   const user = db.prepare(`
-    SELECT id, contractedCorps, contractedIndependent, contractedAffiliate
+    SELECT id, contractedCorps, contractedIndependent, contractedAffiliate, staff, admin
     FROM users
     WHERE id = ?
   `).get(userId);
 
-  const q = buildFormsQueryForUser(user || { contractedCorps: 0, contractedIndependent: 0, contractedAffiliate: 0 });
-
-  console.log("FORMS SQL:", q.sql);
-  console.log("FORMS PARAMS:", q.params);
+  const q = buildFormsQueryForUser(
+    user || {
+      contractedCorps: 0,
+      contractedIndependent: 0,
+      contractedAffiliate: 0,
+      staff: 0,
+      admin: 0,
+    }
+  );
 
   return db.prepare(q.sql).all(...q.params);
 }
@@ -1902,6 +2797,11 @@ const CURRENTSEASON = 2026;
 app.use(function (req, res, next) {
 
   res.locals.CURRENTSEASON = CURRENTSEASON;
+  res.locals.testSite = TEST_SITE;
+
+  if (TEST_SITE) {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
+  }
 
   if(req.session.flashMessage)
   {
@@ -1929,36 +2829,110 @@ app.use(function (req, res, next) {
 
     res.locals.user = req.user;
     res.locals.admin = req.admin;
+    res.locals.staff = req.staff;
     res.locals.parent = req.parent;
     res.locals.fan = req.fan;
     res.locals.errors = errors;
 
     res.locals.RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || "";
+    res.locals.stripePublishableKey = merchSystem.getStripePublishableKey();
+    res.locals.siteSettings = getSiteSettings();
+    res.locals.messagingAllowed = req.user ? canUseMessaging(req.user) : false;
+    res.locals.merchEnabled = Number(getSiteSettings().merch_enabled) === 1;
+    res.locals.merchCartCount = merchSystem.cartCount(req);
 
     next()
 })
 
-app.get("/", (req, res) => {
+/* ── Instagram feed (Graph API) ───────────────────────────────
+   Requires a Meta app + Instagram Business/Creator account linked
+   to a Facebook Page. Set in .env:
+     INSTAGRAM_ACCESS_TOKEN  - long-lived user/page token
+     INSTAGRAM_USER_ID       - numeric Instagram user id
+   Without these the homepage shows a follow-us fallback instead. */
+let instagramCache = { posts: null, fetchedAt: 0 };
+const INSTAGRAM_CACHE_MS = 15 * 60 * 1000;
+
+async function getInstagramPosts(limit = 6) {
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const userId = process.env.INSTAGRAM_USER_ID;
+  if (!token || !userId) return [];
+
+  const now = Date.now();
+  if (instagramCache.posts && (now - instagramCache.fetchedAt) < INSTAGRAM_CACHE_MS) {
+    return instagramCache.posts.slice(0, limit);
+  }
+
+  try {
+    const fields = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
+    const url = `https://graph.instagram.com/${userId}/media?fields=${fields}&limit=${limit}&access_token=${encodeURIComponent(token)}`;
+    const res = await node_fetch(url);
+    if (!res.ok) throw new Error(`Instagram API HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || "Instagram API error");
+
+    const posts = (data.data || []).map((p) => ({
+      id: p.id,
+      caption: p.caption || "",
+      mediaType: p.media_type,
+      mediaUrl: p.media_url,
+      thumbnailUrl: p.thumbnail_url || p.media_url,
+      permalink: p.permalink,
+      timestamp: p.timestamp,
+    }));
+
+    instagramCache = { posts, fetchedAt: now };
+    return posts;
+  } catch (err) {
+    console.error("Instagram fetch failed:", err.message);
+    return instagramCache.posts ? instagramCache.posts.slice(0, limit) : [];
+  }
+}
+
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain");
+  if (TEST_SITE) {
+    return res.send("User-agent: *\nDisallow: /\n");
+  }
+  return res.send("User-agent: *\nAllow: /\n");
+});
+
+app.get("/", async (req, res) => {
   const events = db.prepare("SELECT * FROM events ORDER BY datetime DESC").all();
 
   const news = db.prepare(`
     SELECT id, title, slug, hero, created_at
     FROM news
     ORDER BY created_at DESC
-    LIMIT 3
+    LIMIT 9
   `).all();
+
+  const instagramPosts = await getInstagramPosts(6);
 
   return res.render("index", {
     admin: true,
     events,
-    news
+    news,
+    instagramPosts,
   });
 });
 
 app.get("/admin-portal", mustBeAdmin, (req,res) => {
-  const memberStatement = db.prepare("SELECT * FROM users WHERE id = ?")
-  const member = memberStatement.get(req.user.userid)
-  return res.render("admin-portal", {member})
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  const announcements = getAnnouncementsForUser(member);
+  const siteSettings = getSiteSettings();
+  const stats = getAdminStats();
+  const merchSettings = merchSystem.getMerchSettings(getSiteSettings);
+  const promoCodes = merchSystem.listPromoCodes(db);
+  return res.render("admin-portal", {
+    member,
+    announcements,
+    siteSettings,
+    stats,
+    merchSettings,
+    promoCodes,
+    ourHistoryHtml: ourHistoryContent.renderOurHistoryBody(siteSettings.our_history_body_html),
+  });
 })
 
 const coordinates = {
@@ -1972,8 +2946,11 @@ const coordinates = {
 
 
 
-app.post("/register-parent", (req, res) => {
+app.post("/register-parent", async (req, res) => {
   let errors = [];
+
+  const captcha = await verifyRecaptchaToken(req.body["g-recaptcha-response"], req);
+  if (!captcha.ok) errors.push(captcha.message);
 
   let firstname = req.body.firstname || "";
   let lastname = req.body.lastname || "";
@@ -2105,10 +3082,13 @@ app.get("/verify/:id", (req,res) => {
   return res.redirect("/")
 })
 
-app.post("/register-member", (req, res) => {
+app.post("/register-member", async (req, res) => {
   if (req.user) return res.redirect("/");
 
   let errors = [];
+
+  const captcha = await verifyRecaptchaToken(req.body["g-recaptcha-response"], req);
+  if (!captcha.ok) errors.push(captcha.message);
 
   let firstname = req.body.firstname || "";
   let lastname = req.body.lastname || "";
@@ -2226,10 +3206,13 @@ app.post("/register-member", (req, res) => {
 });
 
 // ── Register Fan ──
-app.post("/register-fan", (req, res) => {
+app.post("/register-fan", async (req, res) => {
   if (req.user) return res.redirect("/");
 
   let errors = [];
+
+  const captcha = await verifyRecaptchaToken(req.body["g-recaptcha-response"], req);
+  if (!captcha.ok) errors.push(captcha.message);
 
   let firstname = (req.body.firstname || "").trim();
   let lastname = (req.body.lastname || "").trim();
@@ -2365,7 +3348,7 @@ app.get("/register-member", (req,res) => {
 })
 
 app.get("/add-member", mustBeParent, (req,res) => {
-  return res.render("add-member", {placeholders: undefined})
+  return res.redirect("/parent-portal")
 })
 
 app.get("/logout", mustBeLoggedIn, (req,res) => {
@@ -2388,8 +3371,9 @@ app.get("/fan-portal", mustBeLoggedIn, (req, res) => {
 
   const subscriptions = db.prepare("SELECT * FROM fan_subscriptions WHERE user_id = ? ORDER BY created_at DESC").all(req.user.userid);
   const donationHistory = db.prepare("SELECT * FROM donations WHERE user_id = ? ORDER BY created_at DESC").all(req.user.userid);
+  const digitalGrants = merchSystem.getDigitalGrantsForUser(db, req.user.userid);
 
-  return res.render("fan-portal", { member, subscriptions, donationHistory });
+  return res.render("fan-portal", { member, subscriptions, donationHistory, digitalGrants });
 });
 
 // ── Cancel fan subscription ──
@@ -2434,7 +3418,12 @@ app.get("/member-portal", mustBeMember, (req,res) => {
     member.minor = age < 18;
   }
 
-  return res.render("member-portal", { member, contracts, leftoverForms, allergy });
+  const announcements = getAnnouncementsForUser(member);
+  member.hasLinkedParent = parentLinks.childHasLinkedParent(db, req.user.userid);
+  const linkRequests = parentLinks.getIncomingRequests(db, req.user.userid);
+  const linkedParents = parentLinks.getParentsForChild(db, req.user.userid);
+  const digitalGrants = merchSystem.getDigitalGrantsForUser(db, req.user.userid);
+  return res.render("member-portal", { member, contracts, leftoverForms, allergy, announcements, linkRequests, linkedParents, digitalGrants });
 });
 
 app.get("/member-transactions", mustBeMember, (req, res) => {
@@ -2458,10 +3447,7 @@ app.get("/parent/transactions/:childId", mustBeParent, (req, res) => {
   const childId = req.params.childId;
 
   // Make sure this child actually belongs to the logged-in parent
-  const getChild = db.prepare(
-    "SELECT * FROM users WHERE id = ? AND parentId = ?"
-  );
-  const thisUser = getChild.get(childId, req.user.userid);
+  const thisUser = getChildForParent(req.user.userid, childId);
 
   if (!thisUser) {
     // Not your kid, or doesnâ€™t exist
@@ -2548,8 +3534,7 @@ app.get("/member-forms", mustBeMember, (req,res) => {
 app.get("/member-forms-parent/:id", mustBeParent, (req,res) => {
   const childId = Number(req.params.id);
 
-  const isParent = db.prepare("SELECT parentId FROM users WHERE id = ?").get(childId)?.parentId == req.user.userid;
-  if (!isParent) return res.redirect("/");
+  if (!parentIsOf(req.user.userid, childId)) return res.redirect("/");
 
   const requiredForms = getRequiredFormsForUser(childId);
   const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(childId);
@@ -2568,90 +3553,96 @@ app.get("/member-forms-parent/:id", mustBeParent, (req,res) => {
 });
 
 
-app.get("/upload-form-parent/:id/:child", mustBeParent, (req, res) => {
-  const getParentIdStatement = db
-    .prepare("SELECT parentId FROM users WHERE id = ?")
-    .get(req.params.child);
-  const isParent = getParentIdStatement.parentId == req.user.userid;
-
-  if (!isParent) return res.redirect("/");
-
-  const thisForm = db
-    .prepare("SELECT * FROM forms WHERE id = ?")
-    .get(req.params.id);
-
-  let hasFillablePdf = false;
-  if (thisForm && thisForm.document_path && thisForm.document_path.toLowerCase().endsWith(".pdf")) {
-    try {
-      const rel = thisForm.document_path.replace(/^\/+/, "");
-      const abs = path.join(__dirname, "public", rel);
-      hasFillablePdf = pdfHasFormFields(abs);
-    } catch (err) {
-      console.error("Failed to inspect form PDF (parent):", err);
-    }
-  }
-
-  return res.render("upload-form", {
-    thisForm,
-    parent: req.params.child,
-    hasFillablePdf,
-  });
-});
-
-
-app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single("document_path"), (req, res) => {
-
-  const getParentIdStatement = db.prepare("SELECT parentId FROM users WHERE id = ?").get(req.params.child)
-  const isParent = getParentIdStatement.parentId == req.user.userid;
-
-  console.log(isParent)
-
-  if(!isParent)
-    return res.redirect("/")
-
-  const documentId = parseInt(req.params.id);
-  const userId = req.params.child;
-
-  // Check if user has already uploaded this form
-    // If they already uploaded, delete old row + file (resubmission)
+async function upsertFormUploadSubmission({
+  form,
+  memberUserId,
+  actorUserId,
+  actorRole,
+  body,
+  file,
+  ip,
+  userAgent,
+}) {
+  const documentId = form.id;
   const old = db
     .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
-    .get(documentId, userId);
+    .get(documentId, memberUserId);
 
-  if (old && old.upload_path && old.upload_path.startsWith("/secure-pdf/")) {
-    const oldFsPath = path.join(__dirname, "private", "pdf", path.basename(old.upload_path));
-    try {
-      if (fs.existsSync(oldFsPath)) fs.unlinkSync(oldFsPath);
-    } catch (err) {
-      console.error("Failed to delete old secure pdf (parent):", err);
-    }
-    db.prepare("DELETE FROM formUploads WHERE id = ?").run(old.id);
+  const name = body.name;
+  const email = body.email;
+  const signature = body.signature;
+  const dateSigned = new Date(body.date || Date.now()).getTime();
+  const consent = body.read ? 1 : 0;
+
+  let incoming = {};
+  try {
+    incoming = JSON.parse(String(body.field_values || "{}"));
+  } catch (_) {
+    incoming = {};
+  }
+  if (signature && !incoming.__signature) incoming.__signature = signature;
+
+  const mergedValues = mergeFieldValues(old && old.field_values_json, incoming);
+  const signersLog = appendSignerLog(old && old.signers_log_json, {
+    userId: actorUserId,
+    role: actorRole || "signer",
+    name: name || signature || "",
+    email: email || "",
+    signature: signature || "",
+  });
+
+  let documentPath = file ? `/secure-pdf/${file.filename}` : null;
+  if (!documentPath && parseFormFields(form).length) {
+    documentPath = await stampFormPdf(form, mergedValues, {
+      signerName: name || signature,
+      signedAt: new Date(dateSigned).toLocaleString(),
+      signerLines: signerLinesFromLog(signersLog),
+    });
+  }
+  if (!documentPath && old && old.upload_path) {
+    documentPath = old.upload_path;
   }
 
-  // Pull form data
+  if (old) {
+    if (documentPath && documentPath !== old.upload_path) {
+      deleteSecurePdfIfExists(old.upload_path);
+    }
+    db.prepare(`
+      UPDATE formUploads SET
+        signer_name = ?,
+        signer_email = ?,
+        upload_path = ?,
+        signed_date = ?,
+        ip_address = ?,
+        user_agent = ?,
+        signature = ?,
+        consent = ?,
+        field_values_json = ?,
+        signers_log_json = ?
+      WHERE id = ?
+    `).run(
+      name,
+      email,
+      documentPath,
+      dateSigned,
+      ip,
+      userAgent,
+      signature,
+      consent,
+      JSON.stringify(mergedValues),
+      JSON.stringify(signersLog),
+      old.id
+    );
+    return { id: old.id, fieldValues: mergedValues };
+  }
 
-
-  // Pull form data
-  const name = req.body.name;
-  const email = req.body.email;
-  const signature = req.body.signature;
-  const dateSigned = new Date(req.body.date).getTime();
-  const consent = req.body.read ? 1 : 0;
-
-  const ip = req.ip;
-  const userAgent = req.headers['user-agent'];
-  const documentPath = req.file ? `/secure-pdf/${req.file.filename}` : null;
-
-  // Insert into database
-  const insertFormUpload = db.prepare(`
+  const result = db.prepare(`
     INSERT INTO formUploads (
       signer_name, signer_email, upload_path, document_id,
       signed_date, ip_address, user_agent, signature,
-      consent, user_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insertFormUpload.run(
+      consent, user_id, field_values_json, signers_log_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
     name,
     email,
     documentPath,
@@ -2661,28 +3652,85 @@ app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single(
     userAgent,
     signature,
     consent,
-    Number(userId)
+    Number(memberUserId),
+    JSON.stringify(mergedValues),
+    JSON.stringify(signersLog)
   );
 
-  req.session.flashMessage = "Form uploaded.";
+  return { id: result.lastInsertRowid, fieldValues: mergedValues };
+}
+
+app.get("/upload-form-parent/:id/:child", mustBeParent, (req, res) => {
+  if (!parentIsOf(req.user.userid, Number(req.params.child))) return res.redirect("/");
+
+  const thisForm = db
+    .prepare("SELECT * FROM forms WHERE id = ?")
+    .get(req.params.id);
+  if (!thisForm) return res.redirect(`/member-forms-parent/${req.params.child}`);
+
+  const existing = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(thisForm.id, Number(req.params.child));
+
+  return res.render("upload-form", {
+    thisForm,
+    parent: req.params.child,
+    formFields: parseFormFields(thisForm),
+    existingFieldValues: parseFieldValuesObject(existing && existing.field_values_json),
+    existingUpload: existing || null,
+  });
+});
+
+
+app.post("/upload-form-parent/:id/:child", mustBeParent, pdfUploadSecure.single("document_path"), async (req, res) => {
+  if (!parentIsOf(req.user.userid, Number(req.params.child)))
+    return res.redirect("/");
+
+  const documentId = parseInt(req.params.id);
+  const userId = Number(req.params.child);
+
+  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(documentId);
+  if (!thisForm) {
+    req.session.flashMessage = "Form not found.";
+    return res.redirect(`/member-forms-parent/${userId}`);
+  }
+
+  try {
+    await upsertFormUploadSubmission({
+      form: thisForm,
+      memberUserId: userId,
+      actorUserId: req.user.userid,
+      actorRole: "parent",
+      body: req.body,
+      file: req.file,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+  } catch (err) {
+    console.error("upload-form-parent failed:", err);
+    req.session.flashMessage = "Could not save the form. Please try again.";
+    return res.redirect(`/upload-form-parent/${documentId}/${userId}`);
+  }
+
+  req.session.flashMessage =
+    "Form saved. Existing signatures were kept. You or your child can open it again to add more.";
   return res.redirect(`/member-forms-parent/${userId}`);
 });
 
 app.get("/upload-form/:id", mustBeMember, (req, res) => {
   const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(req.params.id);
+  if (!thisForm) return res.redirect("/member-forms");
 
-  let hasFillablePdf = false;
-  if (thisForm && thisForm.document_path && thisForm.document_path.toLowerCase().endsWith(".pdf")) {
-    try {
-      const rel = thisForm.document_path.replace(/^\/+/, "");
-      const abs = path.join(__dirname, "public", rel);
-      hasFillablePdf = pdfHasFormFields(abs);
-    } catch (err) {
-      console.error("Failed to inspect form PDF:", err);
-    }
-  }
+  const existing = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(thisForm.id, req.user.userid);
 
-  return res.render("upload-form", { thisForm, hasFillablePdf });
+  return res.render("upload-form", {
+    thisForm,
+    formFields: parseFormFields(thisForm),
+    existingFieldValues: parseFieldValuesObject(existing && existing.field_values_json),
+    existingUpload: existing || null,
+  });
 });
 
 
@@ -2698,60 +3746,36 @@ app.get("/secure-pdf/:filename", mustBeAdmin, (req, res) => {
   res.sendFile(filePath);
 });
 
-app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path"), (req, res) => {
+app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path"), async (req, res) => {
   const documentId = parseInt(req.params.id);
   const userId = req.user.userid;
 
-  // If they already uploaded, delete old row + file (resubmission)
-  const old = db
-    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
-    .get(documentId, userId);
-
-  if (old && old.upload_path && old.upload_path.startsWith("/secure-pdf/")) {
-    const oldFsPath = path.join(__dirname, "private", "pdf", path.basename(old.upload_path));
-    try {
-      if (fs.existsSync(oldFsPath)) fs.unlinkSync(oldFsPath);
-    } catch (err) {
-      console.error("Failed to delete old secure pdf:", err);
-    }
-
-    db.prepare("DELETE FROM formUploads WHERE id = ?").run(old.id);
+  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(documentId);
+  if (!thisForm) {
+    req.session.flashMessage = "Form not found.";
+    return res.redirect("/member-forms");
   }
 
-  // Pull form data
-  const name      = req.body.name;
-  const email     = req.body.email;
-  const signature = req.body.signature;
-  const dateSigned = new Date(req.body.date).getTime();
-  const consent   = req.body.read ? 1 : 0;
+  try {
+    await upsertFormUploadSubmission({
+      form: thisForm,
+      memberUserId: userId,
+      actorUserId: userId,
+      actorRole: "member",
+      body: req.body,
+      file: req.file,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+  } catch (err) {
+    console.error("upload-form failed:", err);
+    req.session.flashMessage = "Could not save the form. Please try again.";
+    return res.redirect(`/upload-form/${documentId}`);
+  }
 
-  const ip        = req.ip;
-  const userAgent = req.headers["user-agent"];
-  const documentPath = req.file ? `/secure-pdf/${req.file.filename}` : null;
-
-  const insertFormUpload = db.prepare(`
-    INSERT INTO formUploads (
-      signer_name, signer_email, upload_path, document_id,
-      signed_date, ip_address, user_agent, signature,
-      consent, user_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insertFormUpload.run(
-    name,
-    email,
-    documentPath,
-    documentId,
-    dateSigned,
-    ip,
-    userAgent,
-    signature,
-    consent,
-    Number(userId)
-  );
-
-  req.session.flashMessage = "Form uploaded.";
-  return res.redirect(`/member-forms/${userId}`);
+  req.session.flashMessage =
+    "Form saved. Existing signatures were kept. You can open it again anytime to add more.";
+  return res.redirect("/member-forms");
 });
 
 
@@ -2982,8 +4006,7 @@ app.get("/change-membership/:id", mustBeAdmin,(req,res) => {
     isMinor = age < 18;
   }
 
-  const parentId = thisUser.parentId || null;
-  if (isMinor && !parentId) {
+  if (isMinor && !parentLinks.childHasLinkedParent(db, thisUser.id)) {
     req.session.flashMessage = `${thisUser.firstname} ${thisUser.lastname} is a minor and does not have a parent attached. Please have a parent claim this member as their child before sending a contract.`;
     return res.redirect(req.get('Referer') || '/staff/members');
   }
@@ -3180,7 +4203,7 @@ app.get("/accept-contract/:id", mustBeLoggedIn, ensureActiveContractExtension, (
   );
   const contractExtension = getContractStatement.get(req.params.id);
 
-  if (!contractExtension || contractExtension.user_id != req.user.userid) {
+  if (!contractExtension || !canUserAccessContract(contractExtension, req.user.userid)) {
     return res.redirect("/");
   }
 
@@ -3204,13 +4227,9 @@ app.get("/accept-contract/:id", mustBeLoggedIn, ensureActiveContractExtension, (
   const depositLabel = (depositCents / 100).toFixed(2);
 
   // Contract PDF (if any)
-  const pdfRow = db
-    .prepare(
-      "SELECT pdf_path FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
-    )
-    .get(ensemble);
-
+  const pdfRow = getLatestContractPdf(ensemble);
   const contractPdfPath = pdfRow ? pdfRow.pdf_path : null;
+  const hasOnlineFields = parseContractFields(pdfRow).length > 0;
 
   return res.render("accept-contract", {
     group: groupLabel,
@@ -3219,6 +4238,7 @@ app.get("/accept-contract/:id", mustBeLoggedIn, ensureActiveContractExtension, (
     bypass: contractExtension.bypass_fee,
     depositLabel,
     contractPdfPath,
+    hasOnlineFields,
   });
 });
 
@@ -3228,7 +4248,7 @@ app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
   const getContractStatement = db.prepare("SELECT * FROM contractExtension WHERE id = ?")
   const contractExtension = getContractStatement.get(req.params.id);
 
-  if(contractExtension.user_id != req.user.userid)
+  if(!contractExtension || !canUserAccessContract(contractExtension, req.user.userid))
   {
     return res.redirect("/")
   }
@@ -3238,14 +4258,29 @@ app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
   }
 
   let group = "Independent"
+  let ensemble = "independent";
 
   if (contractExtension.season.includes("corps")) {
     group = "Drum & Bugle Corps";
+    ensemble = "corps";
   } else if (contractExtension.season.includes("affiliate")) {
     group = "Affiliate";
+    ensemble = "affiliate";
   }
 
-  return res.render("sign-contract",{group, season: CURRENTSEASON, contractExtension})
+  const contractPdf = getLatestContractPdf(ensemble);
+  const contractFields = parseContractFields(contractPdf);
+  const hasOnlineFields = contractFields.length > 0;
+
+  return res.render("sign-contract", {
+    group,
+    season: CURRENTSEASON,
+    contractExtension,
+    contractPdfPath: contractPdf ? contractPdf.pdf_path : null,
+    contractFields,
+    hasOnlineFields,
+    existingFieldValues: parseFieldValuesObject(contractExtension.field_values_json),
+  });
 })
 
 app.post(
@@ -3260,8 +4295,7 @@ app.post(
 
     if (
       !contractExtension ||
-      (contractExtension.user_id !== req.user.userid &&
-        contractExtension.child_id !== req.user.userid)
+      !canUserAccessContract(contractExtension, req.user.userid)
     ) {
       return res.redirect("/");
     }
@@ -3269,15 +4303,7 @@ app.post(
     // Who is the actual member this contract is FOR?
     const memberId = contractExtension.child_id || contractExtension.user_id;
     const isMinorContract = !!contractExtension.child_id;
-
-    // Ensure a signed contract PDF was uploaded
-    if (!req.file) {
-      req.session.flashMessage = "Please upload your signed contract PDF.";
-      return res.redirect(`/sign-contract/${contractExtension.id}`);
-    }
-
-    // File is stored under ./private/pdf/<filename>
-    const contractFilePath = path.join("private", "pdf", req.file.filename);
+    const actorRole = isMinorContract && req.user.userid !== memberId ? "parent" : "member";
 
     // Determine ensemble type
     let ensemble = "independent";
@@ -3286,6 +4312,73 @@ app.post(
     } else if (contractExtension.season.includes("affiliate")) {
       ensemble = "affiliate";
     }
+
+    const contractPdf = getLatestContractPdf(ensemble);
+    const contractFields = parseContractFields(contractPdf);
+    const hasOnlineFields = contractFields.length > 0;
+
+    let incoming = {};
+    try {
+      incoming = JSON.parse(String(req.body.field_values || "{}"));
+    } catch (_) {
+      incoming = {};
+    }
+    if (req.body.signature && !incoming.__signature) {
+      incoming.__signature = req.body.signature;
+    }
+
+    const mergedValues = mergeFieldValues(contractExtension.field_values_json, incoming);
+    let signersLog = parseSignersLog(contractExtension.signers_log_json);
+    if (String(req.body.signature || "").trim()) {
+      signersLog = appendSignerLog(contractExtension.signers_log_json, {
+        userId: req.user.userid,
+        role: actorRole,
+        name: req.body.signature || req.user.firstname || "",
+        signature: req.body.signature || "",
+      });
+    }
+
+    // Always persist merged values so parent/child can continue without wiping signatures
+    db.prepare(
+      "UPDATE contractExtension SET field_values_json = ?, signers_log_json = ? WHERE id = ?"
+    ).run(JSON.stringify(mergedValues), JSON.stringify(signersLog), contractExtension.id);
+
+    if (req.body.save_progress === "1" || req.body.save_progress === "on") {
+      req.session.flashMessage =
+        "Progress saved. Existing signatures were kept. The other signer can open this contract and add theirs.";
+      return res.redirect(`/sign-contract/${contractExtension.id}`);
+    }
+
+    let contractFilePath = null;
+    if (hasOnlineFields) {
+      try {
+        const stamped = await stampContractPdf(contractPdf, mergedValues, {
+          signerName: req.body.signature || req.user.firstname || "Member",
+          signedAt: new Date(req.body.date || Date.now()).toLocaleString(),
+          signerLines: signerLinesFromLog(signersLog),
+        });
+        if (!stamped) {
+          req.session.flashMessage =
+            "Could not generate your signed contract. Please try again or contact staff.";
+          return res.redirect(`/sign-contract/${contractExtension.id}`);
+        }
+        contractFilePath = path.join("private", "pdf", path.basename(stamped));
+      } catch (err) {
+        console.error("stampContractPdf failed:", err);
+        req.session.flashMessage =
+          "Could not generate your signed contract. Please try again or contact staff.";
+        return res.redirect(`/sign-contract/${contractExtension.id}`);
+      }
+    } else {
+      if (!req.file) {
+        req.session.flashMessage = "Please upload your signed contract PDF.";
+        return res.redirect(`/sign-contract/${contractExtension.id}`);
+      }
+      contractFilePath = path.join("private", "pdf", req.file.filename);
+    }
+
+    const fieldValuesJson = JSON.stringify(mergedValues);
+    const signersLogJson = JSON.stringify(signersLog);
 
     const getTuitionStatement = db.prepare(
       "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
@@ -3314,8 +4407,8 @@ app.post(
 
       db.prepare(
         `
-        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod, field_values_json, signers_log_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         contractExtension.season,
@@ -3323,7 +4416,9 @@ app.post(
         Date.now(),
         memberId,
         contractFilePath,
-        'cash'
+        'cash',
+        fieldValuesJson,
+        signersLogJson
       );
 
       // Remove temporary contractExtension entry
@@ -3533,8 +4628,8 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   // Insert contractedMembers row (with stored contract file path)
   db.prepare(
     `
-    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod, field_values_json, signers_log_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     contractExtension.season,
@@ -3542,7 +4637,9 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     Date.now(),
     user.id,
     potential.contract_file_path || null,
-    'stripe'
+    'stripe',
+    contractExtension.field_values_json || null,
+    contractExtension.signers_log_json || null
   );
 
   // Delete potential payment to prevent reuse
@@ -3629,10 +4726,10 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
     isMinor = age < 18;
   }
 
-  const parentId = thisUser.parentId || null;
+  const parentId = parentLinks.getPrimaryParentId(db, thisUser.id);
 
-  // ðŸš« NEW: block sending contracts to minors with no parent attached
-  if (isMinor && !parentId) {
+  // Block sending contracts to minors with no parent attached
+  if (isMinor && !parentLinks.childHasLinkedParent(db, thisUser.id)) {
     req.session.flashMessage = `${thisUser.firstname} ${thisUser.lastname} is a minor and does not have a parent attached. Please add a parent account before sending a contract.`;
     return res.redirect(req.get("Referer") || "/admin-portal");
   }
@@ -3869,10 +4966,10 @@ app.post("/admin/pending-contracts/:id/approve", mustBeAdmin, (req, res) => {
     isMinor = age < 18;
   }
 
-  const parentId = member.parentId || null;
+  const parentId = parentLinks.getPrimaryParentId(db, member.id);
 
   // Minors must have a parent linked
-  if (isMinor && !parentId) {
+  if (isMinor && !parentLinks.childHasLinkedParent(db, member.id)) {
     req.session.flashMessage =
       `${member.firstname} ${member.lastname} is a minor and has no parent attached. Please add a parent account before sending a contract.`;
     return res.redirect("/admin/pending-contracts");
@@ -4027,7 +5124,7 @@ app.get("/admin/contract-extensions", mustBeAdmin, (req, res) => {
   });
 });
 
-// Resend selected contract extensions — creates fresh extensions with the same
+// Resend selected contract extensions - creates fresh extensions with the same
 // data, sends new emails, then deletes the old extension rows.
 app.post("/admin/contract-extensions/resend", mustBeAdmin, (req, res) => {
   const rawIds = req.body.extensionIds;
@@ -4114,7 +5211,7 @@ app.post("/admin/contract-extensions/resend", mustBeAdmin, (req, res) => {
     `;
 
     if (emailAddr) {
-      sendEmail(emailAddr, "Contract Extension — Resent", html);
+      sendEmail(emailAddr, "Contract Extension - Resent", html);
     }
 
     sentCount++;
@@ -4134,7 +5231,22 @@ app.get("/view-forms/:id", mustBeAdmin, (req,res) => {
   const forms = getRequiredFormsForUser(userId);
   const userForms = db.prepare("SELECT * FROM formUploads WHERE user_id = ?").all(userId);
 
-  return res.render("user-forms", { forms, userForms, thisUser });
+  const formSummaries = forms.map((form) => {
+    const found = userForms.find((item) => item.document_id === form.id) || null;
+    const completeness = summarizeFormFieldCompleteness(
+      form,
+      found && found.field_values_json
+    );
+    return {
+      form,
+      upload: found,
+      filled: completeness.filled,
+      missing: completeness.missing,
+      signersLog: parseSignersLog(found && found.signers_log_json),
+    };
+  });
+
+  return res.render("user-forms", { forms, userForms, thisUser, formSummaries });
 });
 
 
@@ -4312,6 +5424,12 @@ app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
   return res.render("transaction-history",{payments, thisUser})
 })
 
+app.post("/admin/delete-user/:id", mustBeAdmin, (req, res) => {
+  const result = deleteUserAccount(req.params.id, req.user.userid);
+  req.session.flashMessage = result.message;
+  return res.redirect(result.ok ? "/edit-users" : (req.get("Referer") || "/edit-users"));
+});
+
 app.get("/edit-users", mustBeAdmin, (req, res) => {
   const search = String(req.query.search || "").trim();
   const filter = String(req.query.filter || "all").trim();       // section filter
@@ -4348,7 +5466,7 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
     where.push("contractedAffiliate = 1");
   }
 
-  // Days filter — only include accounts created within the last N days
+  // Days filter - only include accounts created within the last N days
   if (["30", "60", "90"].includes(days)) {
     const cutoff = Date.now() - parseInt(days, 10) * 24 * 60 * 60 * 1000;
     where.push("(created_at IS NOT NULL AND created_at > ?)");
@@ -4397,7 +5515,7 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
     "SELECT id, season, ensemble, contracted_date, signedContractPath FROM contractedMembers WHERE user_id = ? ORDER BY contracted_date DESC"
   );
 
-  // Compute allForms per user, and attach contracts
+  // Compute allForms per user, and attach contracts + family links
   users.forEach(thisUser => {
     const required = getRequiredFormsForUser(thisUser.id);
     const uploaded = db
@@ -4408,6 +5526,25 @@ app.get("/edit-users", mustBeAdmin, (req, res) => {
 
     // Attach contracts (if any)
     thisUser.contracts = getContractsForUser.all(thisUser.id);
+
+    const isParentUser = parentLinks.isParentAccount(thisUser);
+    if (isParentUser) {
+      thisUser.linkedChildren = parentLinks.getChildrenForParent(db, thisUser.id).map((c) => ({
+        id: c.id,
+        firstname: c.firstname,
+        lastname: c.lastname,
+        email: c.email,
+        section: c.section,
+        instrument: c.instrument,
+      }));
+    } else if (!thisUser.admin && !thisUser.fan) {
+      thisUser.linkedParents = parentLinks.getParentsForChild(db, thisUser.id).map((p) => ({
+        id: p.id,
+        firstname: p.firstname,
+        lastname: p.lastname,
+        email: p.email,
+      }));
+    }
   });
 
   res.render("edit-users", {
@@ -4595,39 +5732,17 @@ app.post("/edit-section/:id", mustBeAdmin, (req,res) => {
 
 app.get("/add-parent/:id", (req,res) => {
 
-  const getParentIdStatement = db.prepare("SELECT * FROM childVerify WHERE code = ?")
-  const verifyItem = getParentIdStatement.get(req.params.id);
-  
-
-  if(!verifyItem)
-  {
-    return res.redirect("/")
-  }
-
-  const verifyId = verifyItem.target_id;
-
-  const parentId = verifyItem.user_id;
-
   if(!req.user)
   {
     return res.render("message", {message: "Please login first before adding a parent/guardian"})
   }
 
-  if(req.user.userid != verifyId)
-  {
-    return res.redirect("/")
+  const result = parentLinks.acceptLegacyChildVerifyCode(db, req.params.id, req.user.userid);
+  if (!result.ok) {
+    return res.render("message", { message: result.message });
   }
 
-  const updateStatement = db.prepare("UPDATE users SET parentId = ? WHERE id = ?")
-  updateStatement.run(parentId, req.user.userid);
-
-  const deleteStatement = db.prepare("DELETE FROM childVerify WHERE user_id = ?")
-  deleteStatement.run(parentId);
-
-  const parentStatement = db.prepare("SELECT * FROM users WHERE id = ?")
-  const parent = parentStatement.get(parentId);
-
-  return res.render("message", {message: `You have added ${parent.firstname} ${parent.lastname} as a parent/guardian.`})
+  return res.render("message", {message: result.message})
 
 })
 
@@ -4712,36 +5827,16 @@ app.post('/update-emergency', mustBeLoggedIn, (req, res) => {
 });
 
 
-// Member requests a parent/guardian invite by entering their parent's email
+// Member requests a parent/guardian link by entering their parent's email
 app.post('/member-portal/request-parent-invite', mustBeMember, (req, res) => {
-  const parentEmailRaw = String(req.body.parentEmail || '').trim().toLowerCase();
-  if (!parentEmailRaw) {
-    req.session.flashMessage = 'Please provide a parent/guardian email.';
-    return res.redirect('/member-portal');
-  }
-  // Do NOT generate any claim codes or create childVerify records here.
-  // Instead, simply notify the parent that they should register or login
-  // and then use the Parent Portal "Add Member" flow to add/claim the child.
-
-  const html = `
-    Hello,
-
-    <p>${req.user.firstname} ${req.user.lastname} has entered your email as their parent/guardian on the Boise Gems website.</p>
-    <p>Please register as a parent/guardian account at <a href="${process.env.BASEURL}/register-parent">${process.env.BASEURL}/register-parent</a> or login if you already have an account.</p>
-    <p>After logging in as a parent/guardian, go to your Parent Portal and use "Add Member" to add your child by their email address. That process will send a confirmation to the child so they can approve the connection.</p>
-  `;
-
-  sendEmail(parentEmailRaw, 'Please register/login to claim your child on Boise Gems', html);
-  req.session.flashMessage = `An email has been sent to ${parentEmailRaw} instructing them to register or login and then add you via the Parent Portal.`;
+  const result = parentLinks.createLinkRequest(db, req.user, req.body.parentEmail);
+  req.session.flashMessage = result.message;
   return res.redirect('/member-portal');
 });
 
 
 // Parent (or newly-registered parent) clicks link to claim child
 app.get('/claim-child/:code', mustBeLoggedIn, (req, res) => {
-  // Keep compatibility: if someone visits the claim link while logged in,
-  // allow claiming (same behavior as the POST flow). This route is less
-  // commonly used since emails no longer include direct links.
   const getVerify = db.prepare('SELECT * FROM childVerify WHERE code = ?').get(req.params.code);
   if (!getVerify) {
     return res.render('message', { message: 'Invalid or expired claim code.' });
@@ -4751,11 +5846,8 @@ app.get('/claim-child/:code', mustBeLoggedIn, (req, res) => {
     return res.render('message', { message: 'This claim code was sent to a different account. Please use the account that received the email.' });
   }
 
-  const updateStmt = db.prepare('UPDATE users SET parentId = ? WHERE id = ?');
-  updateStmt.run(req.user.userid, getVerify.target_id);
-
-  const deleteStmt = db.prepare('DELETE FROM childVerify WHERE target_id = ?');
-  deleteStmt.run(getVerify.target_id);
+  parentLinks.linkParentChild(db, req.user.userid, getVerify.target_id);
+  db.prepare('DELETE FROM childVerify WHERE id = ?').run(getVerify.id);
 
   return res.render('message', { message: 'You have successfully claimed this child as your own. Thank you!' });
 });
@@ -4781,78 +5873,30 @@ app.post('/claim-child', mustBeLoggedIn, (req, res) => {
     return res.render('message', { message: 'This claim code was sent to a different account. Please use the account that received the email.' });
   }
 
-  const updateStmt = db.prepare('UPDATE users SET parentId = ? WHERE id = ?');
-  updateStmt.run(req.user.userid, getVerify.target_id);
-
-  const deleteStmt = db.prepare('DELETE FROM childVerify WHERE target_id = ?');
-  deleteStmt.run(getVerify.target_id);
+  parentLinks.linkParentChild(db, req.user.userid, getVerify.target_id);
+  db.prepare('DELETE FROM childVerify WHERE id = ?').run(getVerify.id);
 
   return res.render('message', { message: 'You have successfully claimed this child as your own. Thank you!' });
 });
 
 app.post("/add-member", mustBeParent, (req,res) => {
-  errors = [];
-  const email = req.body.email;
-
-  const getPreviousAttempt = db.prepare("SELECT * FROM childVerify WHERE user_id = ?")
-  const previousAttempt = getPreviousAttempt.get(req.user.userid)
-
-  if(previousAttempt)
-  {
-    const deleteStatement = db.prepare("DELETE FROM childVerify WHERE user_id = ?")
-    deleteStatement.run(req.user.userid)
+  const result = parentLinks.createLinkRequest(db, req.user, req.body.email);
+  if (req.headers.accept && String(req.headers.accept).includes("application/json")) {
+    return res.json(result);
   }
-
-  const userStatement = db.prepare("SELECT * FROM users WHERE email = ?")
-  const user = userStatement.get(email)
-
-  if(!user)
-  {
-    errors.push("Email does not exist. Make sure your child has registered an account.")
-    return res.render("add-member", {errors})
+  if (result.ok) {
+    return res.render("message", { message: result.message });
   }
-
-  if(user.id == req.user.userid)
-  {
-    errors.push("Cannot use your own email.")
-  }
-
-  if(errors.length > 0){
-    return res.render("add-member", {errors})
-  }
-
-  const salt = bcrypt.genSaltSync(10)
-  const emailsecret = bcrypt.hashSync(req.user.lastname + Date.now().toString(), salt).replace(/[^a-zA-Z0-9]/g, '')
-
-  const verifyEmailStatment = db.prepare("INSERT INTO childVerify (code , user_id, target_id) VALUES (? , ? , ?)")
-  verifyEmailStatment.run(emailsecret, req.user.userid, user.id);
-
-  const html = `
-    Hello ${user.firstname},
-
-    ${req.user.firstname} ${req.user.lastname} has request to be your parent/guardian. Please click the button below to set them as your parent/guardian.
-    <br/>
-    <p style="text-align: center; margin: 32px 0;">
-                <a href="${process.env.BASEURL}/add-parent/${emailsecret}" target="_blank" style="background-color: #9D76BB; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 4px; font-weight: bold; display: inline-block;">
-                  Add Parent/Guardian
-                </a>
-              </p>
-    <br/>
-    If the button above isn't working, please click here: <a href="${process.env.BASEURL}/add-parent/${emailsecret}">${process.env.BASEURL}/add-parent/${emailsecret}</a>
-  `
-
-  sendEmail(email,"Request to add Parent/Guardian", html)
-
-  return res.render("message",{message: `An email has been sent to ${email} to confirm that you're their parent/guardian. Have them check their email.`})
+  const errors = [result.message || "Could not send request."];
+  return res.render("add-member", { errors });
 })
 
 app.get("/parent-portal", mustBeParent, (req, res) => {
   const member = db
     .prepare("SELECT * FROM users WHERE id = ?")
     .get(req.user.userid);
-  const children = db
-    .prepare("SELECT * FROM users WHERE parentId = ?")
-    .all(req.user.userid);
+  const children = parentLinks.getChildrenForParent(db, req.user.userid);
+  const linkRequests = parentLinks.getIncomingRequests(db, req.user.userid);
 
   // Pre-calc child IDs for contract extension lookup
   const childIds = children.map((c) => c.id);
@@ -4870,11 +5914,10 @@ app.get("/parent-portal", mustBeParent, (req, res) => {
         FROM contractExtension ce
         JOIN users u
           ON u.id = COALESCE(ce.child_id, ce.user_id)
-        WHERE ce.user_id = ?
-          AND COALESCE(ce.child_id, ce.user_id) IN (${placeholders})
+        WHERE COALESCE(ce.child_id, ce.user_id) IN (${placeholders})
         `
       )
-      .all(req.user.userid, ...childIds);
+      .all(...childIds);
 
     contractsByChild = rows.reduce((acc, row) => {
       const key = row.child_id || row.user_id;
@@ -4910,7 +5953,14 @@ app.get("/parent-portal", mustBeParent, (req, res) => {
     child.contractExtensions = contractsByChild[child.id] || [];
   });
 
-  return res.render("parent-portal", { member, children });
+  const announcements = getAnnouncementsForUser(member);
+  let digitalGrants = merchSystem.getDigitalGrantsForUser(db, req.user.userid);
+  children.forEach((child) => {
+    merchSystem.getDigitalGrantsForUser(db, child.id).forEach((g) => {
+      digitalGrants.push({ ...g, forChildName: child.firstname + " " + child.lastname });
+    });
+  });
+  return res.render("parent-portal", { member, children, announcements, linkRequests, digitalGrants });
 });
 
 
@@ -5009,9 +6059,7 @@ app.post("/add-charge/:id", mustBeAdmin, (req, res) => {
 });
 
 app.get("/pay-behalf/:id", mustBeParent, (req,res) => {
-  //Check if child is yours
-  const getChildStatement = db.prepare("SELECT * FROM users WHERE id = ? AND parentId = ?")
-  const child = getChildStatement.get(req.params.id,req.user.userid);
+  const child = getChildForParent(req.user.userid, Number(req.params.id));
 
   if(!child)
   {
@@ -5053,44 +6101,50 @@ app.post(
       return res.redirect("/edit-forms");
     }
 
-    const title       = String(req.body.title || "").trim();
+    const title = String(req.body.title || "").trim();
     const description = String(req.body.description || "").trim();
     const expire_date = req.body.expire_date
       ? new Date(req.body.expire_date).getTime()
       : null;
-    const due_date    = req.body.due_date
+    const due_date = req.body.due_date
       ? new Date(req.body.due_date).getTime()
       : null;
-    const content     = String(req.body.content || "").trim();
+    const aud = normalizeAudienceFromBody(req.body);
 
-    let ensemble_type = String(req.body.ensemble_type || "all").trim().toLowerCase();
-    if (!["all", "corps", "independent", "affiliate"].includes(ensemble_type)) {
-      ensemble_type = "all";
+    if (!aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate && !aud.audience_staff) {
+      req.session.flashMessage = "Please choose who needs to sign this form.";
+      return res.redirect(`/edit-form/${formId}`);
     }
 
-    let contracted =
-      ensemble_type === "corps" || ensemble_type === "independent" || ensemble_type === "affiliate"
-        ? 1
-        : req.body.contracted
-        ? 1
-        : 0;
-
-    let role_scope = String(
-      req.body.role_scope || existing.role_scope || "member"
-    )
-      .trim()
-      .toLowerCase();
-    if (!["member", "staff", "admin"].includes(role_scope)) {
-      role_scope = "member";
+    let fieldsJson = existing.fields_json || "[]";
+    if (req.body.fields_json != null && String(req.body.fields_json).trim() !== "") {
+      try {
+        const parsed = JSON.parse(String(req.body.fields_json));
+        fieldsJson = JSON.stringify(Array.isArray(parsed) ? parsed : []);
+      } catch (_) {}
     }
 
-    // keep old pdf unless a new one is uploaded
+    let ensemble_type = "all";
+    let contracted = 0;
+    let role_scope = "member";
+    if (aud.audience_staff && !aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
+      role_scope = "staff";
+    } else if (aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
+      ensemble_type = "corps";
+      contracted = 1;
+    } else if (aud.audience_independent && !aud.audience_corps && !aud.audience_affiliate) {
+      ensemble_type = "independent";
+      contracted = 1;
+    } else if (aud.audience_affiliate && !aud.audience_corps && !aud.audience_independent) {
+      ensemble_type = "affiliate";
+      contracted = 1;
+    } else if (aud.audience_corps || aud.audience_independent || aud.audience_affiliate) {
+      contracted = 1;
+    }
+
     let document_path = existing.document_path;
     if (req.file) {
-      if (
-        document_path &&
-        document_path.startsWith("/pdf/publicpdf/")
-      ) {
+      if (document_path && document_path.startsWith("/pdf/publicpdf/")) {
         const oldFsPath = path.join(
           __dirname,
           "public",
@@ -5105,34 +6159,44 @@ app.post(
         }
       }
       document_path = `/pdf/publicpdf/${req.file.filename}`;
+      // New PDF: clear old field placements unless new ones provided
+      if (req.body.fields_json == null || String(req.body.fields_json).trim() === "") {
+        fieldsJson = "[]";
+      }
     }
 
-    db.prepare(
-      `
+    db.prepare(`
       UPDATE forms
          SET title = ?,
              description = ?,
              document_path = ?,
-             upload = ?,
-             content = ?,
+             upload = 0,
+             content = '',
              expire_date = ?,
              due_date = ?,
              ensemble_type = ?,
              contracted = ?,
-             role_scope = ?
+             role_scope = ?,
+             audience_corps = ?,
+             audience_independent = ?,
+             audience_affiliate = ?,
+             audience_staff = ?,
+             fields_json = ?
        WHERE id = ?
-    `
-    ).run(
+    `).run(
       title,
       description,
       document_path,
-      req.body.upload ? 1 : 0,
-      content,
       expire_date,
       due_date,
       ensemble_type,
       contracted,
       role_scope,
+      aud.audience_corps,
+      aud.audience_independent,
+      aud.audience_affiliate,
+      aud.audience_staff,
+      fieldsJson,
       formId
     );
 
@@ -5141,62 +6205,89 @@ app.post(
   }
 );
 
-app.post("/add-form", mustBeAdmin, pdfUpload.single('document_path'), (req, res) => {
-  const title        = String(req.body.title || "").trim();
-  const description  = String(req.body.description || "").trim();
-  const expire_date  = new Date(req.body.expire_date).getTime();
-  const due_date     = new Date(req.body.due_date).getTime();
-  const content      = String(req.body.content || "").trim();
+app.post("/add-form", mustBeAdmin, pdfUpload.single("document_path"), async (req, res) => {
+  const title = String(req.body.title || "").trim();
+  const description = String(req.body.description || "").trim();
+  const expire_date = req.body.expire_date ? new Date(req.body.expire_date).getTime() : null;
+  const due_date = req.body.due_date ? new Date(req.body.due_date).getTime() : null;
+  const aud = normalizeAudienceFromBody(req.body);
 
-    let role_scope = String(req.body.role_scope || "member").trim().toLowerCase();
-  if (!["member", "staff", "admin"].includes(role_scope)) {
-    role_scope = "member";
+  if (!title || !description) {
+    req.session.flashMessage = "Please enter a name and description.";
+    return res.redirect("/add-form");
+  }
+  if (!aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate && !aud.audience_staff) {
+    req.session.flashMessage = "Please choose who needs to sign this form.";
+    return res.redirect("/add-form");
+  }
+  if (!due_date || !expire_date) {
+    req.session.flashMessage = "Please choose a due date and an expiration date.";
+    return res.redirect("/add-form");
   }
 
-  // NEW: ensemble_type & contracted (coerced)
-  let ensemble_type  = String(req.body.ensemble_type || "all").trim().toLowerCase();
-  if (!["all", "corps", "independent", "affiliate"].includes(ensemble_type)) ensemble_type = "all";
+  let fieldsJson = "[]";
+  try {
+    const parsed = JSON.parse(String(req.body.fields_json || "[]"));
+    fieldsJson = JSON.stringify(Array.isArray(parsed) ? parsed : []);
+  } catch (_) {
+    fieldsJson = "[]";
+  }
 
-  // If ensemble_type is corps/independent/affiliate => contracted must be 1, else honor the checkbox
-  let contracted = (ensemble_type === "corps" || ensemble_type === "independent" || ensemble_type === "affiliate")
-    ? 1
-    : (req.body.contracted ? 1 : 0);
-
-  // Optional: let triggers normalize later, but we still write clearly here
   const filePath = req.file ? `/pdf/publicpdf/${req.file.filename}` : null;
+  // Keep legacy columns filled for older admin screens
+  let ensemble_type = "all";
+  let contracted = 0;
+  let role_scope = "member";
+  if (aud.audience_staff && !aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
+    role_scope = "staff";
+  } else if (aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
+    ensemble_type = "corps";
+    contracted = 1;
+  } else if (aud.audience_independent && !aud.audience_corps && !aud.audience_affiliate) {
+    ensemble_type = "independent";
+    contracted = 1;
+  } else if (aud.audience_affiliate && !aud.audience_corps && !aud.audience_independent) {
+    ensemble_type = "affiliate";
+    contracted = 1;
+  } else if (aud.audience_corps || aud.audience_independent || aud.audience_affiliate) {
+    contracted = 1;
+  }
 
-    const addForm = db.prepare(`
+  const info = db.prepare(`
     INSERT INTO forms (
-      title,
-      description,
-      document_path,
-      upload,
-      content,
-      expire_date,
-      season,
-      due_date,
-      ensemble_type,
-      contracted,
-      role_scope
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  addForm.run(
+      title, description, document_path, upload, content,
+      expire_date, season, due_date, ensemble_type, contracted, role_scope,
+      audience_corps, audience_independent, audience_affiliate, audience_staff, fields_json
+    ) VALUES (?, ?, ?, 0, '', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
     title,
     description,
     filePath,
-    req.body.upload ? 1 : 0,
-    content,
-    expire_date || null,
-    req.body.season || null,
-    due_date || null,
+    expire_date,
+    due_date,
     ensemble_type,
     contracted,
-    role_scope
+    role_scope,
+    aud.audience_corps,
+    aud.audience_independent,
+    aud.audience_affiliate,
+    aud.audience_staff,
+    fieldsJson
   );
 
-  req.session.flashMessage = "Form added";
+  const form = db.prepare("SELECT * FROM forms WHERE id = ?").get(info.lastInsertRowid);
+  let notified = 0;
+  if (req.body.notify === "1" || req.body.notify === "on") {
+    try {
+      notified = await notifyFormAudience(form);
+    } catch (err) {
+      console.error("Form notify failed:", err);
+    }
+  }
+
+  req.session.flashMessage = notified
+    ? `Form added and ${notified} people were emailed.`
+    : "Form added.";
   return res.redirect("/edit-forms");
 });
 
@@ -5611,10 +6702,7 @@ app.get("/add-form", mustBeAdmin, (req,res) => {
 })
 
 app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
-  const getChildStatement = db.prepare(
-    "SELECT * FROM users WHERE id = ? AND parentId = ?"
-  );
-  const child = getChildStatement.get(req.params.id, req.user.userid);
+  const child = getChildForParent(req.user.userid, Number(req.params.id));
 
   if (!child) {
     return res.redirect("/parent-portal");
@@ -5879,14 +6967,13 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
   return res.redirect("/payment-received");
 });
 
-app.get("/update-profile-photo", mustBeMember, (req,res) => {
+app.get("/update-profile-photo", mustBeLoggedIn, (req, res) => {
+  if (req.fan) return res.redirect("/fan-portal");
+
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!member) return res.redirect("/");
 
-  if(!member){
-    return res.redirect("/")
-  }
-
-  return res.render("update-pfp", {member})
+  return res.render("update-pfp", { member, returnPortal: req.user.admin ? "/admin-portal" : (req.user.parent ? "/parent-portal" : "/member-portal") });
 })
 
 app.post(
@@ -5899,10 +6986,12 @@ app.post(
       if (!req.savedFilename) return res.status(400).send("Image processing failed");
 
       const imgPath = `/img/publicupload/${req.savedFilename}`;
-      const updateStmt = db.prepare("UPDATE users SET img = ? WHERE id = ?");
-      updateStmt.run(imgPath, req.user.userid);
+      db.prepare("UPDATE users SET img = ? WHERE id = ?").run(imgPath, req.user.userid);
 
-      res.redirect("/member-portal");
+      // Redirect back to the user's own portal
+      if (req.user.admin) return res.redirect("/admin-portal");
+      if (req.user.parent) return res.redirect("/parent-portal");
+      return res.redirect("/member-portal");
     } catch (err) {
       console.error("Failed to save image:", err);
       res.status(500).send("Failed to save image");
@@ -5918,7 +7007,7 @@ app.get("/donate", (req, res) => {
     .map(n => n.trim())
     .filter(n => n.length > 0);
 
-  let fanType = null;
+  let fanType = "individual";
   if (req.user) {
     const member = db.prepare("SELECT fanType FROM users WHERE id = ?").get(req.user.userid);
     fanType = member ? (member.fanType || "individual") : "individual";
@@ -5926,6 +7015,25 @@ app.get("/donate", (req, res) => {
 
   return res.render("donate", { donorNames, fanType });
 });
+
+/** Donor contact for donation checkout — logged-in user or guest form fields. */
+function resolveDonorContact(req) {
+  if (req.user) {
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (member) {
+      return {
+        email: member.email,
+        name: member.firstname + " " + member.lastname,
+        userId: member.id,
+      };
+    }
+  }
+  const email = String(req.body.donorEmail || req.body.email || "").trim().toLowerCase();
+  const name = String(req.body.donorName || req.body.name || "").trim();
+  if (!email || !name) return null;
+  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+  return { email, name, userId: existing ? existing.id : null };
+}
 
 // GET /volunteer
 app.get("/volunteer", (req, res) => {
@@ -5965,6 +7073,51 @@ app.post("/admin/volunteer-needs", mustBeAdmin, (req, res) => {
   return res.redirect("/admin/volunteer-needs");
 });
 
+// POST /admin/system-settings - singleton website toggles
+app.post("/admin/system-settings", mustBeAdmin, (req, res) => {
+  const messagingAll = req.body.messaging_all_users ? 1 : 0;
+  db.prepare("UPDATE site_settings SET messaging_all_users = ?, updated_at = ? WHERE id = 1").run(messagingAll, Date.now());
+  req.session.flashMessage = "System settings saved.";
+  return res.redirect("/admin-portal?section=system");
+});
+
+// POST /admin/our-history-settings - Our History page content
+app.post("/admin/our-history-settings", mustBeAdmin, (req, res) => {
+  const bodyHtml = ourHistoryContent.stripEmDashes(String(req.body.our_history_body_html || ""));
+  db.prepare("UPDATE site_settings SET our_history_body_html = ?, updated_at = ? WHERE id = 1").run(bodyHtml, Date.now());
+  req.session.flashMessage = "Our History content saved.";
+  return res.redirect("/admin-portal?section=system");
+});
+
+// POST /admin/join-corps/upload-image - embed image in page editor (webp, 720px long side)
+app.post("/admin/join-corps/upload-image", mustBeAdmin, imageUpload.single("image"), processJoinCorpsImageWebp, (req, res) => {
+  if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Upload failed." });
+  return res.json({ ok: true, filename: req.savedFilename, url: `/img/publicupload/${req.savedFilename}` });
+});
+
+// POST /admin/join-corps-settings - Join Corps page content + topo opacity
+app.post("/admin/join-corps-settings", mustBeAdmin, (req, res) => {
+  const bodyHtml = String(req.body.join_corps_body_html || "");
+  let topoOpacity = Number(req.body.join_corps_topo_opacity);
+  if (!isFinite(topoOpacity)) topoOpacity = 0.12;
+  topoOpacity = Math.max(0, Math.min(1, topoOpacity));
+  db.prepare(`
+    UPDATE site_settings SET join_corps_body_html = ?, join_corps_topo_opacity = ?, updated_at = ? WHERE id = 1
+  `).run(bodyHtml, topoOpacity, Date.now());
+  req.session.flashMessage = "Join Corps page updated.";
+  return res.redirect("/admin/join-corps");
+});
+
+// GET /admin/join-corps - edit audition experience page
+app.get("/admin/join-corps", mustBeAdmin, (req, res) => {
+  const settings = getSiteSettings();
+  const topoOpacity = Number(settings.join_corps_topo_opacity);
+  res.render("admin-join-corps", {
+    bodyHtml: joinCorpsContent.renderJoinCorpsBody(settings.join_corps_body_html),
+    topoOpacity: isFinite(topoOpacity) ? topoOpacity : 0.12,
+  });
+});
+
 // GET /admin/donors
 app.get("/admin/donors", mustBeAdmin, (req, res) => {
   const dlRow = db.prepare("SELECT names FROM donor_list WHERE id = 1").get();
@@ -5977,6 +7130,204 @@ app.post("/admin/donors", mustBeAdmin, (req, res) => {
   db.prepare("UPDATE donor_list SET names = ? WHERE id = 1").run(names);
   req.session.flashMessage = "Donor list updated.";
   return res.redirect("/admin/donors");
+});
+
+// ═══ Announcements ═══
+
+// POST /admin/announcements/upload-image - upload an image for an announcement (returns URL)
+app.post("/admin/announcements/upload-image", mustBeAdmin, imageUpload.single("image"), processImageJpg, (req, res) => {
+  if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Upload failed." });
+  return res.json({ ok: true, filename: req.savedFilename, url: `/img/publicupload/${req.savedFilename}` });
+});
+
+// POST /admin/announcements - create a new announcement
+app.post("/admin/announcements", mustBeAdmin, (req, res) => {
+  const bodyHtml = String(req.body.body_html || "").trim();
+  const plainText = bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!plainText) {
+    req.session.flashMessage = "Announcement text is required.";
+    return res.redirect("/admin-portal");
+  }
+  const bodyMd = String(req.body.body_md || "").trim() || plainText;
+  const images = (() => {
+    try { return JSON.parse(req.body.images || "[]"); } catch { return []; }
+  })();
+  const now = Date.now();
+  const result = db.prepare(`
+    INSERT INTO announcements
+      (author_id, body_md, body_html, aud_parents, aud_fans, aud_corps, aud_independent, aud_uncontracted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.user.userid,
+    bodyMd, bodyHtml,
+    req.body.aud_parents     ? 1 : 0,
+    req.body.aud_fans        ? 1 : 0,
+    req.body.aud_corps       ? 1 : 0,
+    req.body.aud_independent ? 1 : 0,
+    req.body.aud_uncontracted ? 1 : 0,
+    now, now
+  );
+  const annId = result.lastInsertRowid;
+  const insertImg = db.prepare("INSERT INTO announcement_images (announcement_id, filename, created_at) VALUES (?, ?, ?)");
+  images.filter(f => typeof f === "string" && f.trim()).forEach(f => insertImg.run(annId, f.trim(), now));
+  req.session.flashMessage = "Announcement posted.";
+  return res.redirect("/admin-portal");
+});
+
+// POST /admin/announcements/:id/edit - update announcement body, visibility, and images
+app.post("/admin/announcements/:id/edit", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare("SELECT id FROM announcements WHERE id = ?").get(id);
+  if (!existing) {
+    req.session.flashMessage = "Announcement not found.";
+    return res.redirect("/admin-portal");
+  }
+  const bodyHtml = String(req.body.body_html || "").trim();
+  const plainText = bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!plainText) {
+    req.session.flashMessage = "Announcement text is required.";
+    return res.redirect("/admin-portal");
+  }
+  const bodyMd = String(req.body.body_md || "").trim() || plainText;
+  const images = (() => {
+    try { return JSON.parse(req.body.images || "[]"); } catch { return []; }
+  })().filter(f => typeof f === "string" && f.trim()).map(f => f.trim());
+  const now = Date.now();
+  db.prepare(`
+    UPDATE announcements SET
+      body_md = ?, body_html = ?,
+      aud_parents = ?, aud_fans = ?, aud_corps = ?, aud_independent = ?, aud_uncontracted = ?,
+      updated_at = ?
+    WHERE id = ?
+  `).run(
+    bodyMd, bodyHtml,
+    req.body.aud_parents     ? 1 : 0,
+    req.body.aud_fans        ? 1 : 0,
+    req.body.aud_corps       ? 1 : 0,
+    req.body.aud_independent ? 1 : 0,
+    req.body.aud_uncontracted ? 1 : 0,
+    now, id
+  );
+  const currentImgs = db.prepare("SELECT filename FROM announcement_images WHERE announcement_id = ?").all(id);
+  const newSet = new Set(images);
+  currentImgs.forEach(row => {
+    if (!newSet.has(row.filename)) {
+      db.prepare("DELETE FROM announcement_images WHERE announcement_id = ? AND filename = ?").run(id, row.filename);
+    }
+  });
+  const existingNames = new Set(currentImgs.map(r => r.filename));
+  const insertImg = db.prepare("INSERT INTO announcement_images (announcement_id, filename, created_at) VALUES (?, ?, ?)");
+  images.filter(f => !existingNames.has(f)).forEach(f => insertImg.run(id, f, now));
+  req.session.flashMessage = "Announcement updated.";
+  return res.redirect("/admin-portal");
+});
+
+// POST /admin/announcements/:id/delete
+app.post("/admin/announcements/:id/delete", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  db.prepare("DELETE FROM announcement_images WHERE announcement_id = ?").run(id);
+  db.prepare("DELETE FROM announcements WHERE id = ?").run(id);
+  req.session.flashMessage = "Announcement deleted.";
+  return res.redirect("/admin-portal");
+});
+
+// ═══ Press Kit ═══
+app.get("/press-kit", (req, res) => {
+  const meta = getPressKitMeta();
+  const logoImages = getPressKitImages("logo");
+  const actionImages = getPressKitImages("action");
+  return res.render("press-kit", { meta, logoImages, actionImages });
+});
+
+app.get("/admin/press-kit", mustBeAdmin, (req, res) => {
+  const meta = getPressKitMeta();
+  const logoImages = getPressKitImages("logo");
+  const actionImages = getPressKitImages("action");
+  return res.render("admin-press-kit", { meta, logoImages, actionImages });
+});
+
+app.post("/admin/press-kit", mustBeAdmin, (req, res) => {
+  const location = String(req.body.location || "").trim();
+  const founded = String(req.body.founded || "").trim();
+  const description = String(req.body.description || "").trim();
+  db.prepare(`
+    UPDATE press_kit
+    SET location = ?, founded = ?, description = ?, updated_at = ?
+    WHERE id = 1
+  `).run(location, founded, description, Date.now());
+  req.session.flashMessage = "Press kit details saved.";
+  return res.redirect("/admin/press-kit");
+});
+
+app.post("/admin/press-kit/upload", mustBeAdmin, pressKitUpload.array("files", 30), async (req, res) => {
+  try {
+    const category = String(req.body.category || "").trim();
+    if (category !== "logo" && category !== "action") {
+      return res.status(400).json({ ok: false, message: "Invalid category." });
+    }
+    if (!req.files || !req.files.length) {
+      return res.status(400).json({ ok: false, message: "No files received." });
+    }
+
+    const maxSort = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), 0) AS n FROM press_kit_images WHERE category = ?
+    `).get(category);
+    let nextSort = Number(maxSort?.n || 0);
+    const now = Date.now();
+    const inserted = [];
+
+    for (const file of req.files) {
+      nextSort += 1;
+      const saved = await savePressKitFile(file);
+      const result = db.prepare(`
+        INSERT INTO press_kit_images
+          (category, filename, original_name, mime_type, size, sort_order, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        category,
+        saved.filename,
+        saved.original_name,
+        saved.mime_type,
+        saved.size,
+        nextSort,
+        now
+      );
+      inserted.push({
+        id: result.lastInsertRowid,
+        category,
+        filename: saved.filename,
+        original_name: saved.original_name,
+        mime_type: saved.mime_type,
+        size: saved.size,
+        url: `/img/press-kit/${saved.filename}`,
+        isPdf: saved.mime_type === "application/pdf",
+        isSvg: saved.mime_type === "image/svg+xml",
+      });
+    }
+
+    return res.json({ ok: true, files: inserted });
+  } catch (err) {
+    console.error("Press kit upload failed:", err.message);
+    return res.status(500).json({ ok: false, message: err.message || "Upload failed." });
+  }
+});
+
+app.post("/admin/press-kit/image/:id/delete", mustBeAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare("SELECT * FROM press_kit_images WHERE id = ?").get(id);
+  if (!row) {
+    if (req.headers.accept && req.headers.accept.includes("application/json")) {
+      return res.status(404).json({ ok: false, message: "Not found." });
+    }
+    req.session.flashMessage = "Image not found.";
+    return res.redirect("/admin/press-kit");
+  }
+  deletePressKitImageRecord(row);
+  if (req.headers.accept && req.headers.accept.includes("application/json")) {
+    return res.json({ ok: true });
+  }
+  req.session.flashMessage = "File removed from press kit.";
+  return res.redirect("/admin/press-kit");
 });
 
 // ═══ Admin Subscriptions & Donations ═══
@@ -6222,11 +7573,11 @@ app.get("/donate/thank-you", (req,res) => {
   return res.render("donation-thank-you")
 })
 
-// ═══ Feed the Corps one-time donation (logged-in) ═══
-app.post("/donate/feed-the-corps", mustBeLoggedIn, async (req, res) => {
+// ═══ Feed the Corps one-time donation ═══
+app.post("/donate/feed-the-corps", async (req, res) => {
   try {
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/donate");
+    const donor = resolveDonorContact(req);
+    if (!donor) return res.status(400).send("Email and name are required.");
 
     const tier = String(req.body.ftcTier || "").trim();
     const amountCents = Math.round(Number(req.body.ftcAmount));
@@ -6243,14 +7594,14 @@ app.post("/donate/feed-the-corps", mustBeLoggedIn, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const result = insertPotential.run(
-      member.email,
-      member.firstname + " " + member.lastname,
+      donor.email,
+      donor.name,
       message,
       amountCents,
       processingFee,
       totalCharge,
       Date.now(),
-      member.id,
+      donor.userId,
       tier,
       "feed_the_corps"
     );
@@ -6263,8 +7614,8 @@ app.post("/donate/feed-the-corps", mustBeLoggedIn, async (req, res) => {
         price_data: {
           currency: "usd",
           product_data: {
-            name: `Feed the Corps – ${tierNames[tier]}`,
-            description: message || `Feed the Corps donation by ${member.firstname} ${member.lastname}`,
+            name: `Feed the Corps - ${tierNames[tier]}`,
+            description: message || `Feed the Corps donation by ${donor.name}`,
           },
           unit_amount: totalCharge,
         },
@@ -6283,11 +7634,11 @@ app.post("/donate/feed-the-corps", mustBeLoggedIn, async (req, res) => {
   }
 });
 
-// ═══ One-time donation (logged-in) ═══
-app.post("/donate/onetime", mustBeLoggedIn, async (req, res) => {
+// ═══ One-time donation ═══
+app.post("/donate/onetime", async (req, res) => {
   try {
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/donate");
+    const donor = resolveDonorContact(req);
+    if (!donor) return res.status(400).send("Email and name are required.");
 
     const amountCents = Math.round(Number(req.body.payment) * 100);
     if (!Number.isFinite(amountCents) || amountCents < 50) return res.status(400).send("Invalid amount.");
@@ -6311,14 +7662,14 @@ app.post("/donate/onetime", mustBeLoggedIn, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const result = insertPotential.run(
-      member.email,
-      member.firstname + " " + member.lastname,
+      donor.email,
+      donor.name,
       message,
       amountCents,
       processingFee,
       totalCharge,
       Date.now(),
-      member.id,
+      donor.userId,
       tier,
       "one_time",
       shirtSizes.length ? JSON.stringify(shirtSizes) : null
@@ -6336,7 +7687,7 @@ app.post("/donate/onetime", mustBeLoggedIn, async (req, res) => {
           currency: "usd",
           product_data: {
             name: "Donation to The Boise Gems Drum & Bugle Corps",
-            description: desc + (message ? ` – ${message}` : ""),
+            description: desc + (message ? ` - ${message}` : ""),
           },
           unit_amount: totalCharge,
         },
@@ -6355,11 +7706,11 @@ app.post("/donate/onetime", mustBeLoggedIn, async (req, res) => {
   }
 });
 
-// ═══ Subscription donation (logged-in) ═══
-app.post("/donate/subscribe", mustBeLoggedIn, async (req, res) => {
+// ═══ Subscription donation ═══
+app.post("/donate/subscribe", async (req, res) => {
   try {
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/donate");
+    const donor = resolveDonorContact(req);
+    if (!donor) return res.status(400).send("Email and name are required.");
 
     const tier = String(req.body.tier || "").trim();
     const fanType = String(req.body.fanType || "individual").trim();
@@ -6386,15 +7737,26 @@ app.post("/donate/subscribe", mustBeLoggedIn, async (req, res) => {
     }
 
     // Get or create Stripe customer
-    let stripeCustomerId = member.stripe_customer_id;
+    let stripeCustomerId = null;
+    let member = null;
+    if (donor.userId) {
+      member = db.prepare("SELECT * FROM users WHERE id = ?").get(donor.userId);
+      stripeCustomerId = member ? member.stripe_customer_id : null;
+    }
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email: member.email,
-        name: member.firstname + " " + member.lastname,
-        metadata: { user_id: String(member.id), fan_type: fanType, business_name: member.businessName || "" },
+        email: donor.email,
+        name: donor.name,
+        metadata: {
+          user_id: donor.userId ? String(donor.userId) : "",
+          fan_type: fanType,
+          business_name: member ? (member.businessName || "") : "",
+        },
       });
       stripeCustomerId = customer.id;
-      db.prepare("UPDATE users SET stripe_customer_id = ? WHERE id = ?").run(stripeCustomerId, member.id);
+      if (member) {
+        db.prepare("UPDATE users SET stripe_customer_id = ? WHERE id = ?").run(stripeCustomerId, member.id);
+      }
     }
 
     // Create a Stripe price for the subscription
@@ -6417,7 +7779,7 @@ app.post("/donate/subscribe", mustBeLoggedIn, async (req, res) => {
       payment_method_types: ["card"],
       line_items: [{ price: price.id, quantity: 1 }],
       mode: "subscription",
-      success_url: `${process.env.BASEURL}/donate/subscribe/success?session_id={CHECKOUT_SESSION_ID}&tier=${encodeURIComponent(tier)}&fan_type=${encodeURIComponent(fanType)}&amount=${totalMonthly}&shirts=${encodeURIComponent(JSON.stringify(shirtSizes))}`,
+      success_url: `${process.env.BASEURL}/donate/subscribe/success?session_id={CHECKOUT_SESSION_ID}&tier=${encodeURIComponent(tier)}&fan_type=${encodeURIComponent(fanType)}&amount=${totalMonthly}&shirts=${encodeURIComponent(JSON.stringify(shirtSizes))}&donor_email=${encodeURIComponent(donor.email)}&donor_name=${encodeURIComponent(donor.name)}&user_id=${donor.userId || ""}`,
       cancel_url: `${process.env.BASEURL}/donate`,
     });
 
@@ -6429,15 +7791,22 @@ app.post("/donate/subscribe", mustBeLoggedIn, async (req, res) => {
 });
 
 // ═══ Subscription success callback ═══
-app.get("/donate/subscribe/success", mustBeLoggedIn, async (req, res) => {
+app.get("/donate/subscribe/success", async (req, res) => {
   try {
     const sessionId = req.query.session_id;
     const tier = req.query.tier;
     const fanType = req.query.fan_type || "individual";
     const amountCents = Number(req.query.amount) || 0;
     const shirtSizes = req.query.shirts ? JSON.parse(req.query.shirts) : [];
+    const donorEmail = String(req.query.donor_email || "").trim().toLowerCase();
+    const donorName = String(req.query.donor_name || "").trim();
+    let userId = req.user ? req.user.userid : (Number(req.query.user_id) || null);
 
     if (!sessionId) return res.redirect("/donate");
+    if (!userId && donorEmail) {
+      const u = db.prepare("SELECT id FROM users WHERE email = ?").get(donorEmail);
+      if (u) userId = u.id;
+    }
 
     // Retrieve the subscription ID from Stripe
     const stripeSession = await stripe.checkout.sessions.retrieve(sessionId);
@@ -6447,12 +7816,12 @@ app.get("/donate/subscribe/success", mustBeLoggedIn, async (req, res) => {
 
     // Check we haven't already recorded this
     const existing = db.prepare("SELECT id FROM fan_subscriptions WHERE stripe_subscription_id = ?").get(subscriptionId);
-    if (!existing) {
+    if (!existing && userId) {
       db.prepare(
         `INSERT INTO fan_subscriptions (user_id, stripe_subscription_id, stripe_price_id, tier, fan_type, amount_cents, status, shirt_sizes, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`
       ).run(
-        req.user.userid,
+        userId,
         subscriptionId,
         stripeSession.line_items ? "" : "",
         tier,
@@ -6461,31 +7830,34 @@ app.get("/donate/subscribe/success", mustBeLoggedIn, async (req, res) => {
         shirtSizes.length ? JSON.stringify(shirtSizes) : null,
         Date.now()
       );
+    }
 
-      // Record the first payment in donations table
-      const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-      const donorName = member ? (member.firstname + " " + member.lastname) : "Fan";
-      const baseCents = Math.round(amountCents / 1.06); // reverse the 6% fee
+    const donationExists = db.prepare("SELECT id FROM donations WHERE stripe_session_id = ?").get(sessionId);
+    if (!donationExists) {
+      const member = userId ? db.prepare("SELECT * FROM users WHERE id = ?").get(userId) : null;
+      const finalDonorName = member ? (member.firstname + " " + member.lastname) : (donorName || "Fan");
+      const finalEmail = member ? member.email : donorEmail;
+      const baseCents = Math.round(amountCents / 1.06);
       const feeCents = amountCents - baseCents;
 
       db.prepare(
         `INSERT INTO donations (email, name, message, amount, processing_fee, total_charged, stripe_session_id, created_at, user_id, tier, donation_type)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
-        member ? member.email : "",
-        donorName,
+        finalEmail,
+        finalDonorName,
         `${tier} subscription started`,
         baseCents,
         feeCents,
         amountCents,
         sessionId,
         Date.now(),
-        req.user.userid,
+        userId,
         tier,
         "subscription"
       );
 
-      addChrisShare(amountCents, `Subscription ${tier} by ${donorName}`);
+      addChrisShare(amountCents, `Subscription ${tier} by ${finalDonorName}`);
 
       // Send acknowledgement email
       if (member) {
@@ -6500,8 +7872,11 @@ app.get("/donate/subscribe/success", mustBeLoggedIn, async (req, res) => {
           emailBody += `<p><em>If we need additional information (such as your corporate logo for the equipment trailer), we will reach out via email.</em></p>`;
         }
         emailBody += `<p>Sincerely,<br/>The Boise Gems Drum &amp; Bugle Corps</p>`;
-        sendEmail(member.email, "Subscription Confirmed – Boise Gems", emailBody);
-        sendEmail(MasterEmail, "New Subscription", `New ${tier} ${fanType} subscription by ${donorName} (${member.email}) – $${(amountCents / 100).toFixed(2)}/mo`);
+        sendEmail(member.email, "Subscription Confirmed - Boise Gems", emailBody);
+        sendEmail(MasterEmail, "New Subscription", `New ${tier} ${fanType} subscription by ${finalDonorName} (${finalEmail}) - $${(amountCents / 100).toFixed(2)}/mo`);
+      } else if (finalEmail) {
+        sendEmail(finalEmail, "Subscription Confirmed - Boise Gems", `<p>Thank you for subscribing! Log in or create a fan account to manage your subscription from your portal.</p>`);
+        sendEmail(MasterEmail, "New Subscription", `New ${tier} ${fanType} subscription by ${finalDonorName} (${finalEmail}) - $${(amountCents / 100).toFixed(2)}/mo`);
       }
     }
 
@@ -6675,11 +8050,17 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
     member.minor = age < 18;
   }
 
+  member.hasLinkedParent = parentLinks.childHasLinkedParent(db, req.user.userid);
+  const linkRequests = parentLinks.getIncomingRequests(db, req.user.userid);
+  const linkedParents = parentLinks.getParentsForChild(db, req.user.userid);
   return res.render("member-portal", {
     member,
     contracts,
     leftoverForms,
     allergy,
+    announcements,
+    linkRequests,
+    linkedParents,
     previewMode: true
   });
 })
@@ -6861,7 +8242,7 @@ app.get('/calendar', (req, res) => {
 
 app.get("/event/:slug", (req, res) => {
   const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
-  if (!event) return res.status(404).render("404");
+  if (!event) return renderErrorPage(res, 404, `The requested event could not be found: ${req.originalUrl}`);
 
   // Build Google Maps links
   const locale  = "https://www.google.com/maps/search/" + String(event.location || "").replace(/ /g, "+");
@@ -6949,24 +8330,15 @@ app.get("/event/:slug/rsvps-data", mustBeAdmin, (req, res) => {
 
    const parentIds = rsvps.map(r => r.user_id).filter(Boolean);
   if (parentIds.length) {
-    const placeholders = parentIds.map(() => "?").join(",");
     const childrenByParent = {};
-    const childRows = db
-      .prepare(
-        `
-        SELECT id, firstname, lastname, parentId
-        FROM users
-        WHERE parentId IN (${placeholders})
-        ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
-        `
-      )
-      .all(...parentIds);
+    const childRows = parentLinks.getChildrenForParentQueries(db, parentIds);
 
     for (const child of childRows) {
-      if (!childrenByParent[child.parentId]) {
-        childrenByParent[child.parentId] = [];
+      const pid = child.link_parent_id;
+      if (!childrenByParent[pid]) {
+        childrenByParent[pid] = [];
       }
-      childrenByParent[child.parentId].push({
+      childrenByParent[pid].push({
         id: child.id,
         firstname: child.firstname,
         lastname: child.lastname,
@@ -7023,20 +8395,21 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
       )
       .get(req.user.userid) || {};
 
-  // Look for any contracted children of this user (parentId = current user)
-  const childContracts =
-    db
-      .prepare(
-        `
+  // Look for any contracted children linked to this parent account
+  const childIds = parentLinks.getChildrenForParent(db, req.user.userid).map((c) => c.id);
+  let childContracts = { anyCorps: 0, anyIndependent: 0, anyAffiliate: 0 };
+  if (childIds.length) {
+    const placeholders = childIds.map(() => "?").join(",");
+    childContracts = db.prepare(`
         SELECT
           MAX(COALESCE(contractedCorps, 0))       AS anyCorps,
           MAX(COALESCE(contractedIndependent, 0)) AS anyIndependent,
           MAX(COALESCE(contractedAffiliate, 0))   AS anyAffiliate
         FROM users
-        WHERE parentId = ?
+        WHERE id IN (${placeholders})
         `
-      )
-      .get(req.user.userid) || {};
+      ).get(...childIds) || childContracts;
+  }
 
   const isCorpsContracted =
     !!(userRow.contractedCorps || childContracts.anyCorps);
@@ -7379,7 +8752,7 @@ app.post("/news/:id/delete", mustBeAdmin, (req, res) => {
 // PUBLIC: detail
 app.get("/news/:slug", (req, res) => {
   const post = db.prepare(`SELECT * FROM news WHERE slug = ?`).get(req.params.slug);
-  if (!post) return res.status(404).render("404");
+  if (!post) return renderErrorPage(res, 404, `The requested news post could not be found: ${req.originalUrl}`);
 
   // Meta tags
   const base = "https://boisegems.org";
@@ -7409,9 +8782,17 @@ app.get("/view-emergency/:id", mustBeAdmin, (req,res) => {
   return res.render("emergency-contacts", {contacts, thisUser})
 })
 
-app.get("/join-corps", (req,res) => {
-  return res.render("join-corps")
-})
+app.get("/join-corps", (req, res) => {
+  const settings = getSiteSettings();
+  const topoOpacity = Number(settings.join_corps_topo_opacity);
+  const loggedIn = !!(req.user && req.user.userid);
+  return res.render("join-corps", {
+    joinCorpsHtml: joinCorpsContent.renderJoinCorpsBody(settings.join_corps_body_html),
+    topoOpacity: isFinite(topoOpacity) ? topoOpacity : 0.12,
+    ctaHref: loggedIn ? "/view-materials" : "/register-member",
+    ctaLabel: loggedIn ? "View Audition Materials" : "Create an Account",
+  });
+});
 
 app.get("/join-independent", (req,res) => {
   return res.render("join-independent")
@@ -7419,73 +8800,68 @@ app.get("/join-independent", (req,res) => {
 
 // ---------- STAFF ADMIN ----------
 
-// Categories offered in the UI (you can change this list anytime)
-const STAFF_CATEGORIES = [
-  "Director",
-  "Admin",
-  "Design",
-  "Brass",
-  "Percussion",
-  "Color-Guard",
-  "Front Ensemble",
-  "Visual",
-  "BGI Director",
-  "BGI Visual",
-  "BGI Design",
-  "BGI Percussion",
-  "BGI Front Ensemble",
-  "Board",
-  "Advisory Board",
-  "Other"
-];
-
-// Admin hub: list by category with order numbers
+// ── Staff admin (public bios) ────────────────────────────────────────────────
 app.get("/staff-admin", mustBeAdmin, (req, res) => {
-  const rows = db.prepare(`
-    SELECT * FROM staff
-    ORDER BY category COLLATE NOCASE, sort_order ASC, last COLLATE NOCASE, first COLLATE NOCASE
-  `).all();
-
-  // group by category
-  const grouped = {};
-  for (const r of rows) {
-    const cat = r.category || "Other";
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(r);
-  }
-  res.render("staff-admin", { grouped, categories: STAFF_CATEGORIES });
+  const grouped = staffDisplay.getStaffAdminGrouped(db);
+  const categories = staffDisplay.getStaffCategories(db);
+  res.render("staff-admin", {
+    grouped,
+    categories,
+    canReorderStaff: staffDisplay.canReorderStaff(req.user),
+  });
 });
 
-// New staff form
 app.get("/staff/new", mustBeAdmin, (req, res) => {
-  res.render("staff-new", { categories: STAFF_CATEGORIES });
+  res.render("staff-new", { categories: staffDisplay.getStaffCategories(db) });
 });
 
 app.get("/contracts-admin", mustBeAdmin, (req, res) => {
-  const corpsContract = db
-    .prepare(
-      "SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
-    )
-    .get("corps");
-
-  const independentContract = db
-    .prepare(
-      "SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
-    )
-    .get("independent");
-
-  const affiliateContract = db
-    .prepare(
-      "SELECT * FROM contractPdfs WHERE ensemble = ? ORDER BY uploaded_at DESC LIMIT 1"
-    )
-    .get("affiliate");
-
   res.render("contracts-admin", {
-    corpsContract,
-    independentContract,
-    affiliateContract,
+    corpsContract: getLatestContractPdf("corps"),
+    independentContract: getLatestContractPdf("independent"),
+    affiliateContract: getLatestContractPdf("affiliate"),
   });
 });
+
+const CONTRACT_ENSEMBLE_LABELS = {
+  corps: "Corps",
+  independent: "Independent",
+  affiliate: "Affiliate",
+};
+
+app.get("/contracts-admin/edit/:ensemble", mustBeAdmin, (req, res) => {
+  const ensemble = String(req.params.ensemble || "").toLowerCase();
+  if (!CONTRACT_ENSEMBLE_LABELS[ensemble]) {
+    return res.redirect("/contracts-admin");
+  }
+  return res.render("contracts-admin-edit", {
+    ensemble,
+    label: CONTRACT_ENSEMBLE_LABELS[ensemble],
+    contract: getLatestContractPdf(ensemble),
+  });
+});
+
+app.post(
+  "/contracts-admin/edit/:ensemble",
+  mustBeAdmin,
+  pdfUpload.single("contract_pdf"),
+  (req, res) => {
+    const ensemble = String(req.params.ensemble || "").toLowerCase();
+    if (!CONTRACT_ENSEMBLE_LABELS[ensemble]) {
+      return res.redirect("/contracts-admin");
+    }
+
+    const latest = getLatestContractPdf(ensemble);
+    if (!req.file && !latest) {
+      req.session.flashMessage = "Upload a PDF before saving fields.";
+      return res.redirect(`/contracts-admin/edit/${ensemble}`);
+    }
+
+    saveContractPdfEnsemble(ensemble, req.file || null, req.body.fields_json);
+    req.session.flashMessage = `${CONTRACT_ENSEMBLE_LABELS[ensemble]} contract updated.`;
+    return res.redirect("/contracts-admin");
+  }
+);
 
 const csvEscape = (value) => {
   if (value === null || value === undefined) return '""';
@@ -7934,46 +9310,6 @@ app.get("/admin/export-allergies.csv", mustBeAdmin, (req, res) => {
   return res.send(csv);
 });
 
-app.post(
-  "/contracts-admin",
-  mustBeAdmin,
-  pdfUpload.fields([
-    { name: "corps_pdf", maxCount: 1 },
-    { name: "independent_pdf", maxCount: 1 },
-    { name: "affiliate_pdf", maxCount: 1 },
-  ]),
-  (req, res) => {
-    const now = Date.now();
-
-    if (req.files && req.files["corps_pdf"] && req.files["corps_pdf"][0]) {
-      const file = req.files["corps_pdf"][0];
-      const pdfPath = `/pdf/publicpdf/${file.filename}`;
-      db.prepare(
-        "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
-      ).run("corps", pdfPath, now);
-    }
-
-    if (req.files && req.files["independent_pdf"] && req.files["independent_pdf"][0]) {
-      const file = req.files["independent_pdf"][0];
-      const pdfPath = `/pdf/publicpdf/${file.filename}`;
-      db.prepare(
-        "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
-      ).run("independent", pdfPath, now);
-    }
-
-    if (req.files && req.files["affiliate_pdf"] && req.files["affiliate_pdf"][0]) {
-      const file = req.files["affiliate_pdf"][0];
-      const pdfPath = `/pdf/publicpdf/${file.filename}`;
-      db.prepare(
-        "INSERT INTO contractPdfs (ensemble, pdf_path, uploaded_at) VALUES (?, ?, ?)"
-      ).run("affiliate", pdfPath, now);
-    }
-
-    req.session.flashMessage = "Contract PDFs updated.";
-    return res.redirect("/contracts-admin");
-  }
-);
-
 app.get("/admin-rsvps", mustBeAdmin, (req, res) => {
   const eventId = req.query.eventId ? Number(req.query.eventId) : null;
   const searchQuery = (req.query.q || "").trim();
@@ -8078,23 +9414,14 @@ app.get("/admin-rsvps", mustBeAdmin, (req, res) => {
     const childrenBy = {};
 
     if (parentIds.length) {
-      const placeholders = parentIds.map(() => "?").join(",");
-      const childRows = db
-        .prepare(
-          `
-          SELECT id, firstname, lastname, parentId
-          FROM users
-          WHERE parentId IN (${placeholders})
-          ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
-          `
-        )
-        .all(...parentIds);
+      const childRows = parentLinks.getChildrenForParentQueries(db, parentIds);
 
       for (const child of childRows) {
-        if (!childrenBy[child.parentId]) {
-          childrenBy[child.parentId] = [];
+        const pid = child.link_parent_id;
+        if (!childrenBy[pid]) {
+          childrenBy[pid] = [];
         }
-        childrenBy[child.parentId].push({
+        childrenBy[pid].push({
           id: child.id,
           firstname: child.firstname,
           lastname: child.lastname,
@@ -8319,10 +9646,24 @@ app.get("/admin-forms", mustBeAdmin, (req, res) => {
       .all(u.id);
     const missing = markUploadsAndCount(required, uploads);
 
+    let blankFieldCount = 0;
+    let formsWithBlanks = 0;
+    for (const form of required) {
+      const upload = uploads.find((up) => up.document_id === form.id);
+      if (!upload) continue;
+      const summary = summarizeFormFieldCompleteness(form, upload.field_values_json);
+      if (summary.missing.length) {
+        formsWithBlanks += 1;
+        blankFieldCount += summary.missing.length;
+      }
+    }
+
     rows.push({
       user: u,
       requiredCount: required.length,
       missingCount: missing,
+      blankFieldCount,
+      formsWithBlanks,
     });
   }
 
@@ -8347,37 +9688,32 @@ app.get("/admin-forms", mustBeAdmin, (req, res) => {
 
 // Create staff
 app.post("/staff/new", mustBeAdmin, imageUpload.single("image"), processImageJpgOptional, (req, res) => {
-  const first    = String(req.body.first || "").trim();
-  const last     = String(req.body.last || "").trim();
-  const position = String(req.body.position || "").trim();
-  const category = (String(req.body.category || "").trim()) || "Other";
-  const bio      = String(req.body.bio || "").trim();
+  const first = String(req.body.first || "").trim();
+  const last = String(req.body.last || "").trim();
+  const bio = String(req.body.bio || "").trim();
+  const email = staffDisplay.normalizeStaffEmail(req.body.email);
+  const phone = staffDisplay.normalizeStaffPhone(req.body.phone);
+  const placements = staffDisplay.parsePlacementsFromBody(req.body);
 
-  if (!first || !last || !position) {
-    req.session.flashMessage = "First, Last, and Position are required.";
+  if (!first || !last) {
+    req.session.flashMessage = "First and last name are required.";
+    return res.redirect("/staff/new");
+  }
+  if (!placements.length) {
+    req.session.flashMessage = "Add at least one category with a position title.";
     return res.redirect("/staff/new");
   }
 
-  // Use uploaded image if present; otherwise NULL (frontend can fall back to /img/ui/gem.png)
   const imageOrNull = req.savedFilename ? req.savedFilename : null;
-
-  // If an explicit sort_order was provided, respect it; otherwise place next within category
-  const maxRow = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), 0) AS maxo FROM staff WHERE category = ?`
-  ).get(category);
-
-  const sortOrderInt = Number.isFinite(Number(req.body.sort_order))
-    ? parseInt(req.body.sort_order, 10)
-    : (maxRow?.maxo || 0) + 1;
-
   const now = Date.now();
   const slug = slugify(`${first} ${last}`);
 
-  db.prepare(`
-    INSERT INTO staff (first, last, position, category, bio, image, sort_order, created_at, updated_at, slug)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(first, last, position, category, bio, imageOrNull, sortOrderInt, now, now, slug);
+  const info = db.prepare(`
+    INSERT INTO staff (first, last, position, category, bio, email, phone, image, sort_order, created_at, updated_at, slug)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+  `).run(first, last, placements[0].position_title, "", bio, email, phone, imageOrNull, now, now, slug);
 
+  staffDisplay.saveStaffPlacements(db, info.lastInsertRowid, placements);
   res.redirect("/staff-admin");
 });
 
@@ -8387,53 +9723,45 @@ app.get("/staff/:id/edit", mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
   const row = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
   if (!row) return res.redirect("/staff-admin");
-  res.render("staff-edit", { staffer: row, categories: STAFF_CATEGORIES });
+  const placements = staffDisplay.getPlacementsForStaff(db, id);
+  res.render("staff-edit", {
+    staffer: row,
+    placements,
+    categories: staffDisplay.getStaffCategories(db),
+  });
 });
 
 app.post("/staff/:id/edit", mustBeAdmin, imageUpload.single("image"), processImageJpgOptional, (req, res) => {
-  const id  = Number(req.params.id);
+  const id = Number(req.params.id);
   const row = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
   if (!row) return res.redirect("/staff-admin");
 
-  const first    = String(req.body.first || "").trim();
-  const last     = String(req.body.last || "").trim();
-  const position = String(req.body.position || "").trim();
-  const category = String(req.body.category || "").trim() || "Other";
-  const bio      = String(req.body.bio || "").trim();
+  const first = String(req.body.first || "").trim();
+  const last = String(req.body.last || "").trim();
+  const bio = String(req.body.bio || "").trim();
+  const email = staffDisplay.normalizeStaffEmail(req.body.email);
+  const phone = staffDisplay.normalizeStaffPhone(req.body.phone);
+  const placements = staffDisplay.parsePlacementsFromBody(req.body);
 
-  if (!first || !last || !position) {
-    req.session.flashMessage = "First, Last, and Position are required.";
+  if (!first || !last) {
+    req.session.flashMessage = "First and last name are required.";
+    return res.redirect(`/staff/${id}/edit`);
+  }
+  if (!placements.length) {
+    req.session.flashMessage = "Add at least one category with a position title.";
     return res.redirect(`/staff/${id}/edit`);
   }
 
-  // Decide sort_order:
-  // - If user typed one, use it.
-  // - If category changed and no order was provided, push to end of new category.
-  // - Else keep existing.
-  const sortRaw = req.body.sort_order;
-  let sortOrderInt;
-
-  if (sortRaw !== undefined && String(sortRaw).trim() !== "" && Number.isFinite(Number(sortRaw))) {
-    sortOrderInt = parseInt(sortRaw, 10);
-  } else if (category !== row.category) {
-    const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), 0) AS maxo FROM staff WHERE category = ?`).get(category);
-    sortOrderInt = (maxRow?.maxo || 0) + 1;
-  } else {
-    sortOrderInt = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0;
-  }
-
-  // Image: keep existing unless a new one was uploaded
   const image = req.savedFilename ? req.savedFilename : row.image;
-
   const slug = slugify(`${first} ${last}`);
-  const now  = Date.now();
+  const now = Date.now();
+  const primaryPosition = placements[0].position_title;
 
   db.prepare(`
-    UPDATE staff
-       SET first=?, last=?, position=?, category=?, bio=?, image=?, sort_order=?, slug=?, updated_at=?
-     WHERE id=?
-  `).run(first, last, position, category, bio, image, sortOrderInt, slug, now, id);
+    UPDATE staff SET first=?, last=?, position=?, bio=?, email=?, phone=?, image=?, slug=?, updated_at=? WHERE id=?
+  `).run(first, last, primaryPosition, bio, email, phone, image, slug, now, id);
 
+  staffDisplay.saveStaffPlacements(db, id, placements);
   res.redirect("/staff-admin");
 });
 
@@ -8441,154 +9769,41 @@ app.post("/staff/:id/edit", mustBeAdmin, imageUpload.single("image"), processIma
 // Delete staff
 app.post("/staff/:id/delete", mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
-  const row = db.prepare(`SELECT * FROM staff WHERE id = ?`).get(id);
-  if (row) {
-    // optional: remove old image file if you want
-    // if (row.image) { try { fs.unlinkSync(path.join(__dirname, "public", "img", "publicupload", row.image)); } catch(_){} }
-    db.prepare(`DELETE FROM staff WHERE id = ?`).run(id);
-  }
+  db.prepare(`DELETE FROM staff WHERE id = ?`).run(id);
   res.redirect("/staff-admin");
 });
 
-// Reorder staff within categories (expects fields like order[<id>]=<number>)
-app.post("/staff/reorder", mustBeAdmin, (req, res) => {
-  const orders = req.body.order || {}; // object keyed by staff id
-  const stmt = db.prepare(`UPDATE staff SET sort_order = ?, updated_at = ? WHERE id = ?`);
-  const now = Date.now();
-
-  for (const idStr of Object.keys(orders)) {
-    const id = Number(idStr);
-    const val = Number(orders[idStr]);
-    if (Number.isFinite(id) && Number.isFinite(val)) {
-      stmt.run(val, now, id);
-    }
+// Hidden drag reorder - Chris only
+app.post("/staff/reorder-placements", mustBeAdmin, (req, res) => {
+  if (!staffDisplay.canReorderStaff(req.user)) {
+    return res.status(403).json({ ok: false, message: "Forbidden" });
   }
-  res.redirect("/staff-admin");
+  const categoryId = Number(req.body.categoryId);
+  const placementIds = Array.isArray(req.body.placementIds) ? req.body.placementIds : [];
+  if (!categoryId || !placementIds.length) {
+    return res.status(400).json({ ok: false, message: "Invalid payload" });
+  }
+  staffDisplay.reorderPlacements(db, categoryId, placementIds);
+  return res.json({ ok: true });
 });
-
-const getStaffForAboutPages = () => {
-  return db.prepare(`
-    SELECT id, first, last, position, category, bio, image, slug, sort_order
-    FROM staff
-    ORDER BY category COLLATE NOCASE, sort_order ASC, last COLLATE NOCASE
-  `).all();
-};
-
-const normalizeStaffText = (value) =>
-  String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-const getCombinedStaffText = (s) =>
-  `${normalizeStaffText(s.category)} ${normalizeStaffText(s.position)}`.trim();
-
-const matchesAnyWord = (text, words) => words.some((word) => text.includes(word));
-
-const buildStaffSections = (staff, sectionDefs) => {
-  return sectionDefs
-    .map((section) => ({
-      title: section.title,
-      staff: staff.filter(section.match)
-    }))
-    .filter((section) => section.staff.length > 0);
-};
-
-const getBaseStaffSectionDefs = () => [
-  {
-    title: "Director",
-    match: (s) => matchesAnyWord(getCombinedStaffText(s), ["director"])
-  },
-  {
-    title: "Admin",
-    match: (s) => matchesAnyWord(getCombinedStaffText(s), ["admin"])
-  }
-];
 
 app.get("/our-history-about", (req, res) => {
-  const staff = getStaffForAboutPages();
-
-  const staffSections = buildStaffSections(staff, [
-    ...getBaseStaffSectionDefs(),
-    {
-      title: "Board",
-      match: (s) => {
-        const text = getCombinedStaffText(s);
-        return text.includes("board") && !text.includes("advisory");
-      }
-    },
-    {
-      title: "Advisory Board",
-      match: (s) => {
-        const text = getCombinedStaffText(s);
-        return text.includes("advisory");
-      }
-    }
-  ]);
-
-  res.render("our-history-about", { staffSections });
+  const staffSections = staffDisplay.getStaffSectionsForPage(db, "history");
+  const settings = getSiteSettings();
+  res.render("our-history-about", {
+    staffSections,
+    historyHtml: ourHistoryContent.renderOurHistoryBody(settings.our_history_body_html),
+  });
 });
 
 app.get("/boise-gems-corps-about", (req, res) => {
-  const staff = getStaffForAboutPages();
-  const nonBGIStaff = staff.filter((s) => !getCombinedStaffText(s).includes("bgi"));
-
-  const staffSections = buildStaffSections(nonBGIStaff, [
-    ...getBaseStaffSectionDefs(),
-    {
-      title: "Design",
-      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["design"])
-    },
-    {
-      title: "Brass",
-      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["brass"])
-    },
-    {
-      title: "Percussion",
-      match: (s) => {
-        const text = getCombinedStaffText(s);
-        return text.includes("percussion") && !text.includes("front ensemble");
-      }
-    },
-    {
-      title: "Front Ensemble",
-      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["front ensemble"])
-    },
-    {
-      title: "Color Guard",
-      match: (s) => {
-        const text = getCombinedStaffText(s);
-        return text.includes("color guard") || text.includes("colorguard");
-      }
-    },
-    {
-      title: "Visual",
-      match: (s) => matchesAnyWord(getCombinedStaffText(s), ["visual"])
-    }
-  ]);
-
+  const staffSections = staffDisplay.getStaffSectionsForPage(db, "corps");
   res.render("boise-gems-corps-about", { staffSections });
 });
 
 app.get("/boise-gems-independent", (req, res) => {
-  const staff = getStaffForAboutPages();
-  const baseSections = buildStaffSections(staff, getBaseStaffSectionDefs());
-
-  const bgiCategoryMap = new Map();
-  staff.forEach((s) => {
-    const category = String(s.category || "").trim();
-    if (!/^bgi\b/i.test(category)) return;
-
-    if (!bgiCategoryMap.has(category)) bgiCategoryMap.set(category, []);
-    bgiCategoryMap.get(category).push(s);
-  });
-
-  const bgiSections = Array.from(bgiCategoryMap.entries()).map(([title, categoryStaff]) => ({
-    title,
-    staff: categoryStaff
-  }));
-
-  res.render("boise-gems-independent", { staffSections: [...baseSections, ...bgiSections] });
+  const staffSections = staffDisplay.getStaffSectionsForPage(db, "bgi");
+  res.render("boise-gems-independent", { staffSections });
 });
 
 app.get("/about", (req, res) => {
@@ -8597,23 +9812,46 @@ app.get("/about", (req, res) => {
 
 
 
+app.get("/staff/:slug/contact.vcf", (req, res) => {
+  const s = db.prepare(`
+    SELECT first, last, email, phone, slug FROM staff WHERE slug = ?
+  `).get(req.params.slug);
+
+  if (!s) return renderErrorPage(res, 404, `The requested staff member could not be found: ${req.originalUrl}`);
+
+  const vcard = staffDisplay.buildStaffVCard(s);
+  if (!vcard) return renderErrorPage(res, 404, "No phone number on file for this staff member.");
+
+  const filename = `${slugify(`${s.first}-${s.last}`) || s.slug || "contact"}.vcf`;
+  res.setHeader("Content-Type", "text/vcard; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  return res.send(vcard);
+});
+
 app.get("/staff/:slug", (req, res) => {
   const s = db.prepare(`
-    SELECT id, first, last, position, category, bio, image, slug
+    SELECT id, first, last, position, category, bio, email, phone, image, slug
     FROM staff WHERE slug = ?
   `).get(req.params.slug);
 
-  if (!s) return res.status(404).render("404");
+  if (!s) return renderErrorPage(res, 404, `The requested staff member could not be found: ${req.originalUrl}`);
+
+  const placements = staffDisplay.getPlacementsForStaff(db, s.id);
+  const phoneTelHref = staffDisplay.phoneTelHref(s.phone);
+  const hasStaffVCard = !!staffDisplay.buildStaffVCard(s);
 
   const base = "https://boisegems.org";
-  const img  = s.image ? `${base}${s.image}` : `${base}/img/ui/gem.png`;
-  const title = `${s.first} ${s.last} â€” ${s.position} | Boise Gems`;
+  const img  = s.image ? `${base}/img/publicupload/${s.image}` : `${base}/img/ui/gem.png`;
+  const title = `${s.first} ${s.last} - ${placements[0]?.position_title || s.position} | Boise Gems`;
 
   res.render("staff-show", {
     s,
+    placements,
+    phoneTelHref,
+    hasStaffVCard,
     meta: {
       title,
-      description: s.bio?.slice(0, 160) || `${s.first} ${s.last} â€” ${s.position}`,
+      description: s.bio?.slice(0, 160) || `${s.first} ${s.last} - ${placements[0]?.position_title || s.position}`,
       image: img,
       url: `${base}/staff/${s.slug}`
     }
@@ -8737,21 +9975,25 @@ function getSectionRoster(section, scope) {
 
 
 function buildVisibilityFlags(audience) {
-  // audience: 'corps', 'independent', 'affiliate', 'both', 'all_contracted', 'everyone'
+  // Legacy single-value audience for older clients
   let allow_corps = 0;
   let allow_independent = 0;
   let allow_affiliate = 0;
   let allow_noncontracted = 0;
 
-  switch (audience) {
+  switch (String(audience || "").toLowerCase()) {
     case "corps":
       allow_corps = 1;
       break;
     case "independent":
       allow_independent = 1;
       break;
-    case "affiliate":
+    case "anyone":
+    case "everyone":
+      allow_corps = 1;
+      allow_independent = 1;
       allow_affiliate = 1;
+      allow_noncontracted = 1;
       break;
     case "both":
       allow_corps = 1;
@@ -8761,12 +10003,6 @@ function buildVisibilityFlags(audience) {
       allow_corps = 1;
       allow_independent = 1;
       allow_affiliate = 1;
-      break;
-    case "everyone":
-      allow_corps = 1;
-      allow_independent = 1;
-      allow_affiliate = 1;
-      allow_noncontracted = 1;
       break;
     default:
       allow_corps = 1;
@@ -8778,35 +10014,38 @@ function buildVisibilityFlags(audience) {
 
 function canUserSeeFileItem(userRow, fileRow) {
   if (!userRow) return false;
-  const isCorps = !!userRow.contractedCorps;
-  const isInd = !!userRow.contractedIndependent;
-  const isAffiliate = !!userRow.contractedAffiliate;
-
-  if (fileRow.allow_noncontracted) {
-    // Everyone can see
-    return true;
-  }
-
-  // Contracted only
-  if (fileRow.allow_corps && isCorps) return true;
-  if (fileRow.allow_independent && isInd) return true;
-  if (fileRow.allow_affiliate && isAffiliate) return true;
-
-  // Edge case: both but user not contracted in either => no
+  if (userRow.admin || userRow.staff) return true;
+  if (fileRow.allow_noncontracted) return true;
+  if (fileRow.allow_corps && userRow.contractedCorps) return true;
+  if (fileRow.allow_independent && userRow.contractedIndependent) return true;
+  if (fileRow.allow_affiliate && userRow.contractedAffiliate) return true;
   return false;
 }
 
-// Files home â€” choose Corps vs Indoor (2026)
-app.get("/files", mustBeLoggedInAny, (req, res) => {
+function wantsJson(req) {
+  return String(req.headers.accept || "").includes("application/json") || req.query.format === "json";
+}
+
+// Files home - choose Corps vs Independent (current season)
+const FILES_MEMBER_YEAR = 2027;
+
+app.get("/files", mustBeContractedForFiles, (req, res) => {
+  const u = db.prepare(`
+    SELECT contractedCorps, contractedIndependent, contractedAffiliate
+    FROM users WHERE id = ?
+  `).get(req.user.userid);
+  const isStaff = !!(req.admin || req.staff);
   res.render("files-root", {
-    user: req.user
+    showCorps: isStaff || !!(u && (u.contractedCorps || u.contractedAffiliate)),
+    showIndependent: isStaff || !!(u && u.contractedIndependent),
+    filesYear: FILES_MEMBER_YEAR,
   });
 });
 
 
 
 // View a specific folder (and its contents)
-app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
+app.get("/files/folder/:id", mustBeContractedForFiles, (req, res) => {
   const folderId = parseInt(req.params.id, 10);
   const chain = getFolderWithAncestors(folderId);
   if (!chain) {
@@ -8815,80 +10054,54 @@ app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
 
   const ctx = deriveFolderContext(chain);
   const folder = ctx.folder;
-
-  // Mark view for this user (members, staff, admins)
-  if (req.user && !req.parent) {
-    db.prepare(`
-      INSERT INTO folder_views (folder_id, user_id, viewed_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(folder_id, user_id) DO UPDATE SET viewed_at = excluded.viewed_at
-    `).run(folder.id, req.user.userid, Date.now());
+  const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!userCanAccessFilesScope(userRow, ctx.scope)) {
+    return res.status(403).render("message", { message: "You do not have access to this file library." });
   }
 
-  // Subfolders
   const subfolders = db.prepare(`
     SELECT * FROM file_folders
     WHERE parent_id = ?
     ORDER BY name COLLATE NOCASE
   `).all(folder.id);
 
-  // Files (raw)
   const rawFiles = db.prepare(`
     SELECT * FROM file_items
     WHERE folder_id = ?
     ORDER BY created_at DESC
   `).all(folder.id);
 
-  const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
   const canManage = !!(req.admin || req.staff);
 
-  const files = rawFiles.filter(f => {
-    if (canManage) return true;
-    return canUserSeeFileItem(userRow, f);
-  });
-
-  // Roster + views
-  let roster = [];
-  if (ctx.section) {
-    const rosterRows = db.prepare(`
-      SELECT id, firstname, lastname, section, instrument, img,
-              contractedCorps, contractedIndependent, contractedAffiliate
-      FROM users
-      WHERE LOWER(section) = LOWER(?)
-        AND (parent IS NULL OR parent = 0)
-    `).all(ctx.section);
-
-    const viewedRows = db.prepare(`
-      SELECT user_id FROM folder_views WHERE folder_id = ?
-    `).all(folder.id);
-    const viewedSet = new Set(viewedRows.map(r => r.user_id));
-
-    roster = rosterRows.map(r => ({
-      id: r.id,
-      img: r.img,
-      name: `${r.firstname} ${r.lastname}`,
-      instrument: r.instrument,
-      contractedCorps: !!r.contractedCorps,
-      contractedIndependent: !!r.contractedIndependent,
-      contractedAffiliate: !!r.contractedAffiliate,
-      hasViewed: viewedSet.has(r.id)
+  const files = rawFiles
+    .filter((f) => canManage || canUserSeeFileItem(userRow, f))
+    .map((f) => ({
+      ...f,
+      title: stripFileExtension(f.title),
+      iconKind: fileIconKind(f.mime_type, f.original_name || f.title),
+      typeLabel: fileTypeLabel(f.mime_type, f.original_name || f.title),
     }));
+
+  let roster = [];
+  if (ctx.section && canManage) {
+    roster = seasonRosterSystem.listRosterForFolder(db, ctx.year, ctx.scope, ctx.section);
   }
 
+  const scopeLabel = ctx.scope === "corps" ? "Corps" : "Independent";
   const breadcrumbs = [
-    { label: "Files Home", href: "/files" },
-    {
-      label: ctx.scope === "corps" ? "Corps" : "Indoor",
-      href: `/files/${ctx.scope}/${ctx.year}`
-    },
-    // year & below from chain
-    ...chain.map(c => ({
+    { label: "Music & Files", href: "/files" },
+    { label: `${scopeLabel} ${ctx.year}`, href: `/files/${ctx.scope}/${ctx.year}` },
+    ...chain.slice(1).map((c) => ({
       label: c.name,
-      href: c.id === folder.id ? null : `/files/folder/${c.id}`
-    }))
+      href: c.id === folder.id ? null : `/files/folder/${c.id}`,
+    })),
   ];
 
-  res.render("files-folder", {
+  const flash = req.session.flashMessage || res.locals.flashMessage || null;
+  delete req.session.flashMessage;
+  delete res.locals.flashMessage;
+
+  const renderLocals = {
     user: req.user,
     canManage,
     breadcrumbs,
@@ -8897,9 +10110,62 @@ app.get("/files/folder/:id", mustBeLoggedInAny, (req, res) => {
     files,
     roster,
     scope: ctx.scope,
+    scopeLabel,
     year: ctx.year,
-    section: ctx.section
-  });
+    section: ctx.section,
+  };
+  if (flash) renderLocals.flashMessage = flash;
+
+  res.render("files-folder", renderLocals);
+});
+
+app.get("/files/folder/:id/search", mustBeContractedForFiles, (req, res) => {
+  const folderId = parseInt(req.params.id, 10);
+  const q = String(req.query.q || "").trim().toLowerCase();
+  const chain = getFolderWithAncestors(folderId);
+  if (!chain) return res.status(404).json({ ok: false, message: "Folder not found." });
+  const ctx = deriveFolderContext(chain);
+  const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!userCanAccessFilesScope(userRow, ctx.scope)) {
+    return res.status(403).json({ ok: false, message: "Forbidden." });
+  }
+  const canManage = !!(req.admin || req.staff);
+  if (!q) return res.json({ ok: true, folders: [], files: [] });
+
+  const ids = collectDescendantFolderIds(folderId);
+  const placeholders = ids.map(() => "?").join(",");
+  const folders = db.prepare(`
+    SELECT id, name, parent_id, created_at, updated_at
+    FROM file_folders
+    WHERE id IN (${placeholders}) AND id != ? AND LOWER(name) LIKE ?
+    ORDER BY name COLLATE NOCASE
+  `).all(...ids, folderId, `%${q}%`);
+
+  const rawFiles = db.prepare(`
+    SELECT * FROM file_items
+    WHERE folder_id IN (${placeholders})
+      AND (LOWER(title) LIKE ? OR LOWER(original_name) LIKE ?)
+    ORDER BY title COLLATE NOCASE
+  `).all(...ids, `%${q}%`, `%${q}%`);
+
+  const files = rawFiles
+    .filter((f) => canManage || canUserSeeFileItem(userRow, f))
+    .map((f) => ({
+      id: f.id,
+      title: stripFileExtension(f.title),
+      folder_id: f.folder_id,
+      stored_path: f.stored_path,
+      mime_type: f.mime_type,
+      size: f.size,
+      created_at: f.created_at,
+      iconKind: fileIconKind(f.mime_type, f.original_name || f.title),
+      typeLabel: fileTypeLabel(f.mime_type, f.original_name || f.title),
+      allow_corps: f.allow_corps,
+      allow_independent: f.allow_independent,
+      allow_noncontracted: f.allow_noncontracted,
+    }));
+
+  return res.json({ ok: true, folders, files });
 });
 
 // Create a new subfolder under a section or existing folder
@@ -8907,12 +10173,14 @@ app.post("/files/folder/:id/new-folder", mustBeStaffOrAdmin, (req, res) => {
   const parentId = parseInt(req.params.id, 10);
   const name = String(req.body.name || "").trim();
   if (!name) {
+    if (wantsJson(req)) return res.status(400).json({ ok: false, message: "Folder name is required." });
     req.session.flashMessage = "Folder name is required.";
     return res.redirect("back");
   }
 
   const chain = getFolderWithAncestors(parentId);
   if (!chain) {
+    if (wantsJson(req)) return res.status(404).json({ ok: false, message: "Parent folder not found." });
     req.session.flashMessage = "Parent folder not found.";
     return res.redirect("back");
   }
@@ -8921,23 +10189,25 @@ app.post("/files/folder/:id/new-folder", mustBeStaffOrAdmin, (req, res) => {
   const parent = ctx.folder;
   const now = Date.now();
 
-  db.prepare(`
+  const info = db.prepare(`
     INSERT INTO file_folders (parent_id, scope, year, section, name, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(parent.id, ctx.scope, ctx.year, ctx.section, name, now, now);
 
-  // Any content change resets views for this folder
-  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(parent.id);
-
+  if (wantsJson(req)) {
+    return res.json({
+      ok: true,
+      folder: { id: info.lastInsertRowid, name, parent_id: parent.id },
+    });
+  }
   res.redirect(`/files/folder/${parent.id}`);
 });
 
-// Upload multiple files into a folder
-// Upload multiple files into a folder
 app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("files", 20), async (req, res) => {
   const folderId = parseInt(req.params.id, 10);
   const chain = getFolderWithAncestors(folderId);
   if (!chain) {
+    if (wantsJson(req)) return res.status(404).json({ ok: false, message: "Folder not found." });
     req.session.flashMessage = "Folder not found.";
     return res.redirect("back");
   }
@@ -8945,18 +10215,33 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
   const ctx = deriveFolderContext(chain);
   const folder = ctx.folder;
 
-  const audience = String(req.body.audience || "corps").toLowerCase();
-  const { allow_corps, allow_independent, allow_affiliate, allow_noncontracted } = buildVisibilityFlags(audience);
+  let flags;
+  if (
+    req.body.allow_anyone != null ||
+    req.body.allow_corps != null ||
+    req.body.allow_independent != null
+  ) {
+    flags = buildVisibilityFromChecks(req.body);
+  } else {
+    flags = buildVisibilityFlags(req.body.audience || "corps");
+  }
+  const { allow_corps, allow_independent, allow_affiliate, allow_noncontracted } = flags;
 
-  // Titles can be provided as one-per-line
   const titlesText = String(req.body.titlesText || "")
     .split("\n")
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .filter(Boolean);
   const now = Date.now();
 
   if (!req.files || !req.files.length) {
+    if (wantsJson(req)) return res.status(400).json({ ok: false, message: "Select at least one file." });
     req.session.flashMessage = "You must select at least one file to upload.";
+    return res.redirect("back");
+  }
+
+  if (!allow_noncontracted && !allow_corps && !allow_independent) {
+    if (wantsJson(req)) return res.status(400).json({ ok: false, message: "Choose at least one permission." });
+    req.session.flashMessage = "Choose at least one permission.";
     return res.redirect("back");
   }
 
@@ -8970,31 +10255,160 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  req.files.forEach((file, idx) => {
-    const displayTitle = titlesText[idx] || file.originalname;
-    const storedPath = "/uploads/files/" + path.basename(file.path);
+  const created = [];
+  for (let idx = 0; idx < req.files.length; idx++) {
+    const file = req.files[idx];
+    let displayTitle = stripFileExtension(titlesText[idx] || file.originalname);
+    let storedPath = "/uploads/files/" + path.basename(file.path);
+    let mime = file.mimetype;
+    let size = file.size;
+    let originalName = file.originalname;
 
-    insertFile.run(
+    if (isImageFileUpload(mime, originalName)) {
+      try {
+        const processed = await processFilesLibraryImage(file.path);
+        storedPath = processed.stored_path;
+        mime = processed.mime;
+        size = processed.size;
+        originalName = path.basename(originalName, path.extname(originalName)) + ".png";
+      } catch (err) {
+        console.error("Files library image processing failed:", err);
+        if (wantsJson(req)) return res.status(400).json({ ok: false, message: "Could not process image." });
+        req.session.flashMessage = "Could not process image.";
+        return res.redirect("back");
+      }
+    }
+
+    const info = insertFile.run(
       folder.id,
       req.user.userid,
       displayTitle,
-      file.originalname,
+      originalName,
       storedPath,
-      file.mimetype,
-      file.size,
+      mime,
+      size,
       allow_corps,
       allow_independent,
       allow_affiliate,
       allow_noncontracted,
       now
     );
-  });
+    created.push({
+      id: info.lastInsertRowid,
+      title: displayTitle,
+      stored_path: storedPath,
+      mime_type: mime,
+      size,
+      created_at: now,
+      iconKind: fileIconKind(mime, originalName),
+      typeLabel: fileTypeLabel(mime, originalName),
+      allow_corps,
+      allow_independent,
+      allow_noncontracted,
+    });
+  }
 
-  // Reset views for this folder (new stuff to see)
-  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(folder.id);
-
-  // âœ… No emails here anymore â€“ just go back to the folder
+  if (wantsJson(req)) return res.json({ ok: true, files: created });
   res.redirect(`/files/folder/${folder.id}`);
+});
+
+app.post("/files/item/:id/rename", mustBeStaffOrAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const rawTitle = String(req.body.title || "").trim();
+  if (!rawTitle) return res.status(400).json({ ok: false, message: "Title is required." });
+  const title = stripFileExtension(rawTitle);
+  if (!title) return res.status(400).json({ ok: false, message: "Title is required." });
+  const row = db.prepare("SELECT * FROM file_items WHERE id = ?").get(id);
+  if (!row) return res.status(404).json({ ok: false, message: "File not found." });
+  db.prepare("UPDATE file_items SET title = ? WHERE id = ?").run(title, id);
+  return res.json({
+    ok: true,
+    id,
+    title,
+    extensionIgnored: titleLooksLikeHasExtension(rawTitle),
+  });
+});
+
+app.post("/files/item/:id/permissions", mustBeStaffOrAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = db.prepare("SELECT * FROM file_items WHERE id = ?").get(id);
+  if (!row) return res.status(404).json({ ok: false, message: "File not found." });
+  const flags = buildVisibilityFromChecks(req.body);
+  if (!flags.allow_noncontracted && !flags.allow_corps && !flags.allow_independent) {
+    return res.status(400).json({ ok: false, message: "Choose at least one permission." });
+  }
+  db.prepare(`
+    UPDATE file_items
+    SET allow_corps = ?, allow_independent = ?, allow_affiliate = ?, allow_noncontracted = ?
+    WHERE id = ?
+  `).run(flags.allow_corps, flags.allow_independent, flags.allow_affiliate, flags.allow_noncontracted, id);
+  return res.json({ ok: true, ...flags });
+});
+
+app.post("/files/item/:id/delete", mustBeStaffOrAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = db.prepare("SELECT * FROM file_items WHERE id = ?").get(id);
+  if (!row) {
+    if (wantsJson(req)) return res.status(404).json({ ok: false, message: "File not found." });
+    req.session.flashMessage = "File not found.";
+    return res.redirect("back");
+  }
+  const folderId = row.folder_id;
+  try {
+    const absPath = path.join(__dirname, "public", row.stored_path.replace(/^\//, ""));
+    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+  } catch (err) {
+    console.error("Error deleting file from disk:", err);
+  }
+  db.prepare("DELETE FROM file_items WHERE id = ?").run(id);
+  if (wantsJson(req)) return res.json({ ok: true });
+  return res.redirect(`/files/folder/${folderId}`);
+});
+
+function deleteFolderRecursive(folderId) {
+  const kids = db.prepare("SELECT id FROM file_folders WHERE parent_id = ?").all(folderId);
+  for (const kid of kids) deleteFolderRecursive(kid.id);
+
+  const files = db.prepare("SELECT id, stored_path FROM file_items WHERE folder_id = ?").all(folderId);
+  for (const file of files) {
+    try {
+      const absPath = path.join(__dirname, "public", String(file.stored_path || "").replace(/^\//, ""));
+      if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+    } catch (err) {
+      console.error("Error deleting file from disk:", err);
+    }
+    db.prepare("DELETE FROM file_items WHERE id = ?").run(file.id);
+  }
+  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(folderId);
+  db.prepare("DELETE FROM file_folders WHERE id = ?").run(folderId);
+}
+
+app.post("/files/folder/:id/delete", mustBeStaffOrAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = db.prepare("SELECT * FROM file_folders WHERE id = ?").get(id);
+  if (!row) {
+    if (wantsJson(req)) return res.status(404).json({ ok: false, message: "Folder not found." });
+    req.session.flashMessage = "Folder not found.";
+    return res.redirect("back");
+  }
+  if (row.parent_id == null) {
+    if (wantsJson(req)) return res.status(400).json({ ok: false, message: "Cannot delete a season root folder." });
+    req.session.flashMessage = "Cannot delete a season root folder.";
+    return res.redirect("back");
+  }
+  // Prefer section folders only for nested user folders / or allow deleting section subfolders.
+  // Disallow deleting section root folders that are direct children of year folder (optional safety).
+  const parent = db.prepare("SELECT * FROM file_folders WHERE id = ?").get(row.parent_id);
+  if (parent && parent.parent_id == null) {
+    if (wantsJson(req)) return res.status(400).json({ ok: false, message: "Cannot delete a section root folder." });
+    req.session.flashMessage = "Cannot delete a section root folder.";
+    return res.redirect(`/files/folder/${row.parent_id}`);
+  }
+
+  const parentId = row.parent_id;
+  deleteFolderRecursive(id);
+  if (wantsJson(req)) return res.json({ ok: true, parentId });
+  return res.redirect(`/files/folder/${parentId}`);
 });
 
 app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
@@ -9008,8 +10422,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
   const ctx = deriveFolderContext(chain);
   const folder = ctx.folder;
 
-  // Default: notify everyone in this section (contracted or not)
-  const audience = String(req.body.audience || "everyone").toLowerCase();
+  const audience = String(req.body.audience || "section_roster").toLowerCase();
 
   if (!ctx.section) {
     req.session.flashMessage = "This folder is not tied to a specific section.";
@@ -9017,29 +10430,30 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
   }
 
   try {
-    // Build who weâ€™re emailing
-    let where = "LOWER(section) = LOWER(?) AND (parent IS NULL OR parent = 0)";
-    const params = [ctx.section];
+    let rows = [];
+    const rosterSection = seasonRosterSystem.folderSectionToRosterSection(ctx.section);
+    const ensemble = seasonRosterSystem.scopeToEnsemble(ctx.scope);
 
-    if (audience === "corps") {
-      where += " AND contractedCorps = 1";
-    } else if (audience === "independent") {
-      where += " AND contractedIndependent = 1";
-    } else if (audience === "affiliate") {
-      where += " AND contractedAffiliate = 1";
-    } else if (audience === "both") {
-      where += " AND (contractedCorps = 1 OR contractedIndependent = 1)";
-    } else if (audience === "all_contracted") {
-      where += " AND (contractedCorps = 1 OR contractedIndependent = 1 OR contractedAffiliate = 1)";
-    } else if (audience === "everyone") {
-      // no contract filter
+    if (audience === "section_roster" && rosterSection) {
+      rows = db.prepare(`
+        SELECT u.firstname, u.lastname, u.email, u.contractedCorps, u.contractedIndependent, u.contractedAffiliate
+        FROM season_rosters r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.season_year = ? AND r.ensemble = ? AND r.section = ?
+      `).all(ctx.year, ensemble, rosterSection);
+    } else {
+      let where = "LOWER(section) = LOWER(?) AND (parent IS NULL OR parent = 0)";
+      const params = [ctx.section];
+      if (audience === "corps") where += " AND contractedCorps = 1";
+      else if (audience === "independent") where += " AND contractedIndependent = 1";
+      else if (audience === "all_contracted") {
+        where += " AND (contractedCorps = 1 OR contractedIndependent = 1 OR contractedAffiliate = 1)";
+      }
+      rows = db.prepare(`
+        SELECT firstname, lastname, email, contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users WHERE ${where}
+      `).all(...params);
     }
-
-    const rows = db.prepare(`
-      SELECT firstname, lastname, email, contractedCorps, contractedIndependent, contractedAffiliate
-      FROM users
-      WHERE ${where}
-    `).all(...params);
 
     if (!rows.length) {
       req.session.flashMessage = "No members found to notify for this section.";
@@ -9047,7 +10461,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
     }
 
     const scopeLabel = ctx.scope === "corps" ? "Corps" : "Independent";
-    const subject = `New files uploaded â€” ${scopeLabel} ${ctx.section} (${ctx.year})`;
+    const subject = `New files uploaded - ${scopeLabel} ${ctx.section} (${ctx.year})`;
 
     // Build breadcrumb-style path for email text
     const chain2 = getFolderWithAncestors(folder.id);
@@ -9089,39 +10503,18 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
   res.redirect(`/files/folder/${folder.id}`);
 });
 
-// Delete a file
-app.post("/files/item/:id/delete", mustBeStaffOrAdmin, (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const row = db.prepare("SELECT * FROM file_items WHERE id = ?").get(id);
-  const folderId = row.folder_id;
-  if (!row) {
-    req.session.flashMessage = "File not found.";
-    return res.redirect(`/files/folder/${folderId}`);
-  }
-
-  // delete file from disk if present
-  try {
-    const absPath = path.join(__dirname, "public", row.stored_path.replace(/^\//, ""));
-    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-  } catch (err) {
-    console.error("Error deleting file from disk:", err);
-  }
-
-  db.prepare("DELETE FROM file_items WHERE id = ?").run(id);
-
-  // reset views on that folder
-  db.prepare("DELETE FROM folder_views WHERE folder_id = ?").run(row.folder_id);
-
-  return res.redirect(`/files/folder/${folderId}`);
-});
-
-// Year view â€” show sections under Corps/Indoor for 2026
-app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
+// Year view - show sections under Corps/Independent
+app.get("/files/:scope/:year", mustBeContractedForFiles, (req, res) => {
   const scope = (req.params.scope || "").toLowerCase();
-  const year = parseInt(req.params.year, 10) || 2026;
+  const year = parseInt(req.params.year, 10) || FILES_MEMBER_YEAR;
 
   if (!["corps", "indoor"].includes(scope)) {
     return res.status(404).render("message", { message: "Unknown file group." });
+  }
+
+  const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!userCanAccessFilesScope(userRow, scope)) {
+    return res.status(403).render("message", { message: "You do not have access to this file library." });
   }
 
   const yearFolder = db.prepare(`
@@ -9144,12 +10537,66 @@ app.get("/files/:scope/:year", mustBeLoggedInAny, (req, res) => {
   `).all(yearFolder.id);
 
   res.render("files-year", {
-    user: req.user,
     scope,
+    scopeLabel: scope === "corps" ? "Corps" : "Independent",
     year,
     yearFolder,
-    sections
+    sections,
   });
+});
+
+app.get("/admin/season-roster", mustBeStaffOrAdmin, (req, res) => {
+  const seasonKey = String(req.query.season || "2026-corps");
+  const activeSeason = seasonRosterSystem.getSeasonByKey(seasonKey);
+  const { bySection } = seasonRosterSystem.listRosterForSeason(db, activeSeason.key);
+  const allOnRoster = Object.values(bySection).flat().map((e) => e.userId);
+  const eligibleBySection = {};
+  seasonRosterSystem.ROSTER_SECTIONS.forEach((sec) => {
+    eligibleBySection[sec.key] = seasonRosterSystem.listEligibleMembers(db, activeSeason.key, allOnRoster);
+  });
+  const backUrl = req.admin ? "/admin-portal?section=members" : "/member-portal?section=staff";
+  res.render("admin-season-roster", {
+    seasons: seasonRosterSystem.ROSTER_SEASONS,
+    activeSeason,
+    sections: seasonRosterSystem.ROSTER_SECTIONS,
+    rosterBySection: bySection,
+    eligibleBySection,
+    backUrl,
+    flashMessage: req.session.flashMessage || null,
+  });
+  req.session.flashMessage = null;
+});
+
+app.post("/admin/season-roster/add", mustBeStaffOrAdmin, (req, res) => {
+  const seasonKey = String(req.body.season || "2026-corps");
+  try {
+    seasonRosterSystem.addRosterEntry(db, seasonKey, req.body.section, req.body.user_id, req.body.position);
+    req.session.flashMessage = "Member added to roster.";
+  } catch (e) {
+    req.session.flashMessage = e.message || "Could not add member.";
+  }
+  res.redirect(`/admin/season-roster?season=${encodeURIComponent(seasonKey)}`);
+});
+
+app.post("/admin/season-roster/:id/update", mustBeStaffOrAdmin, (req, res) => {
+  const seasonKey = String(req.body.season || "2026-corps");
+  try {
+    seasonRosterSystem.updateRosterEntry(db, req.params.id, {
+      section: req.body.section,
+      positionLabel: req.body.position,
+    });
+    req.session.flashMessage = "Roster updated.";
+  } catch (e) {
+    req.session.flashMessage = e.message || "Could not update roster.";
+  }
+  res.redirect(`/admin/season-roster?season=${encodeURIComponent(seasonKey)}`);
+});
+
+app.post("/admin/season-roster/:id/delete", mustBeStaffOrAdmin, (req, res) => {
+  const seasonKey = String(req.body.season || "2026-corps");
+  seasonRosterSystem.deleteRosterEntry(db, req.params.id);
+  req.session.flashMessage = "Member removed from roster.";
+  res.redirect(`/admin/season-roster?season=${encodeURIComponent(seasonKey)}`);
 });
 
 app.get("/admin/callbacks", mustBeStaffOrAdmin, (req, res) => {
@@ -9273,7 +10720,7 @@ app.get("/view-materials", (req, res) => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOBILE API  –  /api/mobile/*
+// MOBILE API  -  /api/mobile/*
 // All responses are JSON. Authentication uses a Bearer token in the
 // Authorization header (the same JWT secret as the cookie-based web auth).
 // No HTML pages are modified; existing website routes are untouched.
@@ -9297,6 +10744,27 @@ function mobileAuth(req, res, next) {
   }
 }
 
+function mobileMsgAuth(req, res, next) {
+  const header = req.headers["authorization"] || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ ok: false, message: "Unauthorized" });
+  try {
+    req.user      = jwt.verify(token, process.env.JWTSECRET);
+    req.admin     = req.user.admin;
+    req.director  = req.user.director || 0;
+    req.staff     = req.user.staff;
+    req.parent    = req.user.parent;
+    req.volunteer = req.user.volunteer || 0;
+    req.fan       = req.user.fan || 0;
+  } catch {
+    return res.status(401).json({ ok: false, message: "Invalid or expired token" });
+  }
+  if (!canUseMessaging(req.user)) {
+    return res.status(403).json({ ok: false, message: "Messaging is currently limited to staff and administrators." });
+  }
+  next();
+}
+
 function mobileAuthOptional(req, res, next) {
   const header = req.headers["authorization"] || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
@@ -9314,7 +10782,7 @@ function mobileAuthOptional(req, res, next) {
   next();
 }
 
-// Safe user serializer – avoids type surprises on the mobile client
+// Safe user serializer - avoids type surprises on the mobile client
 // ─── Mobile API helpers ──────────────────────────────────────────────────────
 // ⚠️  DO NOT ALTER EXISTING WEBSITE TABLES in this section.
 //     All schema work (CREATE TABLE, ALTER TABLE) belongs ONLY inside
@@ -9322,9 +10790,9 @@ function mobileAuthOptional(req, res, next) {
 //     inside initializeDB(). Never alter existing tables here.
 
 /** Serialize a DB user row to a safe, type-consistent JSON object for the
- *  mobile app.  paid/owed are stored as INTEGER CENTS in the DB — we divide
+ *  mobile app.  paid/owed are stored as INTEGER CENTS in the DB - we divide
  *  by 100 here so Flutter receives dollars (e.g. 50000 → 500.00).
- *  img is a relative path like /img/publicupload/x.webp — Flutter prepends
+ *  img is a relative path like /img/publicupload/x.webp - Flutter prepends
  *  the base URL.
  */
 function serializeUser(u) {
@@ -9344,7 +10812,7 @@ function serializeUser(u) {
     fan: u.fan ? 1 : 0,
     section: u.section || null,
     instrument: u.instrument || null,
-    img: u.img || null,          // relative path — Flutter prepends baseUrl
+    img: u.img || null,          // relative path - Flutter prepends baseUrl
     contractedCorps: u.contractedCorps ? 1 : 0,
     contractedIndependent: u.contractedIndependent ? 1 : 0,
     contractedAffiliate: u.contractedAffiliate ? 1 : 0,
@@ -9605,7 +11073,7 @@ app.post("/api/mobile/profile-photo", mobileAuth, (req, res, next) => {
   }
 });
 
-// GET /api/mobile/events  – upcoming events (next 12 months)
+// GET /api/mobile/events  - upcoming events (next 12 months)
 app.get("/api/mobile/events", mobileAuthOptional, (req, res) => {
   try {
     const now = new Date();
@@ -9666,7 +11134,7 @@ app.get("/api/mobile/transactions", mobileAuth, (req, res) => {
     if (req.parent) return res.status(403).json({ ok: false, message: "Use /parent/child/:id/transactions" });
     const user = db.prepare("SELECT paid, owed FROM users WHERE id = ?").get(req.user.userid);
     const rawPayments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(req.user.userid);
-    // amounts in paymentHistory are stored as cents — convert to dollars for mobile
+    // amounts in paymentHistory are stored as cents - convert to dollars for mobile
     const payments = rawPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 }));
     return res.json({
       ok: true,
@@ -9696,19 +11164,7 @@ app.get("/api/mobile/forms", mobileAuth, (req, res) => {
 // GET /api/mobile/staff
 app.get("/api/mobile/staff", (req, res) => {
   try {
-    const staff = db.prepare(
-      "SELECT id, first, last, slug, position, category, bio, image, sort_order FROM staff ORDER BY sort_order ASC, last COLLATE NOCASE"
-    ).all().map(s => ({
-      id:        s.id,
-      firstname: s.first  || "",
-      lastname:  s.last   || "",
-      slug:      s.slug   || null,
-      role:      s.position || null,
-      section:   s.category || null,
-      bio:       s.bio    || null,
-      img:       s.image  ? `/img/publicupload/${s.image}` : null,
-      sort_order: s.sort_order,
-    }));
+    const staff = staffDisplay.getStaffForMobileApi(db);
     return res.json({ ok: true, staff });
   } catch (e) {
     console.error("[Mobile API] staff error:", e.message || e);
@@ -9719,7 +11175,11 @@ app.get("/api/mobile/staff", (req, res) => {
 // GET /api/mobile/files
 app.get("/api/mobile/files", mobileAuth, (req, res) => {
   try {
-    const roots = db.prepare("SELECT * FROM file_folders WHERE parent_id IS NULL ORDER BY scope, year DESC").all();
+    const roots = db.prepare(`
+      SELECT * FROM file_folders
+      WHERE parent_id IS NULL AND year = ?
+      ORDER BY scope
+    `).all(FILES_MEMBER_YEAR);
     return res.json({ ok: true, roots });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });
@@ -9762,23 +11222,10 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
     `).all();
 
     // ── Shared helper: next schedule ──────────────────────────────────────
-    function getNextSchedule(includeStaffNotes) {
+    function getNextSchedule() {
       try {
-        const s = db.prepare(`
-          SELECT id, title, date, location, call_time, dismissal_time, notes
-          ${includeStaffNotes ? ', staff_notes' : ''}
-          FROM schedules WHERE date >= ? ORDER BY date ASC, call_time ASC LIMIT 1
-        `).get(today);
-        if (!s) return null;
-        const sections = loadScheduleSectionsRaw(s.id);
-        const times = deriveScheduleTimes(sections);
-        return {
-          ...s,
-          call_time: s.call_time || times.call_time,
-          dismissal_time: s.dismissal_time || times.dismissal_time,
-          sections,
-        };
-      } catch(_) { return null; }
+        return scheduleSystem.loadNextScheduleForDashboard(db, userId, false);
+      } catch (_) { return null; }
     }
 
     // ── Member data ───────────────────────────────────────────────────────
@@ -9791,7 +11238,7 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
         const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(userId);
         missingFormsCount = markUploadsAndCount(requiredForms, uploadedForms);
       } catch(_) {}
-      const nextSchedule = getNextSchedule(false);
+      const nextSchedule = getNextSchedule();
       memberData = {
         paid:                 (Number(user?.paid) || 0) / 100,
         owed:                 (Number(user?.owed) || 0) / 100,
@@ -9808,11 +11255,7 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
     // ── Parent data ───────────────────────────────────────────────────────
     let parentData = null;
     if (req.parent) {
-      const children = db.prepare(`
-        SELECT id, firstname, lastname, section, instrument, paid, owed, img,
-               contractedCorps, contractedIndependent, contractedAffiliate
-        FROM users WHERE parentId = ?
-      `).all(userId).map(serializeUser);
+      const children = parentLinks.getChildrenForParent(db, userId).map(serializeUser);
 
       // Count missing forms across all children
       let totalMissingForms = 0;
@@ -9824,14 +11267,14 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
         } catch(_) {}
       }
 
-      const nextSchedule = getNextSchedule(false);
+      const nextSchedule = getNextSchedule();
       parentData = { children, totalMissingForms, nextSchedule };
     }
 
     // ── Staff data ────────────────────────────────────────────────────────
     let staffData = null;
     if (req.staff && !req.admin && !req.director) {
-      const nextSchedule = getNextSchedule(true); // staff sees staff_notes
+      const nextSchedule = getNextSchedule();
 
       // Count of active members for roster awareness
       let memberCount = 0;
@@ -9843,7 +11286,7 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
     // ── Director data ─────────────────────────────────────────────────────
     let directorData = null;
     if (req.director) {
-      const nextSchedule = getNextSchedule(true);
+      const nextSchedule = getNextSchedule();
 
       let memberCount = 0, contractedCorps = 0, contractedIndependent = 0;
       try {
@@ -9887,7 +11330,7 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
       let volunteerCount = 0;
       try { volunteerCount = Number(db.prepare("SELECT COUNT(*) as c FROM volunteer_contacts").get().c); } catch(_) {}
 
-      const nextSchedule = getNextSchedule(true);
+      const nextSchedule = getNextSchedule();
 
       // Recent activity: last 3 news + upcoming events already in upcomingEvents
       adminData = {
@@ -9908,11 +11351,7 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
 app.get("/api/mobile/parent/children", mobileAuth, (req, res) => {
   try {
     if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
-    const children = db.prepare(`
-      SELECT id, firstname, lastname, section, instrument, paid, owed, img,
-             contractedCorps, contractedIndependent, contractedAffiliate, shirtSize, parentId
-      FROM users WHERE parentId = ?
-    `).all(req.user.userid).map(serializeUser);
+    const children = parentLinks.getChildrenForParent(db, req.user.userid).map(serializeUser);
     return res.json({ ok: true, children });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });
@@ -9925,7 +11364,7 @@ app.get("/api/mobile/parent/child/:id/transactions", mobileAuth, (req, res) => {
     if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
     const childId = Number(req.params.id);
     const child = db.prepare("SELECT id, firstname, lastname, paid, owed, parentId FROM users WHERE id = ?").get(childId);
-    if (!child || Number(child.parentId) !== Number(req.user.userid)) return res.status(403).json({ ok: false, message: "Forbidden" });
+    if (!child || !parentIsOf(req.user.userid, childId)) return res.status(403).json({ ok: false, message: "Forbidden" });
     const rawPayments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC").all(childId);
     const payments = rawPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 }));
     return res.json({
@@ -9945,7 +11384,7 @@ app.get("/api/mobile/parent/child/:id/forms", mobileAuth, (req, res) => {
     if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
     const childId = Number(req.params.id);
     const child = db.prepare("SELECT id, parentId FROM users WHERE id = ?").get(childId);
-    if (!child || Number(child.parentId) !== Number(req.user.userid)) return res.status(403).json({ ok: false, message: "Forbidden" });
+    if (!child || !parentIsOf(req.user.userid, childId)) return res.status(403).json({ ok: false, message: "Forbidden" });
     const requiredForms = getRequiredFormsForUser(childId);
     const uploadedForms = db.prepare("SELECT document_id FROM formUploads WHERE user_id = ?").all(childId);
     markUploadsAndCount(requiredForms, uploadedForms);
@@ -9976,19 +11415,21 @@ app.get("/api/mobile/admin/members", mobileAuth, (req, res) => {
 app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
   try {
     if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
-    const totalMembers = db.prepare("SELECT COUNT(*) as c FROM users WHERE (parent IS NULL OR parent=0) AND (admin IS NULL OR admin=0) AND (fan IS NULL OR fan=0) AND (staff IS NULL OR staff=0)").get().c;
-    const contractedCorps = db.prepare("SELECT COUNT(*) as c FROM users WHERE contractedCorps = 1").get().c;
-    const contractedIndependent = db.prepare("SELECT COUNT(*) as c FROM users WHERE contractedIndependent = 1").get().c;
-    const totalOwed = db.prepare("SELECT COALESCE(SUM(owed),0) as s FROM users").get().s;
-    const totalPaid = db.prepare("SELECT COALESCE(SUM(paid),0) as s FROM users").get().s;
+    const stats = getAdminStats();
     const recentPayments = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC LIMIT 10").all();
     return res.json({
       ok: true,
-      totalMembers: Number(totalMembers),
-      contractedCorps: Number(contractedCorps),
-      contractedIndependent: Number(contractedIndependent),
-      totalOwed: (Number(totalOwed) || 0) / 100,   // cents → dollars
-      totalPaid: (Number(totalPaid) || 0) / 100,   // cents → dollars
+      totalMembers: stats.totalMembers,
+      contractedCorps: stats.contractedCorps,
+      contractedIndependent: stats.contractedIndependent,
+      contractedAffiliate: stats.contractedAffiliate,
+      totalContracted: stats.totalContracted,
+      uncontractedMembers: stats.uncontractedMembers,
+      totalOwed: stats.totalOwedCents / 100,
+      totalPaid: stats.totalPaidCents / 100,
+      membersWithBalanceDue: stats.membersWithBalanceDue,
+      pendingContracts: stats.pendingContracts,
+      instrumentsCheckedOut: stats.instrumentsCheckedOut,
       recentPayments: recentPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 })),
     });
   } catch (e) {
@@ -9996,509 +11437,30 @@ app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
   }
 });
 
-// ── Schedules ──────────────────────────────────────────────────────────────
+// ── Schedules (v2) ──────────────────────────────────────────────────────────
 
-const SCHEDULE_CAPTIONS = ['brass', 'percussion', 'guard'];
-
-function mapUserToScheduleCaption(section, indoorSection) {
-  const s = String(section || indoorSection || '').toLowerCase();
-  if (s === 'brass') return 'brass';
-  if (s === 'guard') return 'guard';
-  if (['drumline', 'frontensemble', 'drummajor', 'percussion'].includes(s)) return 'percussion';
-  return null;
+function canEditSchedules(req) {
+  if (!req.user || !req.user.userid) return false;
+  if (req.admin) return true;
+  const row = db.prepare("SELECT director FROM users WHERE id = ?").get(req.user.userid);
+  return !!(row && row.director);
 }
 
-function parseScheduleCaptions(raw) {
-  try {
-    const parsed = JSON.parse(raw || '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(c => SCHEDULE_CAPTIONS.includes(String(c).toLowerCase()));
-  } catch (_) {
-    return [];
+function webScheduleAuth(req, res, next) {
+  if (!req.user || !req.user.userid) {
+    return res.status(401).json({ ok: false, message: "You must be logged in to view schedules." });
   }
+  next();
 }
 
-function laneVisibleToUser(captions, userCaption) {
-  if (!captions || captions.length === 0 || captions.length >= 3) return true;
-  if (!userCaption) return false;
-  return captions.includes(userCaption);
-}
-
-function loadScheduleSectionsRaw(scheduleId) {
-  const sections = db.prepare(`
-    SELECT id, schedule_id, title, color, start_time, duration_minutes, sort_order
-    FROM schedule_sections WHERE schedule_id = ?
-    ORDER BY sort_order ASC, start_time ASC
-  `).all(scheduleId);
-
-  if (sections.length > 0) {
-    return sections.map(sec => {
-      const subsections = db.prepare(`
-        SELECT id, section_id, title, start_time, duration_minutes, sort_order
-        FROM schedule_subsections WHERE section_id = ?
-        ORDER BY sort_order ASC, start_time ASC
-      `).all(sec.id);
-
-      const loadLanes = (subsectionId) => db.prepare(`
-        SELECT id, section_id, subsection_id, captions, sort_order
-        FROM schedule_lanes WHERE subsection_id = ?
-        ORDER BY sort_order ASC
-      `).all(subsectionId).map(lane => {
-        const captions = parseScheduleCaptions(lane.captions);
-        const items = db.prepare(`
-          SELECT id, lane_id, start_time, description, location_type,
-                 location_address, location_lat, location_lng, location_name, location_image, sort_order
-          FROM schedule_content_items WHERE lane_id = ?
-          ORDER BY start_time ASC, sort_order ASC
-        `).all(lane.id);
-        return { ...lane, captions, items };
-      });
-
-      let subs = subsections.map(sub => ({
-        ...sub,
-        lanes: loadLanes(sub.id),
-      }));
-
-      // Legacy rows: lanes still tied only to section_id (pre-migration)
-      if (subs.length === 0) {
-        const legacyLanes = db.prepare(`
-          SELECT id, section_id, captions, sort_order
-          FROM schedule_lanes WHERE section_id = ? AND (subsection_id IS NULL OR subsection_id = 0)
-          ORDER BY sort_order ASC
-        `).all(sec.id).map(lane => {
-          const captions = parseScheduleCaptions(lane.captions);
-          const items = db.prepare(`
-            SELECT id, lane_id, start_time, description, location_type,
-                   location_address, location_lat, location_lng, location_name, location_image, sort_order
-            FROM schedule_content_items WHERE lane_id = ?
-            ORDER BY start_time ASC, sort_order ASC
-          `).all(lane.id);
-          return { ...lane, captions, items };
-        });
-        if (legacyLanes.length > 0) {
-          subs = [{
-            id: 0,
-            section_id: sec.id,
-            title: '',
-            start_time: sec.start_time,
-            duration_minutes: sec.duration_minutes,
-            sort_order: 0,
-            lanes: legacyLanes,
-          }];
-        }
-      }
-
-      return { ...sec, subsections: subs };
-    });
-  }
-
-  // Legacy fallback: convert schedule_blocks into a single pseudo-section per block
-  const blocks = db.prepare(`
-    SELECT id, title, start_time, end_time, location, section, notes, sort_order
-    FROM schedule_blocks WHERE schedule_id = ?
-    ORDER BY sort_order ASC, start_time ASC
-  `).all(scheduleId);
-
-  return blocks.map((b, i) => {
-    const captions = b.section && b.section !== 'all'
-      ? [b.section === 'guard' ? 'guard' : (b.section === 'brass' ? 'brass' : 'percussion')]
-      : SCHEDULE_CAPTIONS.slice();
-    const endMins = timeToMinutes(b.end_time);
-    const startMins = timeToMinutes(b.start_time);
-    const duration = endMins != null && startMins != null && endMins > startMins
-      ? endMins - startMins
-      : 60;
-    return {
-      id: b.id,
-      schedule_id: scheduleId,
-      title: b.title,
-      color: '#9D76BB',
-      start_time: b.start_time || '08:00',
-      duration_minutes: duration,
-      sort_order: b.sort_order ?? i,
-      subsections: [{
-        id: 0,
-        section_id: b.id,
-        title: '',
-        start_time: b.start_time || '08:00',
-        duration_minutes: duration,
-        sort_order: 0,
-        lanes: [{
-          id: b.id,
-          section_id: b.id,
-          captions,
-          sort_order: 0,
-          items: [{
-            id: b.id,
-            lane_id: b.id,
-            start_time: b.start_time || '08:00',
-            description: b.notes || b.title || '',
-            location_type: b.location ? 'name' : null,
-            location_address: null,
-            location_lat: null,
-            location_lng: null,
-            location_name: b.location || null,
-            location_image: null,
-            sort_order: 0,
-          }],
-        }],
-      }],
-      legacy: true,
-    };
-  });
-}
-
-function filterScheduleSectionsForUser(sections, userCaption, isStaffAdmin) {
-  if (isStaffAdmin) return sections;
-  return sections.map(sec => ({
-    ...sec,
-    subsections: (sec.subsections || []).map(sub => ({
-      ...sub,
-      lanes: (sub.lanes || []).filter(l => laneVisibleToUser(l.captions, userCaption)),
-    })).filter(sub => (sub.lanes || []).length > 0),
-  })).filter(sec => (sec.subsections || []).length > 0);
-}
-
-function timeToMinutes(hhmm) {
-  if (!hhmm || typeof hhmm !== 'string') return null;
-  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
-
-function minutesToTime(total) {
-  const h = Math.floor(total / 60) % 24;
-  const m = total % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-function deriveScheduleTimes(sections) {
-  if (!sections || sections.length === 0) return { call_time: null, dismissal_time: null };
-  const starts = sections.map(s => timeToMinutes(s.start_time)).filter(v => v != null);
-  const ends = sections.map(s => {
-    const start = timeToMinutes(s.start_time);
-    if (start == null) return null;
-    return start + (Number(s.duration_minutes) || 0);
-  }).filter(v => v != null);
-  return {
-    call_time: starts.length ? minutesToTime(Math.min(...starts)) : null,
-    dismissal_time: ends.length ? minutesToTime(Math.max(...ends)) : null,
-  };
-}
-
-function saveScheduleSections(scheduleId, sections) {
-  db.prepare('DELETE FROM schedule_sections WHERE schedule_id = ?').run(scheduleId);
-
-  const insertSection = db.prepare(`
-    INSERT INTO schedule_sections (schedule_id, title, color, start_time, duration_minutes, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  const insertSubsection = db.prepare(`
-    INSERT INTO schedule_subsections (section_id, title, start_time, duration_minutes, sort_order)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  const insertLane = db.prepare(`
-    INSERT INTO schedule_lanes (section_id, subsection_id, captions, sort_order)
-    VALUES (?, ?, ?, ?)
-  `);
-  const insertItem = db.prepare(`
-    INSERT INTO schedule_content_items
-      (lane_id, start_time, description, location_type, location_address, location_lat, location_lng, location_name, location_image, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  (sections || []).forEach((sec, si) => {
-    const secInfo = insertSection.run(
-      scheduleId,
-      sec.title || 'Section',
-      sec.color || '#9D76BB',
-      sec.start_time || '08:00',
-      Number(sec.duration_minutes) || 60,
-      sec.sort_order ?? si,
-    );
-    const sectionId = secInfo.lastInsertRowid;
-
-    let subsections = Array.isArray(sec.subsections) ? sec.subsections : [];
-    if (subsections.length === 0 && Array.isArray(sec.lanes) && sec.lanes.length > 0) {
-      subsections = [{
-        title: '',
-        start_time: sec.start_time || '08:00',
-        duration_minutes: Number(sec.duration_minutes) || 60,
-        lanes: sec.lanes,
-      }];
-    }
-
-    subsections.forEach((sub, subi) => {
-      const subInfo = insertSubsection.run(
-        sectionId,
-        sub.title || '',
-        sub.start_time || sec.start_time || '08:00',
-        Number(sub.duration_minutes) || 30,
-        sub.sort_order ?? subi,
-      );
-      const subsectionId = subInfo.lastInsertRowid;
-
-      (sub.lanes || []).forEach((lane, li) => {
-        const caps = Array.isArray(lane.captions) && lane.captions.length
-          ? lane.captions.filter(c => SCHEDULE_CAPTIONS.includes(String(c).toLowerCase()))
-          : SCHEDULE_CAPTIONS.slice();
-        const laneInfo = insertLane.run(sectionId, subsectionId, JSON.stringify(caps), lane.sort_order ?? li);
-        const laneId = laneInfo.lastInsertRowid;
-        const sortedItems = [...(lane.items || [])].sort((a, b) => {
-          const ta = timeToMinutes(a.start_time) ?? 0;
-          const tb = timeToMinutes(b.start_time) ?? 0;
-          return ta - tb;
-        });
-        sortedItems.forEach((item, ii) => {
-          insertItem.run(
-            laneId,
-            item.start_time || sub.start_time || sec.start_time || '08:00',
-            item.description || '',
-            item.location_type || null,
-            item.location_address || null,
-            item.location_lat != null ? Number(item.location_lat) : null,
-            item.location_lng != null ? Number(item.location_lng) : null,
-            item.location_name || null,
-            item.location_image || null,
-            item.sort_order ?? ii,
-          );
-        });
-      });
-    });
-  });
-}
-
-function getScheduleUserContext(userId) {
-  try {
-    const u = db.prepare('SELECT section, indoorSection, staff, admin, director FROM users WHERE id = ?').get(userId);
-    return {
-      section: u?.section || null,
-      indoorSection: u?.indoorSection || null,
-      isStaffAdmin: !!(u?.staff || u?.admin || u?.director),
-      isEditor: !!(u?.admin || u?.director),
-      userCaption: mapUserToScheduleCaption(u?.section, u?.indoorSection),
-    };
-  } catch (_) {
-    return { section: null, indoorSection: null, isStaffAdmin: false, isEditor: false, userCaption: null };
-  }
-}
-
-function formatScheduleRow(schedule, sections, ctx) {
-  const filtered = filterScheduleSectionsForUser(sections, ctx.userCaption, ctx.isStaffAdmin);
-  const times = deriveScheduleTimes(filtered.length ? filtered : sections);
-  return {
-    id: schedule.id,
-    title: schedule.title,
-    date: schedule.date,
-    location: schedule.location || null,
-    call_time: schedule.call_time || times.call_time,
-    dismissal_time: schedule.dismissal_time || times.dismissal_time,
-    notes: schedule.notes || null,
-    scope: schedule.scope || 'all',
-    sections: filtered,
-  };
-}
-
-// GET /api/mobile/schedules
-// Returns upcoming schedules (today + future), with blocks filtered by the
-// requesting user's section.  Staff/admin see all blocks.
-app.get("/api/mobile/schedules", mobileAuth, (req, res) => {
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    const ctx = getScheduleUserContext(req.user.userid);
-    const dateFilter = req.query.date ? String(req.query.date) : null;
-    const listAll = req.query.all === '1' && ctx.isEditor;
-
-    let schedules;
-    if (listAll) {
-      schedules = db.prepare(`
-        SELECT id, title, date, location, call_time, dismissal_time, notes, scope, created_at, updated_at
-        FROM schedules ORDER BY date DESC, id DESC LIMIT 120
-      `).all();
-    } else if (dateFilter) {
-      schedules = db.prepare(`
-        SELECT id, title, date, location, call_time, dismissal_time, notes, scope
-        FROM schedules WHERE date = ? ORDER BY id DESC
-      `).all(dateFilter);
-    } else {
-      schedules = db.prepare(`
-        SELECT id, title, date, location, call_time, dismissal_time, notes, scope
-        FROM schedules WHERE date >= ? ORDER BY date ASC, call_time ASC LIMIT 30
-      `).all(today);
-    }
-
-    const result = schedules.map(s => {
-      const sections = loadScheduleSectionsRaw(s.id);
-      if (listAll) {
-        return {
-          id: s.id,
-          title: s.title,
-          date: s.date,
-          sectionCount: sections.length,
-          call_time: s.call_time || deriveScheduleTimes(sections).call_time,
-          dismissal_time: s.dismissal_time || deriveScheduleTimes(sections).dismissal_time,
-        };
-      }
-      return formatScheduleRow(s, sections, ctx);
-    });
-
-    return res.json({ ok: true, schedules: result });
-  } catch (e) {
-    console.error('[Mobile API] schedules error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
+scheduleSystem.registerScheduleSystem(app, db, {
+  webScheduleAuth,
+  canEditSchedules,
+  mobileAuth,
+  mustBeAdmin,
 });
 
-// POST /api/mobile/schedules/location-image  (before :id routes)
-app.post("/api/mobile/schedules/location-image", mobileAuth, (req, res, next) => {
-  imageUpload.single("image")(req, res, (err) => {
-    if (err) {
-      const msg = err.code === "LIMIT_FILE_SIZE" ? "Image is too large (max 25 MB)." : (err.message || "Upload failed");
-      return res.status(400).json({ ok: false, message: msg });
-    }
-    next();
-  });
-}, processImageJpg, (req, res) => {
-  try {
-    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
-    if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Image is required" });
-    return res.json({ ok: true, url: `/img/publicupload/${req.savedFilename}` });
-  } catch (e) {
-    console.error('[Mobile API] schedule location image error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Failed to upload image" });
-  }
-});
-
-function handleScheduleUpdate(req, res, scheduleId) {
-  if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
-  const existing = db.prepare("SELECT id FROM schedules WHERE id = ?").get(scheduleId);
-  if (!existing) return res.status(404).json({ ok: false, message: "Schedule not found" });
-
-  const { title, date, location, notes, staff_notes, scope, sections } = req.body;
-  if (!date) return res.status(400).json({ ok: false, message: "date is required" });
-
-  const times = deriveScheduleTimes(sections || []);
-  const now = Date.now();
-  db.prepare(`
-    UPDATE schedules SET title = ?, date = ?, location = ?, call_time = ?, dismissal_time = ?,
-      notes = ?, staff_notes = ?, scope = ?, updated_at = ?
-    WHERE id = ?
-  `).run(
-    title || date, date, location || null,
-    times.call_time, times.dismissal_time,
-    notes || null, staff_notes || null, scope || 'all',
-    now, scheduleId,
-  );
-
-  if (Array.isArray(sections)) {
-    saveScheduleSections(scheduleId, sections);
-  }
-
-  return res.json({ ok: true, scheduleId });
-}
-
-// GET /api/mobile/schedules/:id  – single schedule detail (all blocks for staff)
-app.get("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
-  try {
-    const scheduleId = Number(req.params.id);
-    const schedule = db.prepare("SELECT * FROM schedules WHERE id = ?").get(scheduleId);
-    if (!schedule) return res.status(404).json({ ok: false, message: "Schedule not found" });
-
-    const ctx = getScheduleUserContext(req.user.userid);
-    const sections = loadScheduleSectionsRaw(scheduleId);
-    const filtered = filterScheduleSectionsForUser(sections, ctx.userCaption, ctx.isStaffAdmin);
-    const times = deriveScheduleTimes(sections);
-
-    const { staff_notes, ...publicSchedule } = schedule;
-    const payload = ctx.isStaffAdmin ? schedule : publicSchedule;
-    const row = {
-      ...payload,
-      call_time: payload.call_time || times.call_time,
-      dismissal_time: payload.dismissal_time || times.dismissal_time,
-      sections: ctx.isEditor ? sections : filtered,
-    };
-
-    return res.json({ ok: true, schedule: row });
-  } catch (e) {
-    console.error('[Mobile API] schedule detail error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
-});
-
-// POST /api/mobile/schedules  – create or update (admin/director only)
-app.post("/api/mobile/schedules", mobileAuth, (req, res) => {
-  try {
-    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
-
-    const existingId = Number(req.body.id);
-    if (existingId > 0) {
-      return handleScheduleUpdate(req, res, existingId);
-    }
-
-    const { title, date, location, notes, staff_notes, scope, sections } = req.body;
-    if (!date) return res.status(400).json({ ok: false, message: "date is required" });
-
-    const scheduleTitle = title || date;
-    const now = Date.now();
-    const times = deriveScheduleTimes(sections || []);
-    const info = db.prepare(`
-      INSERT INTO schedules (title, date, location, call_time, dismissal_time, notes, staff_notes, scope, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      scheduleTitle, date, location || null,
-      times.call_time, times.dismissal_time,
-      notes || null, staff_notes || null, scope || 'all',
-      req.user.userid, now, now,
-    );
-
-    const scheduleId = info.lastInsertRowid;
-    if (Array.isArray(sections) && sections.length) {
-      saveScheduleSections(scheduleId, sections);
-    }
-
-    return res.json({ ok: true, scheduleId });
-  } catch (e) {
-    console.error('[Mobile API] save schedule error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
-});
-
-// PUT /api/mobile/schedules/:id
-app.put("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
-  try {
-    return handleScheduleUpdate(req, res, Number(req.params.id));
-  } catch (e) {
-    console.error('[Mobile API] update schedule error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
-});
-
-// POST /api/mobile/schedules/update  – same as PUT (works when PUT is blocked by proxy)
-app.post("/api/mobile/schedules/update", mobileAuth, (req, res) => {
-  try {
-    const scheduleId = Number(req.body.id);
-    if (!scheduleId) return res.status(400).json({ ok: false, message: "id is required" });
-    return handleScheduleUpdate(req, res, scheduleId);
-  } catch (e) {
-    console.error('[Mobile API] update schedule error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
-});
-
-// DELETE /api/mobile/schedules/:id
-app.delete("/api/mobile/schedules/:id", mobileAuth, (req, res) => {
-  try {
-    if (!req.admin && !req.director) return res.status(403).json({ ok: false, message: "Admin or director only" });
-    const scheduleId = Number(req.params.id);
-    const existing = db.prepare("SELECT id FROM schedules WHERE id = ?").get(scheduleId);
-    if (!existing) return res.status(404).json({ ok: false, message: "Schedule not found" });
-    db.prepare("DELETE FROM schedules WHERE id = ?").run(scheduleId);
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('[Mobile API] delete schedule error:', e.message || e);
-    return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
-  }
-});
+parentLinks.registerParentLinkRoutes(app, db, { mustBeLoggedIn });
 
 // ─── Messaging helpers ───────────────────────────────────────────────────────
 
@@ -10700,7 +11662,7 @@ app.post("/api/mobile/device-token", mobileAuth, (req, res) => {
 });
 
 // GET /api/mobile/messages/users?q=
-app.get("/api/mobile/messages/users", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/users", mobileMsgAuth, (req, res) => {
   try {
     const q = String(req.query.q || "").trim().toLowerCase();
     const limit = Math.min(Number(req.query.limit) || 30, 50);
@@ -10727,7 +11689,7 @@ app.get("/api/mobile/messages/users", mobileAuth, (req, res) => {
 });
 
 // GET /api/mobile/messages/view-as-users (directors only)
-app.get("/api/mobile/messages/view-as-users", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/view-as-users", mobileMsgAuth, (req, res) => {
   try {
     if (!req.director && !req.admin) {
       return res.status(403).json({ ok: false, message: "Director access required" });
@@ -10753,7 +11715,7 @@ app.get("/api/mobile/messages/view-as-users", mobileAuth, (req, res) => {
 });
 
 // GET /api/mobile/messages/conversations
-app.get("/api/mobile/messages/conversations", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/conversations", mobileMsgAuth, (req, res) => {
   try {
     const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
     if (viewAs && !req.director && !req.admin) {
@@ -10796,7 +11758,7 @@ app.get("/api/mobile/messages/conversations", mobileAuth, (req, res) => {
 });
 
 // POST /api/mobile/messages/conversations
-app.post("/api/mobile/messages/conversations", mobileAuth, (req, res) => {
+app.post("/api/mobile/messages/conversations", mobileMsgAuth, (req, res) => {
   try {
     if (req.director && req.body.viewAsUserId) {
       return res.status(403).json({ ok: false, message: "Cannot create conversations while viewing as another user" });
@@ -10839,7 +11801,7 @@ app.post("/api/mobile/messages/conversations", mobileAuth, (req, res) => {
 });
 
 // GET /api/mobile/messages/conversations/:id
-app.get("/api/mobile/messages/conversations/:id", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/conversations/:id", mobileMsgAuth, (req, res) => {
   try {
     const convId = Number(req.params.id);
     const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
@@ -10861,7 +11823,7 @@ app.get("/api/mobile/messages/conversations/:id", mobileAuth, (req, res) => {
 });
 
 // GET /api/mobile/messages/conversations/:id/messages
-app.get("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/conversations/:id/messages", mobileMsgAuth, (req, res) => {
   try {
     const convId = Number(req.params.id);
     const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
@@ -10916,7 +11878,7 @@ app.get("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, res
 });
 
 // POST /api/mobile/messages/conversations/:id/messages
-app.post("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, res) => {
+app.post("/api/mobile/messages/conversations/:id/messages", mobileMsgAuth, (req, res) => {
   try {
     if (req.director && req.body.viewAsUserId) {
       return res.status(403).json({ ok: false, message: "Cannot send messages while viewing as another user" });
@@ -10952,7 +11914,7 @@ app.post("/api/mobile/messages/conversations/:id/messages", mobileAuth, (req, re
 });
 
 // POST /api/mobile/messages/conversations/:id/messages/upload
-app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileAuth, messageUpload.single("file"), async (req, res) => {
+app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileMsgAuth, messageUpload.single("file"), async (req, res) => {
   try {
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
@@ -11000,7 +11962,7 @@ app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileAuth, m
 });
 
 // POST /api/mobile/messages/conversations/:id/read
-app.post("/api/mobile/messages/conversations/:id/read", mobileAuth, (req, res) => {
+app.post("/api/mobile/messages/conversations/:id/read", mobileMsgAuth, (req, res) => {
   try {
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
@@ -11019,7 +11981,7 @@ app.post("/api/mobile/messages/conversations/:id/read", mobileAuth, (req, res) =
 });
 
 // PUT /api/mobile/messages/conversations/:id/mute
-app.put("/api/mobile/messages/conversations/:id/mute", mobileAuth, (req, res) => {
+app.put("/api/mobile/messages/conversations/:id/mute", mobileMsgAuth, (req, res) => {
   try {
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
@@ -11038,7 +12000,7 @@ app.put("/api/mobile/messages/conversations/:id/mute", mobileAuth, (req, res) =>
 });
 
 // PUT /api/mobile/messages/conversations/:id/pin (admin only)
-app.put("/api/mobile/messages/conversations/:id/pin", mobileAuth, (req, res) => {
+app.put("/api/mobile/messages/conversations/:id/pin", mobileMsgAuth, (req, res) => {
   try {
     if (!req.admin) return res.status(403).json({ ok: false, message: "Admin access required" });
     const convId = Number(req.params.id);
@@ -11056,7 +12018,7 @@ app.put("/api/mobile/messages/conversations/:id/pin", mobileAuth, (req, res) => 
 });
 
 // GET /api/mobile/messages/conversations/:id/search?q=
-app.get("/api/mobile/messages/conversations/:id/search", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/conversations/:id/search", mobileMsgAuth, (req, res) => {
   try {
     const convId = Number(req.params.id);
     const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
@@ -11081,7 +12043,7 @@ app.get("/api/mobile/messages/conversations/:id/search", mobileAuth, (req, res) 
 });
 
 // GET /api/mobile/messages/conversations/:id/media?type=image|video|file
-app.get("/api/mobile/messages/conversations/:id/media", mobileAuth, (req, res) => {
+app.get("/api/mobile/messages/conversations/:id/media", mobileMsgAuth, (req, res) => {
   try {
     const convId = Number(req.params.id);
     const viewAs = req.query.viewAsUserId != null ? Number(req.query.viewAsUserId) : null;
@@ -11106,8 +12068,8 @@ app.get("/api/mobile/messages/conversations/:id/media", mobileAuth, (req, res) =
   }
 });
 
-// GET /api/mobile/messages/attachments/:messageId — authenticated download
-app.get("/api/mobile/messages/attachments/:messageId", mobileAuth, (req, res) => {
+// GET /api/mobile/messages/attachments/:messageId - authenticated download
+app.get("/api/mobile/messages/attachments/:messageId", mobileMsgAuth, (req, res) => {
   try {
     const msgId = Number(req.params.messageId);
     const m = db.prepare("SELECT * FROM messages WHERE id = ?").get(msgId);
@@ -11132,8 +12094,529 @@ app.get("/api/mobile/messages/attachments/:messageId", mobileAuth, (req, res) =>
 // END MOBILE API
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.use((req, res) => {
-    res.status(404).render('404');
+// ─────────────────────────────────────────────────────────────────────────────
+// WEB MESSAGING API  (cookie-authenticated; reuses the helpers/tables above)
+//   These power the floating messenger widget on the website. They mirror the
+//   mobile endpoints but authenticate via the bgcookie session (req.user) and
+//   never allow "view as another user". No schema changes here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Ephemeral, in-memory typing indicators. convId -> Map(userId -> timestamp).
+const typingStore = new Map();
+const TYPING_TTL_MS = 6000;
+
+function markTyping(convId, userId) {
+  let m = typingStore.get(convId);
+  if (!m) { m = new Map(); typingStore.set(convId, m); }
+  m.set(Number(userId), Date.now());
+}
+
+function clearTyping(convId, userId) {
+  const m = typingStore.get(convId);
+  if (m) m.delete(Number(userId));
+}
+
+function typingNames(convId, excludeUserId) {
+  const m = typingStore.get(convId);
+  if (!m) return [];
+  const now = Date.now();
+  const ids = [];
+  for (const [uid, ts] of [...m.entries()]) {
+    if (now - ts > TYPING_TTL_MS) { m.delete(uid); continue; }
+    if (Number(uid) !== Number(excludeUserId)) ids.push(Number(uid));
+  }
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db.prepare(
+    `SELECT id, firstname FROM users WHERE id IN (${placeholders})`
+  ).all(...ids);
+  return rows.map(r => (r.firstname || "").trim() || "Someone");
+}
+
+// Require a logged-in website session (bgcookie). Returns JSON 401 otherwise.
+function webMsgAuth(req, res, next) {
+  if (!req.user || !req.user.userid) {
+    return res.status(401).json({ ok: false, message: "You must be logged in to use messages." });
+  }
+  if (!canUseMessaging(req.user)) {
+    return res.status(403).json({ ok: false, message: "Messaging is currently limited to staff and administrators." });
+  }
+  next();
+}
+
+// GET /api/web/messages/summary - total unread count (drives the badge)
+app.get("/api/web/messages/summary", webMsgAuth, (req, res) => {
+  try {
+    const uid = Number(req.user.userid);
+    const row = db.prepare(`
+      SELECT COUNT(*) AS c FROM messages m
+      JOIN conversation_members cm
+        ON cm.conversation_id = m.conversation_id AND cm.user_id = ?
+      WHERE m.sender_id != ?
+        AND NOT EXISTS (
+          SELECT 1 FROM message_status ms
+          WHERE ms.message_id = m.id AND ms.user_id = ? AND ms.read_at IS NOT NULL
+        )
+    `).get(uid, uid, uid);
+    return res.json({ ok: true, unreadCount: row?.c || 0 });
+  } catch (e) {
+    console.error("[Web API] messages summary error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
-app.listen(2023)
+// GET /api/web/messages/users?q= - searchable list of people to message
+app.get("/api/web/messages/users", webMsgAuth, (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const limit = Math.min(Number(req.query.limit) || 30, 50);
+    const uid = Number(req.user.userid);
+    let rows;
+    if (q) {
+      rows = db.prepare(`
+        SELECT id, firstname, lastname, email, img
+        FROM users WHERE verified = 1 AND id != ?
+          AND (LOWER(firstname || ' ' || lastname) LIKE ? OR LOWER(email) LIKE ?)
+        ORDER BY lastname, firstname LIMIT ?
+      `).all(uid, `%${q}%`, `%${q}%`, limit);
+    } else {
+      rows = db.prepare(`
+        SELECT id, firstname, lastname, email, img
+        FROM users WHERE verified = 1 AND id != ?
+        ORDER BY lastname, firstname LIMIT ?
+      `).all(uid, limit);
+    }
+    return res.json({
+      ok: true,
+      users: rows.map(u => ({
+        id: Number(u.id),
+        firstname: u.firstname || "",
+        lastname: u.lastname || "",
+        email: u.email || "",
+        img: u.img || null,
+      })),
+    });
+  } catch (e) {
+    console.error("[Web API] messages users error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/web/messages/conversations?q= - my conversation list
+app.get("/api/web/messages/conversations", webMsgAuth, (req, res) => {
+  try {
+    const uid = Number(req.user.userid);
+    const q = String(req.query.q || "").trim().toLowerCase();
+    let convs = db.prepare(`
+      SELECT c.* FROM conversations c
+      JOIN conversation_members cm ON cm.conversation_id = c.id
+      WHERE cm.user_id = ?
+      ORDER BY c.pinned DESC, c.updated_at DESC
+    `).all(uid);
+
+    if (q) {
+      convs = convs.filter(c => {
+        if (getConversationTitle(c, uid).toLowerCase().includes(q)) return true;
+        const memberMatch = db.prepare(`
+          SELECT 1 FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+          WHERE cm.conversation_id = ?
+            AND (LOWER(u.firstname || ' ' || u.lastname) LIKE ? OR LOWER(u.email) LIKE ?)
+        `).get(c.id, `%${q}%`, `%${q}%`);
+        return !!memberMatch;
+      });
+    }
+
+    return res.json({
+      ok: true,
+      conversations: convs.map(c => serializeConversation(c, uid)),
+    });
+  } catch (e) {
+    console.error("[Web API] conversations error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/web/messages/conversations - create direct or group chat
+app.post("/api/web/messages/conversations", webMsgAuth, (req, res) => {
+  try {
+    const myId = Number(req.user.userid);
+    const memberIds = (req.body.memberIds || []).map(Number).filter(id => id > 0);
+    const uniqueIds = [...new Set(memberIds)].filter(id => id !== myId);
+    if (!uniqueIds.length) return res.status(400).json({ ok: false, message: "Select at least one person." });
+
+    const allMembers = [myId, ...uniqueIds].sort((a, b) => a - b);
+
+    if (uniqueIds.length === 1) {
+      const existing = findDirectConversation(myId, uniqueIds[0]);
+      if (existing) {
+        return res.json({ ok: true, conversation: serializeConversation(existing, myId), existing: true });
+      }
+    }
+
+    const now = Date.now();
+    const type = uniqueIds.length === 1 ? "direct" : "group";
+    const title = type === "group" ? (String(req.body.title || "").trim() || null) : null;
+    const result = db.prepare(
+      "INSERT INTO conversations (type, title, pinned, created_by, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)"
+    ).run(type, title, myId, now, now);
+    const convId = result.lastInsertRowid;
+    const insertMember = db.prepare(
+      "INSERT INTO conversation_members (conversation_id, user_id, muted, joined_at) VALUES (?, ?, 0, ?)"
+    );
+    for (const id of allMembers) insertMember.run(convId, id, now);
+
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(conv, myId), existing: false });
+  } catch (e) {
+    console.error("[Web API] create conversation error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /api/web/messages/conversations/:id/messages - messages + typing state
+app.get("/api/web/messages/conversations/:id/messages", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+
+    const before = req.query.before ? Number(req.query.before) : null;
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    let rows;
+    if (before) {
+      rows = db.prepare(`
+        SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
+        JOIN users u ON u.id = m.sender_id
+        WHERE m.conversation_id = ? AND m.created_at < ?
+        ORDER BY m.created_at DESC LIMIT ?
+      `).all(convId, before, limit);
+    } else {
+      rows = db.prepare(`
+        SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
+        JOIN users u ON u.id = m.sender_id
+        WHERE m.conversation_id = ?
+        ORDER BY m.created_at DESC LIMIT ?
+      `).all(convId, limit);
+    }
+    rows.reverse();
+
+    const now = Date.now();
+    const markDelivered = db.prepare(`
+      UPDATE message_status SET delivered_at = ?
+      WHERE message_id = ? AND user_id = ? AND delivered_at IS NULL
+    `);
+    for (const m of rows) {
+      if (Number(m.sender_id) !== uid) markDelivered.run(now, m.id, uid);
+    }
+
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({
+      ok: true,
+      conversation: serializeConversation(conv, uid),
+      messages: rows.map(m => serializeMessage(m, uid)),
+      hasMore: rows.length >= limit,
+      typing: typingNames(convId, uid),
+    });
+  } catch (e) {
+    console.error("[Web API] messages list error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/web/messages/conversations/:id/messages - send a text message
+app.post("/api/web/messages/conversations/:id/messages", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+
+    const body = String(req.body.body || "").trim();
+    if (!body) return res.status(400).json({ ok: false, message: "Message body required" });
+
+    const now = Date.now();
+    const result = db.prepare(`
+      INSERT INTO messages (conversation_id, sender_id, body, created_at) VALUES (?, ?, ?, ?)
+    `).run(convId, uid, body, now);
+    const msgId = result.lastInsertRowid;
+    createMessageStatuses(msgId, convId, uid);
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
+    clearTyping(convId, uid);
+
+    const m = db.prepare(`
+      SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
+      JOIN users u ON u.id = m.sender_id WHERE m.id = ?
+    `).get(msgId);
+
+    notifyConversationMembers(convId, uid, body.slice(0, 100)).catch(() => {});
+
+    return res.json({ ok: true, message: serializeMessage(m, uid) });
+  } catch (e) {
+    console.error("[Web API] send message error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/web/messages/conversations/:id/read - mark conversation read
+app.post("/api/web/messages/conversations/:id/read", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const now = Date.now();
+    db.prepare(`
+      UPDATE message_status SET read_at = ?, delivered_at = COALESCE(delivered_at, ?)
+      WHERE user_id = ? AND message_id IN (
+        SELECT id FROM messages WHERE conversation_id = ? AND sender_id != ?
+      ) AND read_at IS NULL
+    `).run(now, now, uid, convId, uid);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[Web API] mark read error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/web/messages/conversations/:id/typing - I'm typing
+app.post("/api/web/messages/conversations/:id/typing", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    if (req.body && req.body.stop) clearTyping(convId, uid);
+    else markTyping(convId, uid);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/web/messages/conversations/:id/messages/upload - image / video / file
+app.post("/api/web/messages/conversations/:id/messages/upload", webMsgAuth, messageUpload.single("file"), async (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    if (!req.file) return res.status(400).json({ ok: false, message: "File required" });
+
+    const caption = String(req.body.body || "").trim();
+    const mime = req.file.mimetype || "";
+    const originalName = req.file.originalname || "file";
+    const mediaType = detectMessageMediaType(mime, originalName, req.file.buffer);
+    let processed;
+    if (mediaType === "image") processed = await processMessageImage(req.file.buffer);
+    else if (mediaType === "video") processed = await processMessageVideo(req.file.buffer, originalName);
+    else processed = await processMessageFile(req.file.buffer, originalName, mime);
+
+    const now = Date.now();
+    const result = db.prepare(`
+      INSERT INTO messages (conversation_id, sender_id, body, attachment_type, attachment_path, attachment_name, attachment_mime, attachment_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(convId, uid, caption, processed.type, processed.filename, originalName, processed.mime, processed.size, now);
+    const msgId = result.lastInsertRowid;
+    createMessageStatuses(msgId, convId, uid);
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
+    clearTyping(convId, uid);
+
+    const m = db.prepare(`
+      SELECT m.*, u.firstname, u.lastname, u.img FROM messages m
+      JOIN users u ON u.id = m.sender_id WHERE m.id = ?
+    `).get(msgId);
+
+    const preview = processed.type === "image" ? "📷 Photo"
+      : processed.type === "video" ? "🎬 Video"
+      : `📎 ${originalName}`;
+    notifyConversationMembers(convId, uid, caption || preview).catch(() => {});
+
+    return res.json({ ok: true, message: serializeMessage(m, uid) });
+  } catch (e) {
+    console.error("[Web API] message upload error:", e.message);
+    return res.status(500).json({ ok: false, message: "Upload failed: " + e.message });
+  }
+});
+
+// GET /api/web/messages/attachments/:messageId - stream an attachment (cookie auth)
+app.get("/api/web/messages/attachments/:messageId", webMsgAuth, (req, res) => {
+  try {
+    const msgId = Number(req.params.messageId);
+    const m = db.prepare("SELECT * FROM messages WHERE id = ?").get(msgId);
+    if (!m || !m.attachment_path) return res.status(404).json({ ok: false, message: "Not found" });
+    const uid = Number(req.user.userid);
+    if (!isConversationMember(m.conversation_id, uid)) {
+      return res.status(403).json({ ok: false, message: "Forbidden" });
+    }
+    const filePath = path.join(MESSAGE_UPLOAD_DIR, m.attachment_path);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ ok: false, message: "File not found" });
+
+    const stat = fs.statSync(filePath);
+    const disposition = String(req.query.download || "") === "1" ? "attachment" : "inline";
+    res.setHeader("Content-Type", m.attachment_mime || "application/octet-stream");
+    res.setHeader("Accept-Ranges", "bytes");
+    if (m.attachment_name) {
+      res.setHeader("Content-Disposition", `${disposition}; filename="${m.attachment_name.replace(/"/g, "")}"`);
+    }
+
+    // Range support so <video> playback and seeking work in the browser.
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10) || 0;
+      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+      if (start >= stat.size) {
+        res.status(416).setHeader("Content-Range", `bytes */${stat.size}`);
+        return res.end();
+      }
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${stat.size}`);
+      res.setHeader("Content-Length", end - start + 1);
+      return fs.createReadStream(filePath, { start, end }).pipe(res);
+    }
+
+    res.setHeader("Content-Length", stat.size);
+    return fs.createReadStream(filePath).pipe(res);
+  } catch (e) {
+    console.error("[Web API] attachment error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Universal error handling
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ERROR_TYPES = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Address Not Found",
+  405: "Method Not Allowed",
+  408: "Request Timeout",
+  413: "Payload Too Large",
+  429: "Too Many Requests",
+  500: "Internal Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+};
+
+function errorTypeFor(code) {
+  return ERROR_TYPES[code] || "Unexpected Error";
+}
+
+function renderErrorPage(res, code, detail) {
+  const safeCode = Number(code) || 500;
+
+  // Errors can be thrown before the res.locals middleware runs (e.g. a
+  // body-parser JSON error), so the header/footer includes may be missing
+  // the locals they expect. Backfill safe defaults so the page still renders.
+  if (res.locals.user === undefined) res.locals.user = false;
+  if (res.locals.admin === undefined) res.locals.admin = false;
+  if (res.locals.staff === undefined) res.locals.staff = false;
+  if (res.locals.parent === undefined) res.locals.parent = false;
+  if (res.locals.fan === undefined) res.locals.fan = false;
+  if (res.locals.CURRENTSEASON === undefined) res.locals.CURRENTSEASON = CURRENTSEASON;
+  if (res.locals.RECAPTCHA_SITE_KEY === undefined) {
+    res.locals.RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || "";
+  }
+  if (res.locals.siteSettings === undefined) res.locals.siteSettings = getSiteSettings();
+  if (res.locals.messagingAllowed === undefined) {
+    res.locals.messagingAllowed = res.locals.user ? canUseMessaging(res.locals.user) : false;
+  }
+
+  const payload = {
+    code: safeCode,
+    type: errorTypeFor(safeCode),
+    detail: detail ? String(detail) : "No additional error details are available.",
+  };
+  try {
+    return res.status(safeCode).render("error", payload);
+  } catch (renderErr) {
+    console.error("Failed to render error page:", renderErr);
+    return res
+      .status(safeCode)
+      .send(`${payload.code} ${payload.type}`);
+  }
+}
+
+// Endpoint used by the error page's "Send to Developer" modal.
+app.post("/report-error", async (req, res) => {
+  try {
+    const code = String(req.body.code || "").slice(0, 20);
+    const type = String(req.body.type || "").slice(0, 200);
+    const detail = String(req.body.detail || "").slice(0, 8000);
+    const token = req.body["g-recaptcha-response"] || req.body.token;
+
+    if (!token) {
+      return res.status(400).json({ ok: false, message: "Please complete the captcha first." });
+    }
+
+    // Verify reCAPTCHA with Google
+    const verifyURL = "https://www.google.com/recaptcha/api/siteverify";
+    const params = new URLSearchParams({
+      secret: process.env.RECAPTCHA_SECRET || "",
+      response: token,
+      remoteip: req.ip || "",
+    });
+    const { data } = await axios.post(verifyURL, params);
+    if (!data || !data.success) {
+      return res.status(400).json({ ok: false, message: "Captcha verification failed. Please try again." });
+    }
+
+    const escapeHtml = (s) =>
+      String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const who = req.user
+      ? `${req.user.firstname} ${req.user.lastname} (ID: ${req.user.userid}, ${req.user.email})`
+      : "Anonymous visitor";
+
+    const html = `
+      <h1>Boise Gems Website Error Report</h1>
+      <p><strong>Reported by:</strong> ${escapeHtml(who)}</p>
+      <p><strong>Error code:</strong> ${escapeHtml(code)}</p>
+      <p><strong>Error type:</strong> ${escapeHtml(type)}</p>
+      <p><strong>Time:</strong> ${new Date().toISOString()}</p>
+      <p><strong>Details:</strong></p>
+      <pre style="white-space:pre-wrap;background:#f4f4f4;padding:12px;border-radius:6px;font-family:monospace;">${escapeHtml(detail)}</pre>
+    `;
+
+    await sendEmail("chrisprice5614@gmail.com", `Boise Gems Error Report (${code})`, html);
+
+    return res.json({ ok: true, message: "The error message was sent to the developer. Thank you!" });
+  } catch (err) {
+    console.error("report-error send failure:", err);
+    return res.status(500).json({ ok: false, message: "Could not send the report. Please try again later." });
+  }
+});
+
+merchSystem.registerMerchRoutes(app, {
+  db,
+  stripe,
+  mustBeAdmin,
+  mustBeLoggedIn,
+  mustBeLoggedInAny,
+  getSiteSettings,
+  addChrisShare,
+  imageUpload,
+  sharp,
+  generateCustomFilename,
+  parentLinks,
+  sendEmail,
+});
+
+// 404 - no route matched
+app.use((req, res) => {
+  renderErrorPage(res, 404, `Cannot ${req.method} ${req.originalUrl}`);
+});
+
+// Catch-all error handler (must have 4 args and be registered last)
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  if (res.headersSent) return next(err);
+  const code = err.status || err.statusCode || 500;
+  const detail = err && (err.stack || err.message) ? String(err.stack || err.message) : String(err);
+  renderErrorPage(res, code, detail);
+});
+
+app.listen(TEST_SITE ? 2319 : 2023)

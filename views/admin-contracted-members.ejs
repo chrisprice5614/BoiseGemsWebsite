@@ -64,7 +64,7 @@
                               <%= m.paymentMethod === 'cash' ? 'Cash/Check' : 'Stripe' %>
                             </span>
                           <% } else { %>
-                            <span style="color:#888; font-size:0.85em;">—</span>
+                            <span style="color:#888; font-size:0.85em;"> - </span>
                           <% } %>
                         </td>
                         <td style="border-bottom:1px solid #eee; padding:6px;" class="owed-col"><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((m.owed || 0) / 100) %></td>

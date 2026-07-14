@@ -12,7 +12,8 @@
     <main>
         <br>
         <div style="padding: 12px">
-            <form action="/extend-contract/<%= thisUser.id %>" method="post">
+            <div class="form-panel">
+<form action="/extend-contract/<%= thisUser.id %>" method="post">
                 <h1 style="text-align: center;">Extend Contract</h1>
                 <br>
                 <h2>Extend Contract to <b><%= thisUser.firstname %> <%= thisUser.lastname %></b></h2>
@@ -41,6 +42,7 @@
                 
                 </div>
             </form>
+</div>
         </div>
     </main>
     <footer>

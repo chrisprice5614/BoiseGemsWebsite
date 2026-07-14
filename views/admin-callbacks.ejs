@@ -21,7 +21,8 @@
       </p>
 
 
-      <form id="cb-form" action="/admin/callbacks" method="post">
+      <div class="form-panel">
+<form id="cb-form" action="/admin/callbacks" method="post">
         <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 16px;">
           <div style="flex: 1 1 260px;">
             <label for="cb-search"><strong>Search members:</strong></label><br />
@@ -74,7 +75,7 @@
                       <div>
                         <strong><%= m.firstname %> <%= m.lastname %></strong>
                         <% if (m.section) { %>
-                          <small> — <%= m.section %></small>
+                          <small> - <%= m.section %></small>
                         <% } %>
                       </div>
                       <div style="font-size: 0.85rem; color: #555;">
@@ -122,6 +123,7 @@
           </button>
         </div>
       </form>
+</div>
     </div>
   </main>
 

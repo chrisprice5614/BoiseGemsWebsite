@@ -16,7 +16,8 @@
     <h1>Export Member Info</h1>
     <p>Select who to include, then choose which fields to preview and export.</p>
 
-    <form action="/admin/export-member-info" method="POST" style="padding: 12px; border-radius: 10px; background: #dfdfdf; box-shadow: 2px 2px 6px rgba(0,0,0,0.2);">
+    <div class="form-panel">
+<form action="/admin/export-member-info" method="POST">
       <h3 style="margin-top: 0;">1) Select members</h3>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px;">
         <label><input type="checkbox" name="group_corps" <%= selectedGroups.corps ? "checked" : "" %> /> Contracted Corps</label>
@@ -31,7 +32,7 @@
         <div>
           <label for="sort_by" style="display:block; margin-bottom:4px;">Sort By</label>
           <select name="sort_by" id="sort_by" style="width:100%;">
-            <option value="az" <%= sortBy === "az" ? "selected" : "" %>>A–Z (Last Name)</option>
+            <option value="az" <%= sortBy === "az" ? "selected" : "" %>>A-Z (Last Name)</option>
             <option value="newest" <%= sortBy === "newest" ? "selected" : "" %>>Newest Members</option>
             <option value="oldest" <%= sortBy === "oldest" ? "selected" : "" %>>Oldest Members</option>
           </select>
@@ -65,6 +66,7 @@
       <button type="submit">Preview</button>
       <a href="/admin-portal" style="margin-left: 10px;">Back to Admin Portal</a>
     </form>
+</div>
 
     <% if (hasResults) { %>
       <div style="margin-top: 16px; padding: 12px; border-radius: 10px; background: #f4f4f4; box-shadow: 2px 2px 6px rgba(0,0,0,0.15);">
@@ -95,7 +97,8 @@
           </div>
         <% } %>
 
-        <form action="/admin/export-member-info/csv" method="POST" style="margin-top: 12px;">
+        <div class="form-panel">
+<form action="/admin/export-member-info/csv" method="POST">
           <input type="hidden" name="group_corps" value="<%= selectedGroups.corps ? '1' : '0' %>" />
           <input type="hidden" name="group_independent" value="<%= selectedGroups.independent ? '1' : '0' %>" />
           <input type="hidden" name="group_affiliate" value="<%= selectedGroups.affiliate ? '1' : '0' %>" />
@@ -108,6 +111,7 @@
           <% }) %>
           <button type="submit">Export to CSV</button>
         </form>
+</div>
       </div>
     <% } %>
   </div>

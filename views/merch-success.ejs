@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Confirmed | Boise Gems Store</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+</head>
+<body class="merch-page">
+<header><%- include("includes/header") %></header>
+
+<main class="merch-page-main">
+  <div class="merch-wrap merch-success-wrap">
+    <div class="merch-success-card">
+      <div class="merch-success-icon" aria-hidden="true">
+        <ion-icon name="checkmark-circle"></ion-icon>
+      </div>
+      <h1>Thank you!</h1>
+      <% if (order) { %>
+      <p>Order <strong>#<%= order.id %></strong> is confirmed. A receipt was sent to <strong><%= order.email %></strong>.</p>
+      <p>A tracking email will be sent soon when your order ships. Digital items are available in your portal.</p>
+      <% } else { %>
+      <p>Your payment was confirmed. Digital items are available in your portal.</p>
+      <p>A tracking email will be sent soon when your order ships.</p>
+      <% } %>
+      <div class="merch-success-actions">
+        <a href="/store" class="button">Back to store</a>
+        <% if (typeof user !== 'undefined' && user) { %>
+        <a href="<%= user.parent ? '/parent-portal' : (user.admin ? '/admin-portal' : '/member-portal') %>" class="button button--ghost">Go to portal</a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

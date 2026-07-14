@@ -1,0 +1,18 @@
+<div id="schTodayOverview" class="sch-today-overview" hidden>
+  <div class="pd-sub-heading sch-today-heading">Today's Schedule</div>
+  <div id="schTodayViewer" class="sch-viewer"></div>
+</div>
+<script src="/js/schedule-shared.js"></script>
+<script>
+  (function() {
+    function bootToday() {
+      if (!window.BGSchedule || !BGSchedule.initScheduleTodayOverview) return;
+      BGSchedule.initScheduleTodayOverview({
+        wrapId: 'schTodayOverview',
+        viewerId: 'schTodayViewer',
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootToday);
+    else bootToday();
+  })();
+</script>

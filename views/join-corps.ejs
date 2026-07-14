@@ -3,76 +3,45 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Boise Gems Drum & Bugle Corps</title>
+  <title>Join The 2027 Season | Boise Gems Drum &amp; Bugle Corps</title>
   <%- include("includes/head") %>
-  <meta name="description" content="The Boise Gems Drum & Bugle Corps - Idaho’s summer marching program. Learn the history, season details, and how to join.">
-  <link rel="canonical" href="https://boisegems.org/corps">
-  <meta property="og:title" content="Boise Gems Drum & Bugle Corps">
-  <meta property="og:description" content="Idaho’s summer marching program. History, season info, auditions, and more.">
+  <link rel="stylesheet" href="/css/join-corps.css">
+  <% if (!testSite) { %>
+  <meta name="description" content="Join the Boise Gems Drum & Bugle Corps 2027 season. Audition info, materials, and everything you need to take the first step.">
+  <link rel="canonical" href="https://boisegems.org/join-corps">
+  <meta property="og:title" content="Join The 2027 Season | Boise Gems">
+  <meta property="og:description" content="Idaho's summer marching arts experience. Start your audition journey.">
+  <% } %>
+
 </head>
-<body style="background: #eee">
-  
+<body class="join-corps-page">
   <header><%- include("includes/header") %></header>
 
-  <main>
-    <section class="hero" style="text-align:center; padding:28px 12px;">
-      <h1 style="font-size:2rem; margin:0;">Audition for the <strong>Boise Gems Drum & Bugle Corps</strong></h1>
-      <p style="max-width:70ch; margin:12px auto 18px;">Join Idaho’s premier summer marching arts program - grow as a musician, travel regionally, and make lifelong friends.</p>
-      <div style="max-width:1100px; margin:0 auto; display:flex; gap:18px; align-items:center; justify-content:center; flex-wrap:wrap;">
-        <a href="/register-member"><button style="padding:12px 18px; font-weight:600;">Create Your Free Account</button></a>
-        <a href="/calendar"><button style="padding:12px 18px;">RSVP For An Audition</button></a>
-        <a href="/contact"><button style="padding:12px 18px;">Contact Auditions Team</button></a>
-      </div>
-      <div style="margin-top:18px; width:100%; aspect-ratio:16/6; max-width:1100px; background:#ddd; background-image:url('/img/action/indexHero.jpg'); background-size:cover; background-position:center; border-radius:8px; box-shadow: 4px 4px 8px rgba(0,0,0,0.12); margin-left:auto; margin-right:auto;"></div>
-    </section>
-     <!-- AUDITION STEPS & EXPECTATIONS -->
-  <section style="padding:16px 12px; max-width:1100px; margin:0 auto;">
-    <div class="card" style="padding:20px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.06);">
-      <h2 style="margin:0 0 6px;">How to Audition</h2>
+  <div class="join-corps-experience"
+       data-topo-opacity="<%= topoOpacity %>"
+       style="--jc-topo-opacity: <%= topoOpacity %>;">
 
-      <ol style="margin:8px 0 16px; padding-left:20px;">
-        <li style="margin-bottom:8px;"><strong>Create an account:</strong> Sign up at <a href="/register-member">Register</a> so we can keep your info, track RSVPs, and share updates.</li>
-        <li style="margin-bottom:8px;"><strong>Complete your profile:</strong> Add your instrument/part.</li>
-        <li style="margin-bottom:8px;"><strong>RSVP for an audition:</strong> Use the <a href="/calendar">Auditions calendar</a> to pick a session and RSVP so we know you'll attend.</li>
-        <li style="margin-bottom:8px;"><strong>Show up prepared:</strong> Bring your instrument, water, comfortable shoes, and a positive attitude.</li>
-        <li style="margin-bottom:0;"><strong>Expect to be auditioned:</strong> Auditions are short-warmups, simple marching, and a short playing/exercise so we can place you appropriately.</li>
-      </ol>
+    <div class="join-corps-experience__bg" aria-hidden="true"></div>
+    <canvas class="join-corps-experience__grid" id="joinCorpsGrid" aria-hidden="true"></canvas>
+    <canvas class="join-corps-experience__topo" id="joinCorpsTopo" aria-hidden="true"></canvas>
 
-      <div style="margin:14px 0; padding:16px; background:linear-gradient(90deg,#fff8e1,#fff3cf); border-left:6px solid #ffb703; border-radius:8px;">
-        <h3 style="margin:0 0 8px;">Video Auditions</h3>
-        <p style="margin:0 0 10px; max-width:70ch;">Can't make an in-person audition or prefer to submit first? Follow these three steps to submit a video audition. Make sure audio is clear and follow the order in the audition packet.</p>
-        <ol style="margin:0 0 0 20px;">
-          <li style="margin-bottom:8px;"><strong>Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can associate your submission with your profile.</li>
-          <li style="margin-bottom:8px;"><strong>Download Audition Materials</strong> - Log in to the <% if (user) { %><a href="/member-portal">Member Portal</a><% } else { %>Member Portal<% } %> and download the packet with warmups, excerpts, and information.</li>
-          <li style="margin-bottom:0;"><strong>Click "Video Auditions"</strong> - In the Member Portal click <em>Video Auditions</em> and follow the submission instructions on the Video Audition website.</li>
-        </ol>
-      </div>
+    <div class="join-corps-scroll">
+      <section class="join-corps-hero">
+        <h1 class="join-corps-hero__title"><span class="join-corps-hero__join">Join</span> The 2027 Season</h1>
+        <a href="<%= ctaHref %>" class="join-corps-cta join-corps-cta--hero"><%= ctaLabel %></a>
+      </section>
 
-      <h3 style="margin-top:6px;">What to Expect at Your Audition</h3>
-      <ul style="margin:8px 0 12px;">
-        <li>Warm-up and brief sight-reading/play task</li>
-        <li>Basic marching evaluation (for brass/guard/percussion)</li>
-        <li>Friendly staff feedback and guidance on next steps</li>
-      </ul>
+      <section class="join-corps-body">
+        <%- joinCorpsHtml %>
+      </section>
 
-      <h3 style="margin-top:6px;">After Your Audition</h3>
-      <p style="margin:8px 0 12px;">If selected, you'll receive an email with placement, rehearsal schedule, and next steps (uniforms, fees, and camp info). If not selected immediately, we may offer mentorship, sectional work, or feedback to help you grow toward future seasons.</p>
-
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
-        <a href="/register-member"><button style="padding:12px 18px; font-weight:600;">Create Account</button></a>
-        <a href="/calendar"><button style="padding:12px 18px;">View Audition Dates</button></a>
-        <a href="/contact"><button style="padding:12px 18px;">Contact Auditions Team</button></a>
-      </div>
+      <footer class="join-corps-footer">
+        <a href="<%= ctaHref %>" class="join-corps-cta"><%= ctaLabel %></a>
+      </footer>
     </div>
-  </section>
-  </main>
-  <section style="padding:18px 12px; max-width:1100px; margin:18px auto;">
-    <div style="padding:14px; border-radius:8px; background:#f7f7f7; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.04);">
-      <p style="margin:8px 0; font-weight:600;">Looking for information about Boise Gems Independent? <a href="/join-independent">Click Here</a></p>
-    </div>
-  </section>
+  </div>
 
-  
   <footer><%- include("includes/footer") %></footer>
+  <script src="/js/join-corps-experience.js" defer></script>
 </body>
 </html>

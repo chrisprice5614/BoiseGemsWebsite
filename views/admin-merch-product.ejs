@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= product ? 'Edit' : 'New' %> Product | Merch Admin</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main class="merch-wrap" style="padding-top:32px;">
+  <p><a href="/admin/merch">&larr; Merch Admin</a></p>
+  <h1 style="color:var(--secondary-color);"><%= product ? 'Edit Product' : 'New Product' %></h1>
+
+  <form class="form-panel" method="POST" action="<%= product ? '/admin/merch/products/' + product.id : '/admin/merch/products' %>" enctype="multipart/form-data" id="merchProductForm">
+    <input type="hidden" name="variants_json" id="variantsJsonField" value="{}">
+    <script type="application/json" id="variantsData"><%- variantsJson %></script>
+    <div id="variantFileInputs" hidden aria-hidden="true"></div>
+
+    <label>Name</label>
+    <input type="text" name="name" value="<%= product ? product.name : '' %>" required>
+
+    <label>Category</label>
+    <select name="category_id">
+      <option value="">None</option>
+      <% categories.forEach(function(c) { %>
+      <option value="<%= c.id %>" <%= product && product.category_id === c.id ? 'selected' : '' %>><%= c.name %></option>
+      <% }) %>
+    </select>
+
+    <label>Price ($)</label>
+    <input type="number" name="price" step="0.01" min="0" value="<%= product ? (product.price_cents/100).toFixed(2) : '0.00' %>" required>
+
+    <label>Description</label>
+    <textarea name="description" rows="5"><%= product ? product.description : '' %></textarea>
+
+    <label>Product type</label>
+    <select name="product_type" id="productType">
+      <option value="physical" <%= !product || product.product_type === 'physical' ? 'selected' : '' %>>Physical</option>
+      <option value="digital" <%= product && product.product_type === 'digital' ? 'selected' : '' %>>Digital download</option>
+    </select>
+
+    <label>Default image</label>
+    <input type="file" name="default_image" accept="image/*">
+    <% if (product && product.default_image) { %><p style="font-size:0.85rem;"><img src="/img/merch/<%= product.default_image %>" style="max-width:120px;"></p><% } %>
+
+    <div id="digitalFields" style="<%= product && product.product_type === 'digital' ? '' : 'display:none;' %>">
+      <label>Digital file</label>
+      <input type="file" name="digital_file">
+      <% if (product && product.digital_original_name) { %><p style="font-size:0.85rem;">Current: <%= product.digital_original_name %></p><% } %>
+    </div>
+
+    <div id="physicalVariantSection" style="<%= product && product.product_type === 'digital' ? 'display:none;' : '' %>">
+      <h3 style="margin:24px 0 8px;">Variants</h3>
+      <div class="merch-variant-summary-box">
+        <p id="variantSummary" class="merch-variant-summary-text">Simple product with no size or color options.</p>
+        <div class="merch-variant-summary-actions">
+          <button type="button" class="button" id="addVariantsBtn">Add variants</button>
+          <button type="button" class="button" id="openVariantsBtn" style="display:none;">Edit variants</button>
+          <button type="button" class="merch-text-btn" id="removeAllVariantsBtn" style="display:none;">Remove variants</button>
+        </div>
+      </div>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;">
+      <input type="checkbox" name="active" value="1" <%= !product || product.active ? 'checked' : '' %>> Active (visible in store)
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="out_of_stock" value="1" <%= product && product.out_of_stock ? 'checked' : '' %>> Entire product out of stock
+    </label>
+
+    <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
+      <button type="submit">Save Product</button>
+      <% if (product) { %>
+      <button type="button" id="merchProductDeleteBtn" style="background:#c1272d;">Delete</button>
+      <% } %>
+    </div>
+
+    <!-- Variants editor modal -->
+    <div id="variantsModal" class="merch-modal" hidden>
+      <div class="merch-modal__panel merch-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="variantsModalTitle">
+        <div class="merch-modal__head">
+          <h2 id="variantsModalTitle" style="margin:0;">Product variants</h2>
+          <button type="button" class="merch-modal__x" id="variantsModalClose" aria-label="Close">×</button>
+        </div>
+
+        <section class="merch-modal__section">
+          <div class="merch-modal__section-head">
+            <h3>Sizes</h3>
+            <button type="button" class="button" id="addSizeBtn">+ Add size</button>
+          </div>
+          <p class="merch-cat-hint">Drag sizes to reorder.</p>
+          <ul class="merch-size-chip-list" id="variantSizesList"></ul>
+        </section>
+
+        <section class="merch-modal__section">
+          <div class="merch-modal__section-head">
+            <h3>Colors</h3>
+            <button type="button" class="button" id="addColorBtn">+ Add color</button>
+          </div>
+          <p class="merch-cat-hint">Drag colors to reorder. Upload multiple photos per color, pick a swatch, and mark which size/color combos are active.</p>
+          <div id="variantColorsList"></div>
+        </section>
+
+        <div class="merch-modal__foot">
+          <button type="button" class="button" id="variantsModalDone">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add size modal -->
+    <div id="addSizeModal" class="merch-modal" hidden>
+      <div class="merch-modal__panel" role="dialog" aria-modal="true" aria-labelledby="addSizeTitle">
+        <h2 id="addSizeTitle" style="margin:0 0 14px;">Add size</h2>
+        <label for="newSizeName">Size name</label>
+        <input type="text" id="newSizeName" placeholder="e.g. M, Large, 7-inch" autocomplete="off">
+        <div class="merch-modal__foot" style="margin-top:18px;">
+          <button type="button" class="button" id="addSizeConfirm">Add</button>
+          <button type="button" class="ann-cancel-btn" id="addSizeCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </form>
+  <% if (product) { %>
+  <form id="merchProductDeleteForm" method="POST" action="/admin/merch/products/<%= product.id %>/delete" hidden></form>
+  <% } %>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script src="/js/admin-merch-product.js"></script>
+</body>
+</html>

@@ -77,6 +77,7 @@
             <a href="/">Home</a><br>
             <a href="/news">News</a><br>
             <a href="/contact">Contact</a><br>
+            <a href="/press-kit">Press Kit</a><br>
             <a href="/privacy">Privacy Policy</a><br>
             <a href="/whistleblower">Whistleblower</a><br>
         </div>
@@ -89,7 +90,12 @@
         </div>
     </div>
     <br>
-    <a href="https://info.chrispricemusic.net" style="font-size: medium;">Powered by Chris Price Music</a>
+    <div class="footer-powered">
+        <span>Powered by</span>
+        <a href="https://fermataworks.com/#ensemble" target="_blank" rel="noopener noreferrer" class="footer-powered__link" aria-label="FermataWorks">
+            <img src="/img/ui/fermataworks-white.png" alt="FermataWorks" class="footer-powered__logo">
+        </a>
+    </div>
 </div>
 <br>
 <br>
@@ -213,32 +219,886 @@
 
 </script>
 
+<!-- Global confirm/alert modal - must live outside header (header has pointer-events:none) -->
+<div id="confirm-overlay" class="confirm-overlay" hidden>
+  <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-message">
+    <p id="confirm-message" class="confirm-dialog__msg">Are you sure you want to continue?</p>
+    <div class="confirm-dialog__actions">
+      <button type="button" id="confirm-yes">Yes</button>
+      <button type="button" id="confirm-no" class="ann-cancel-btn">No</button>
+    </div>
+  </div>
+</div>
+
+<% if (typeof testSite !== "undefined" && testSite) { %>
+<div id="test-site-overlay" class="confirm-overlay" hidden>
+  <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="test-site-message">
+    <p id="test-site-message" class="confirm-dialog__msg" style="text-align:left;line-height:1.45;">
+      This is the test server of the Boise Gems. Check
+      <a href="https://boisegems.org/" target="_blank" rel="noopener">https://boisegems.org/</a>
+      for the live website. This is made to test new features. Thank you - FermataWorks
+    </p>
+    <div class="confirm-dialog__actions">
+      <button type="button" id="test-site-ok">Okay</button>
+    </div>
+  </div>
+</div>
 <script>
-  const overlay = document.getElementById('confirm-overlay');
-  const yesBtn = document.getElementById('confirm-yes');
-  const noBtn = document.getElementById('confirm-no');
+(function () {
+  var KEY = "bg_test_site_notice_seen";
+  try {
+    if (localStorage.getItem(KEY) === "1") return;
+  } catch (e) {}
+  var overlay = document.getElementById("test-site-overlay");
+  var ok = document.getElementById("test-site-ok");
+  if (!overlay || !ok) return;
+  overlay.hidden = false;
+  function dismiss() {
+    try { localStorage.setItem(KEY, "1"); } catch (e) {}
+    overlay.hidden = true;
+  }
+  ok.addEventListener("click", dismiss);
+})();
+</script>
+<% } %>
 
-  let nextHref = '#';
+<script>
+(function() {
+  var overlay = document.getElementById('confirm-overlay');
+  var yesBtn = document.getElementById('confirm-yes');
+  var noBtn = document.getElementById('confirm-no');
+  var msgEl = document.getElementById('confirm-message');
+  var pendingCallback = null;
 
-  document.querySelectorAll('.confirm-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  function openConfirm(message, onYes, opts) {
+    opts = opts || {};
+    if (msgEl) msgEl.textContent = message || 'Are you sure you want to continue?';
+    pendingCallback = typeof onYes === 'function' ? onYes : null;
+    overlay.classList.toggle('confirm-overlay--alert', !!opts.alert);
+    if (opts.alert) {
+      yesBtn.textContent = 'Okay';
+      noBtn.hidden = true;
+    } else {
+      yesBtn.textContent = 'Yes';
+      noBtn.hidden = false;
+    }
+    overlay.hidden = false;
+  }
+
+  function closeConfirm() {
+    overlay.hidden = true;
+    overlay.classList.remove('confirm-overlay--alert');
+    pendingCallback = null;
+    yesBtn.textContent = 'Yes';
+    noBtn.hidden = false;
+  }
+
+  window.bgConfirm = function(message, onYes) {
+    openConfirm(message, onYes, { alert: false });
+  };
+
+  window.bgAlert = function(message, onOk) {
+    openConfirm(message, onOk || null, { alert: true });
+  };
+
+  document.querySelectorAll('.confirm-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
       e.preventDefault();
-      nextHref = btn.getAttribute('next') || '#';
-      overlay.style.display = 'flex';
+      var href = btn.getAttribute('next') || '#';
+      openConfirm('Are you sure you want to continue?', function() {
+        if (href && href !== '#') window.location.href = href;
+      }, { alert: false });
     });
   });
 
-  yesBtn.addEventListener('click', () => {
-    window.location.href = nextHref;
+  yesBtn.addEventListener('click', function() {
+    var cb = pendingCallback;
+    closeConfirm();
+    if (cb) cb();
   });
 
-  noBtn.addEventListener('click', () => {
-    overlay.style.display = 'none';
-    nextHref = '#';
+  noBtn.addEventListener('click', closeConfirm);
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) closeConfirm();
   });
+})();
 </script>
 
-<% if(typeof flashMessage !== "undefined") { %>
+<% if (typeof user !== "undefined" && user && messagingAllowed) { %>
+<!-- ===================== Floating Messenger ===================== -->
+<style>
+  /* Floating button sits below the mobile nav overlay (5000) but above page
+     content; the modal overlay itself is at 10000. */
+  .bg-msg-fab-wrap { position: fixed; right: 22px; bottom: 22px; z-index: 4000; }
+  .bg-msg-fab {
+    width: 62px !important; height: 62px !important; padding: 0 !important;
+    display: flex !important; align-items: center; justify-content: center;
+    font-size: 30px; color: #fff;
+    text-shadow: none !important; box-shadow: none !important; filter: none !important;
+  }
+  .bg-msg-fab ion-icon { pointer-events: none; }
+  .bg-msg-badge {
+    position: absolute; top: -6px; right: -6px;
+    min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box;
+    border-radius: 999px; background: #e23b3b; color: #fff;
+    font-size: 12px; font-weight: 700; line-height: 18px; text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35); border: 2px solid #fff;
+  }
+
+  .bg-msg-overlay {
+    position: fixed; inset: 0; z-index: 10000; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55); padding: 16px;
+  }
+  .bg-msg-overlay.is-open { display: flex; }
+
+  .bg-msg-modal {
+    position: relative;
+    width: min(920px, 96vw); height: min(680px, 88vh);
+    background: #fff; color: #1a1a1a; display: flex; overflow: hidden;
+    clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+
+  /* ---------- Sidebar (chat list) ---------- */
+  .bg-msg-sidebar {
+    width: 320px; flex: 0 0 320px; display: flex; flex-direction: column;
+    border-right: 1px solid #ece7f2; background: #fbf9fd; min-height: 0;
+  }
+  .bg-msg-sidebar-head { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
+  .bg-msg-sidebar-title {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    font-weight: 800; font-size: 1.12rem; color: var(--secondary-color);
+  }
+  .bg-msg-sidebar-title ion-icon { font-size: 20px; }
+
+  .bg-msg-search-wrap { position: relative; margin: 0 12px 10px; }
+  .bg-msg-search-wrap ion-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: #a99cbb; font-size: 17px; pointer-events: none;
+  }
+  .bg-msg-search { width: 100%; box-sizing: border-box; margin: 0 !important; padding-left: 36px !important; }
+
+  .bg-msg-newrow { display: flex; gap: 8px; padding: 0 12px 10px; }
+  .bg-msg-new {
+    flex: 1; font-size: 0.7rem !important; padding: 9px 8px !important;
+    display: inline-flex !important; align-items: center; justify-content: center; gap: 6px;
+    text-shadow: none !important; box-shadow: none !important; filter: none !important;
+  }
+  .bg-msg-new ion-icon { font-size: 15px; }
+
+  .bg-msg-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 12px; }
+  .bg-msg-empty { text-align: center; color: #999; padding: 26px 12px; font-size: 0.88rem; line-height: 1.5; }
+
+  .bg-msg-conv-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px; cursor: pointer;
+    border-radius: 10px; margin-bottom: 2px;
+  }
+  .bg-msg-conv-item:hover { background: #f2edf7; }
+  .bg-msg-conv-item.active { background: linear-gradient(135deg, rgba(157,118,187,0.20), rgba(96,67,125,0.14)); }
+  .bg-msg-avatar {
+    width: 44px; height: 44px; border-radius: 50%; flex: 0 0 auto; overflow: hidden;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.95rem;
+  }
+  .bg-msg-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .bg-msg-ci-main { flex: 1; min-width: 0; }
+  .bg-msg-ci-title { font-weight: 600; font-size: 0.92rem; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bg-msg-ci-preview { font-size: 0.8rem; color: #8a8a8a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bg-msg-ci-unread {
+    flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box;
+    border-radius: 999px; background: #e23b3b; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+  }
+
+  /* ---------- Main pane (conversation) ---------- */
+  .bg-msg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .bg-msg-main-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: #fff;
+  }
+  .bg-msg-main-avatar { width: 36px; height: 36px; font-size: 0.85rem; border: 2px solid rgba(255,255,255,0.5); }
+  .bg-msg-main-title {
+    flex: 1; font-weight: 700; font-size: 1.02rem; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bg-msg-icon-btn {
+    background: transparent !important; clip-path: none !important; filter: none !important;
+    border: none !important; padding: 4px !important; width: 34px !important; height: 34px !important;
+    display: flex !important; align-items: center; justify-content: center;
+    /* !important beats the high-specificity global button rule (which forces white). */
+    color: #fff !important; font-size: 22px; cursor: pointer; flex: 0 0 auto;
+    text-shadow: none !important; box-shadow: none !important;
+  }
+  .bg-msg-icon-btn ion-icon { color: inherit; pointer-events: none; }
+  .bg-msg-sidebar-head .bg-msg-icon-btn { color: var(--secondary-color) !important; }
+
+  .bg-msg-empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #b3a7c4; text-align: center; gap: 10px; padding: 20px; background: #faf8fc;
+  }
+  .bg-msg-empty-state ion-icon { font-size: 58px; }
+  .bg-msg-empty-state p { font-size: 0.95rem; line-height: 1.5; }
+
+  .bg-msg-conv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .bg-msg-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; background: #faf8fc; }
+  .bg-msg-row { display: flex; flex-direction: column; max-width: 78%; }
+  .bg-msg-row.mine { align-self: flex-end; align-items: flex-end; }
+  .bg-msg-row.theirs { align-self: flex-start; align-items: flex-start; }
+  .bg-msg-sender { font-size: 0.7rem; color: #9a8bb0; margin: 0 6px 2px; }
+  .bg-msg-bubble { padding: 8px 12px; border-radius: 14px; font-size: 0.9rem; line-height: 1.35; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .bg-msg-row.mine .bg-msg-bubble { background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: #fff; border-bottom-right-radius: 4px; }
+  .bg-msg-row.theirs .bg-msg-bubble { background: #ece7f2; color: #1a1a1a; border-bottom-left-radius: 4px; }
+  .bg-msg-meta { font-size: 0.66rem; color: #a99cbb; margin: 2px 6px 0; }
+  .bg-msg-typing { padding: 2px 16px 6px; font-size: 0.75rem; color: #8a7aa3; font-style: italic; min-height: 18px; background: #faf8fc; }
+
+  .bg-msg-composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #eee; background: #fff; }
+  .bg-msg-input { flex: 1; min-width: 0; box-sizing: border-box; margin: 0 !important; }
+  .bg-msg-send { width: 48px !important; height: 44px !important; padding: 0 !important; display: flex !important; align-items: center; justify-content: center; font-size: 20px; flex: 0 0 auto; text-shadow: none !important; box-shadow: none !important; filter: none !important; }
+  .bg-msg-attach { width: 46px !important; height: 44px !important; padding: 0 !important; display: flex !important; align-items: center; justify-content: center; font-size: 21px; flex: 0 0 auto; text-shadow: none !important; box-shadow: none !important; filter: none !important; }
+  /* The site-wide input[type=file] rule shows the native picker full width; force it hidden. */
+  #bgMsgFile { display: none !important; }
+
+  /* Upload progress indicator */
+  .bg-msg-uploading { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: #f3ecfa; color: var(--secondary-color); font-size: 0.8rem; font-weight: 600; }
+  .bg-msg-spinner { width: 15px; height: 15px; flex: 0 0 auto; border: 2px solid #cbb6e6; border-top-color: var(--secondary-color); border-radius: 50%; animation: bgMsgSpin 0.7s linear infinite; }
+  @keyframes bgMsgSpin { to { transform: rotate(360deg); } }
+
+  /* Attachment rendering inside bubbles */
+  .bg-msg-att-img { display: block; margin-bottom: 6px; border-radius: 10px; overflow: hidden; max-width: 240px; }
+  .bg-msg-att-img img { display: block; width: 100%; max-height: 260px; object-fit: cover; }
+  .bg-msg-att-video { display: block; margin-bottom: 6px; border-radius: 10px; max-width: 260px; width: 100%; background: #000; }
+  .bg-msg-att-file {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 8px 10px;
+    border-radius: 10px; background: rgba(0,0,0,0.06); color: inherit; text-decoration: none; max-width: 260px;
+  }
+  .bg-msg-row.mine .bg-msg-att-file { background: rgba(255,255,255,0.18); }
+  .bg-msg-att-file ion-icon { font-size: 22px; flex: 0 0 auto; }
+  .bg-msg-att-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.84rem; }
+  .bg-msg-att-dl { font-size: 18px !important; opacity: 0.85; }
+
+  /* ---------- New-conversation overlay (distinct look) ---------- */
+  .bg-msg-compose {
+    position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column;
+    background: #f4eefb; animation: bgMsgComposeIn 0.22s ease;
+  }
+  @keyframes bgMsgComposeIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  .bg-msg-compose-head {
+    display: flex; align-items: center; gap: 10px; padding: 18px 16px;
+    background: linear-gradient(135deg, var(--secondary-color), var(--tertiary-color)); color: #fff;
+  }
+  .bg-msg-compose-title { flex: 1; font-size: 1.25rem; font-weight: 800; letter-spacing: 0.01em; }
+  .bg-msg-compose-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+  .bg-msg-group-name { margin-bottom: 14px; }
+  .bg-msg-group-name label { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--secondary-color); margin-bottom: 6px; }
+  .bg-msg-search-wrap--big { margin: 0 0 14px; }
+  .bg-msg-search-wrap--big ion-icon { font-size: 20px; }
+  .bg-msg-search-wrap--big .bg-msg-search { padding: 14px 14px 14px 42px !important; font-size: 1rem; }
+  .bg-msg-user-list { display: flex; flex-direction: column; gap: 4px; }
+  .bg-msg-user-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer;
+    border-radius: 12px; background: #fff; border: 2px solid transparent;
+  }
+  .bg-msg-user-item:hover { border-color: #d9c7ee; }
+  .bg-msg-user-item.selected { border-color: var(--primary-color); background: #efe3fb; }
+  .bg-msg-user-check { margin-left: auto; color: var(--primary-color); font-size: 24px; display: none; flex: 0 0 auto; }
+  .bg-msg-user-item.selected .bg-msg-user-check { display: block; }
+  .bg-msg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .bg-msg-chips:empty { margin: 0; }
+  .bg-msg-chip { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: #4a3767; border: 1px solid #d9c7ee; border-radius: 999px; padding: 5px 12px; font-size: 0.82rem; font-weight: 600; }
+  .bg-msg-chip button { all: unset; cursor: pointer; color: #7a5ea0; font-weight: 700; line-height: 1; font-size: 15px; }
+  .bg-msg-compose-footer { padding: 14px 16px; border-top: 1px solid #e2d5f0; background: #f4eefb; }
+  .bg-msg-create { width: 100%; text-shadow: none !important; box-shadow: none !important; filter: none !important; }
+
+  /* These panes set display:flex, which would otherwise beat the browser's
+     default [hidden] rule. Force them hidden when the attribute is present. */
+  .bg-msg-compose[hidden],
+  .bg-msg-conv[hidden],
+  .bg-msg-empty-state[hidden],
+  .bg-msg-uploading[hidden],
+  .bg-msg-avatar[hidden] { display: none !important; }
+
+  /* ---------- Responsive: single pane on mobile ---------- */
+  @media (max-width: 720px) {
+    .bg-msg-overlay { padding: 0; }
+    .bg-msg-modal {
+      width: 100%; max-width: 100%; height: 100vh; height: 100dvh;
+      clip-path: none; flex-direction: column; box-shadow: none;
+    }
+    .bg-msg-sidebar { width: 100%; flex: 1 1 auto; border-right: none; }
+    .bg-msg-main { display: none; }
+    .bg-msg-modal.show-conv .bg-msg-sidebar { display: none; }
+    .bg-msg-modal.show-conv .bg-msg-main { display: flex; }
+    .bg-msg-fab-wrap { right: 16px; bottom: 16px; }
+    .bg-msg-att-img, .bg-msg-att-video, .bg-msg-att-file { max-width: 72vw; }
+  }
+  @media (min-width: 721px) {
+    #bgMsgCloseSide { display: none !important; }
+    .bg-msg-back-mobile { display: none !important; }
+  }
+</style>
+
+<div id="bgMsgRoot" data-me="<%= user.userid %>">
+  <div class="bg-msg-fab-wrap">
+    <button type="button" class="bg-msg-fab" id="bgMsgFab" aria-label="Open messages">
+      <ion-icon name="chatbubble-ellipses"></ion-icon>
+    </button>
+    <span class="bg-msg-badge" id="bgMsgBadge" hidden>0</span>
+  </div>
+
+  <div class="bg-msg-overlay" id="bgMsgOverlay" aria-hidden="true">
+    <div class="bg-msg-modal" id="bgMsgModal" role="dialog" aria-modal="true" aria-label="Messages">
+
+      <!-- SIDEBAR: chat list -->
+      <aside class="bg-msg-sidebar" id="bgMsgSidebar">
+        <div class="bg-msg-sidebar-head">
+          <span class="bg-msg-sidebar-title"><ion-icon name="chatbubbles"></ion-icon> Messages</span>
+          <button type="button" class="bg-msg-icon-btn" id="bgMsgCloseSide" aria-label="Close messages"><ion-icon name="close"></ion-icon></button>
+        </div>
+        <div class="bg-msg-search-wrap">
+          <ion-icon name="search"></ion-icon>
+          <input type="text" class="bg-msg-search" id="bgMsgConvSearch" placeholder="Search chats…">
+        </div>
+        <div class="bg-msg-newrow">
+          <button type="button" class="bg-msg-new" id="bgMsgNewChat"><ion-icon name="person-add"></ion-icon> New chat</button>
+          <button type="button" class="bg-msg-new" id="bgMsgNewGroup"><ion-icon name="people"></ion-icon> New group</button>
+        </div>
+        <div class="bg-msg-list" id="bgMsgConvList"><div class="bg-msg-empty">Loading…</div></div>
+      </aside>
+
+      <!-- MAIN: active conversation -->
+      <section class="bg-msg-main" id="bgMsgMain">
+        <div class="bg-msg-main-head">
+          <button type="button" class="bg-msg-icon-btn bg-msg-back-mobile" id="bgMsgBack" aria-label="Back to chats"><ion-icon name="arrow-back"></ion-icon></button>
+          <div class="bg-msg-avatar bg-msg-main-avatar" id="bgMsgMainAvatar" hidden></div>
+          <div class="bg-msg-main-title" id="bgMsgTitle">Messages</div>
+          <button type="button" class="bg-msg-icon-btn" id="bgMsgClose" aria-label="Close messages"><ion-icon name="close"></ion-icon></button>
+        </div>
+
+        <div class="bg-msg-empty-state" id="bgMsgEmptyState">
+          <ion-icon name="chatbubbles-outline"></ion-icon>
+          <p>Select a conversation<br>or start a new one.</p>
+        </div>
+
+        <div class="bg-msg-conv" id="bgMsgConvView" hidden>
+          <div class="bg-msg-messages" id="bgMsgMessages"></div>
+          <div class="bg-msg-typing" id="bgMsgTyping" hidden></div>
+          <div class="bg-msg-uploading" id="bgMsgUploading" hidden>
+            <span class="bg-msg-spinner"></span>
+            <span class="bg-msg-uploading-text" id="bgMsgUploadingText">Uploading…</span>
+          </div>
+          <form class="bg-msg-composer" id="bgMsgComposer">
+            <button type="button" class="bg-msg-attach" id="bgMsgAttach" aria-label="Attach a photo, video, or file"><ion-icon name="attach"></ion-icon></button>
+            <input type="file" id="bgMsgFile" hidden>
+            <input type="text" class="bg-msg-input" id="bgMsgInput" placeholder="Message…" autocomplete="off">
+            <button type="submit" class="bg-msg-send" aria-label="Send"><ion-icon name="send"></ion-icon></button>
+          </form>
+        </div>
+      </section>
+
+      <!-- NEW CONVERSATION overlay (distinct styling) -->
+      <div class="bg-msg-compose" id="bgMsgComposeView" hidden>
+        <div class="bg-msg-compose-head">
+          <button type="button" class="bg-msg-icon-btn" id="bgMsgComposeBack" aria-label="Back"><ion-icon name="arrow-back"></ion-icon></button>
+          <div class="bg-msg-compose-title" id="bgMsgComposeTitle">New chat</div>
+        </div>
+        <div class="bg-msg-compose-scroll">
+          <div class="bg-msg-group-name" id="bgMsgGroupTitleRow" hidden>
+            <label for="bgMsgGroupTitle">Group name</label>
+            <input type="text" class="bg-msg-search" id="bgMsgGroupTitle" placeholder="Optional group name" style="padding-left: 12px !important;">
+          </div>
+          <div class="bg-msg-chips" id="bgMsgChips"></div>
+          <div class="bg-msg-search-wrap bg-msg-search-wrap--big">
+            <ion-icon name="search"></ion-icon>
+            <input type="text" class="bg-msg-search" id="bgMsgUserSearch" placeholder="Search people to message…">
+          </div>
+          <div class="bg-msg-user-list" id="bgMsgUserResults"></div>
+        </div>
+        <div class="bg-msg-compose-footer">
+          <button type="button" class="bg-msg-create" id="bgMsgCreate" disabled>Start conversation</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var root = document.getElementById('bgMsgRoot');
+  if (!root) return;
+  var ME = Number(root.dataset.me);
+
+  var els = {
+    fab: document.getElementById('bgMsgFab'),
+    badge: document.getElementById('bgMsgBadge'),
+    overlay: document.getElementById('bgMsgOverlay'),
+    modal: document.getElementById('bgMsgModal'),
+    closeSide: document.getElementById('bgMsgCloseSide'),
+    convSearch: document.getElementById('bgMsgConvSearch'),
+    newChat: document.getElementById('bgMsgNewChat'),
+    newGroup: document.getElementById('bgMsgNewGroup'),
+    convList: document.getElementById('bgMsgConvList'),
+    back: document.getElementById('bgMsgBack'),
+    mainAvatar: document.getElementById('bgMsgMainAvatar'),
+    title: document.getElementById('bgMsgTitle'),
+    close: document.getElementById('bgMsgClose'),
+    emptyState: document.getElementById('bgMsgEmptyState'),
+    convView: document.getElementById('bgMsgConvView'),
+    messages: document.getElementById('bgMsgMessages'),
+    typing: document.getElementById('bgMsgTyping'),
+    uploading: document.getElementById('bgMsgUploading'),
+    uploadingText: document.getElementById('bgMsgUploadingText'),
+    composer: document.getElementById('bgMsgComposer'),
+    attach: document.getElementById('bgMsgAttach'),
+    file: document.getElementById('bgMsgFile'),
+    input: document.getElementById('bgMsgInput'),
+    composeView: document.getElementById('bgMsgComposeView'),
+    composeBack: document.getElementById('bgMsgComposeBack'),
+    composeTitle: document.getElementById('bgMsgComposeTitle'),
+    groupTitleRow: document.getElementById('bgMsgGroupTitleRow'),
+    groupTitle: document.getElementById('bgMsgGroupTitle'),
+    chips: document.getElementById('bgMsgChips'),
+    userSearch: document.getElementById('bgMsgUserSearch'),
+    userResults: document.getElementById('bgMsgUserResults'),
+    create: document.getElementById('bgMsgCreate')
+  };
+
+  var state = {
+    open: false,
+    convId: null,
+    activeTitle: '',
+    composeMode: 'direct',
+    selected: {},           // id -> user
+    msgSig: '',
+    lastTypingSent: 0
+  };
+  var timers = { badge: null, list: null, conv: null };
+  var mqMobile = window.matchMedia('(max-width: 720px)');
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function initials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+  }
+  function timeLabel(ts) {
+    if (!ts) return '';
+    var d = new Date(Number(ts));
+    var h = d.getHours(), m = d.getMinutes();
+    var ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return h + ':' + (m < 10 ? '0' + m : m) + ' ' + ap;
+  }
+  function api(path, opts) {
+    opts = opts || {};
+    var conf = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
+    if (opts.body !== undefined) {
+      conf.headers['Content-Type'] = 'application/json';
+      conf.body = JSON.stringify(opts.body);
+    }
+    return fetch(path, conf).then(function (r) { return r.json().catch(function () { return { ok: false }; }); });
+  }
+
+  /* ---------- unread badge ---------- */
+  function refreshBadge() {
+    api('/api/web/messages/summary').then(function (j) {
+      if (!j || !j.ok) return;
+      setBadge(j.unreadCount || 0);
+    }).catch(function () {});
+  }
+  function setBadge(n) {
+    if (n > 0) { els.badge.hidden = false; els.badge.textContent = n > 99 ? '99+' : n; }
+    else { els.badge.hidden = true; }
+  }
+
+  /* ---------- polling helpers ---------- */
+  function stopConvPoll() { if (timers.conv) { clearInterval(timers.conv); timers.conv = null; } }
+  function stopListPoll() { if (timers.list) { clearInterval(timers.list); timers.list = null; } }
+
+  /* ---------- modal open/close ---------- */
+  function openModal() {
+    state.open = true;
+    els.overlay.classList.add('is-open');
+    els.overlay.setAttribute('aria-hidden', 'false');
+    closeCompose();
+    showEmptyState();
+    loadConversations();
+    stopListPoll();
+    timers.list = setInterval(loadConversations, 5000);
+  }
+  function closeModal() {
+    state.open = false;
+    els.overlay.classList.remove('is-open');
+    els.overlay.setAttribute('aria-hidden', 'true');
+    stopConvPoll(); stopListPoll();
+    refreshBadge();
+  }
+
+  function showEmptyState() {
+    state.convId = null;
+    stopConvPoll();
+    els.convView.hidden = true;
+    els.emptyState.hidden = false;
+    els.title.textContent = 'Messages';
+    els.mainAvatar.hidden = true;
+    els.modal.classList.remove('show-conv');
+    highlightActive();
+  }
+
+  /* ---------- conversation list (sidebar) ---------- */
+  function loadConversations() {
+    var q = els.convSearch.value.trim();
+    api('/api/web/messages/conversations?q=' + encodeURIComponent(q)).then(function (j) {
+      if (!j || !j.ok) { els.convList.innerHTML = '<div class="bg-msg-empty">Could not load chats.</div>'; return; }
+      renderConversations(j.conversations || []);
+    });
+  }
+  function renderConversations(list) {
+    if (!list.length) {
+      els.convList.innerHTML = '<div class="bg-msg-empty">No conversations yet.<br>Tap “New chat” to begin.</div>';
+      return;
+    }
+    var html = '';
+    list.forEach(function (c) {
+      var preview = '';
+      if (c.lastMessage) {
+        var who = c.lastMessage.senderId === ME ? 'You: ' : '';
+        preview = who + (c.lastMessage.body || (c.lastMessage.attachmentType ? '📎 Attachment' : ''));
+      }
+      var unread = c.unreadCount > 0 ? '<span class="bg-msg-ci-unread">' + (c.unreadCount > 99 ? '99+' : c.unreadCount) + '</span>' : '';
+      var active = c.id === state.convId ? ' active' : '';
+      html += '<div class="bg-msg-conv-item' + active + '" data-id="' + c.id + '" data-title="' + esc(c.title) + '">' +
+        '<div class="bg-msg-avatar">' + esc(initials(c.title)) + '</div>' +
+        '<div class="bg-msg-ci-main">' +
+          '<div class="bg-msg-ci-title">' + esc(c.title) + '</div>' +
+          '<div class="bg-msg-ci-preview">' + esc(preview) + '</div>' +
+        '</div>' + unread + '</div>';
+    });
+    els.convList.innerHTML = html;
+    Array.prototype.forEach.call(els.convList.querySelectorAll('.bg-msg-conv-item'), function (it) {
+      it.addEventListener('click', function () {
+        selectConversation(Number(it.dataset.id), it.dataset.title);
+      });
+    });
+  }
+  function highlightActive() {
+    Array.prototype.forEach.call(els.convList.querySelectorAll('.bg-msg-conv-item'), function (it) {
+      it.classList.toggle('active', Number(it.dataset.id) === state.convId);
+    });
+  }
+
+  /* ---------- open a conversation in the main pane ---------- */
+  function selectConversation(convId, title) {
+    state.convId = convId;
+    state.activeTitle = title || 'Conversation';
+    state.msgSig = '';
+    els.emptyState.hidden = true;
+    els.convView.hidden = false;
+    els.title.textContent = state.activeTitle;
+    els.mainAvatar.hidden = false;
+    els.mainAvatar.textContent = initials(state.activeTitle);
+    highlightActive();
+    if (mqMobile.matches) els.modal.classList.add('show-conv');
+    els.messages.innerHTML = '<div class="bg-msg-empty">Loading…</div>';
+    els.typing.hidden = true;
+    els.input.value = '';
+    loadMessages(true);
+    stopConvPoll();
+    timers.conv = setInterval(function () { loadMessages(false); }, 2800);
+    setTimeout(function () { els.input.focus(); }, 60);
+  }
+  function backToList() {
+    els.modal.classList.remove('show-conv');
+  }
+
+  function statusLabel(st) {
+    if (!st) return '';
+    if (st.recipientCount > 1) {
+      if (st.read) return 'Seen by all';
+      if (st.readCount > 0) return 'Seen by ' + st.readCount;
+      if (st.delivered) return 'Delivered';
+      return 'Sent';
+    }
+    if (st.read) return 'Seen';
+    if (st.delivered) return 'Delivered';
+    return 'Sent';
+  }
+
+  function loadMessages(force) {
+    var convId = state.convId;
+    if (!convId) return;
+    api('/api/web/messages/conversations/' + convId + '/messages').then(function (j) {
+      if (!j || !j.ok || state.convId !== convId) return;
+      if (j.conversation && j.conversation.title) {
+        state.activeTitle = j.conversation.title;
+        els.title.textContent = j.conversation.title;
+        els.mainAvatar.textContent = initials(j.conversation.title);
+      }
+
+      // Signature to avoid needless re-render / scroll jumps
+      var sig = (j.messages || []).map(function (m) {
+        return m.id + ':' + (m.status ? (m.status.readCount + '/' + m.status.deliveredCount) : (m.myReadAt ? 'r' : ''));
+      }).join('|') + '#' + (j.typing || []).join(',');
+
+      if (force || sig !== state.msgSig) {
+        state.msgSig = sig;
+        renderMessages(j.messages || [], force);
+      }
+      renderTyping(j.typing || []);
+
+      // Mark read (fire & forget) if there is anything unread from others
+      var hasUnreadFromOthers = (j.messages || []).some(function (m) { return m.senderId !== ME && !m.myReadAt; });
+      if (hasUnreadFromOthers) {
+        api('/api/web/messages/conversations/' + convId + '/read', { method: 'POST', body: {} })
+          .then(refreshBadge);
+      }
+    });
+  }
+
+  function attachmentHtml(m) {
+    if (!m.attachmentType) return '';
+    var url = '/api/web/messages/attachments/' + m.id;
+    if (m.attachmentType === 'image') {
+      return '<a class="bg-msg-att-img" href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" alt="image" loading="lazy"></a>';
+    }
+    if (m.attachmentType === 'video') {
+      return '<video class="bg-msg-att-video" src="' + url + '" controls preload="metadata"></video>';
+    }
+    var isPdf = (m.attachmentMime || '').indexOf('pdf') !== -1;
+    var href = isPdf ? url : (url + '?download=1');
+    var target = isPdf ? ' target="_blank" rel="noopener"' : '';
+    return '<a class="bg-msg-att-file" href="' + href + '"' + target + '>' +
+      '<ion-icon name="' + (isPdf ? 'document-text' : 'document-attach') + '"></ion-icon>' +
+      '<span class="bg-msg-att-name">' + esc(m.attachmentName || 'Attachment') + '</span>' +
+      '<ion-icon class="bg-msg-att-dl" name="' + (isPdf ? 'open-outline' : 'download-outline') + '"></ion-icon>' +
+      '</a>';
+  }
+
+  function renderMessages(messages, force) {
+    var nearBottom = (els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight) < 60;
+    if (!messages.length) { els.messages.innerHTML = '<div class="bg-msg-empty">No messages yet. Say hello!</div>'; return; }
+
+    // Find index of last message I sent (for status label)
+    var lastMineIdx = -1;
+    for (var i = messages.length - 1; i >= 0; i--) { if (messages[i].senderId === ME) { lastMineIdx = i; break; } }
+
+    var html = '';
+    var prevSender = null;
+    messages.forEach(function (m, idx) {
+      var mine = m.senderId === ME;
+      var showSender = !mine && m.senderId !== prevSender;
+      var meta = '';
+      if (mine && idx === lastMineIdx) {
+        var lbl = statusLabel(m.status);
+        meta = '<div class="bg-msg-meta">' + esc(timeLabel(m.createdAt)) + (lbl ? ' · ' + esc(lbl) : '') + '</div>';
+      }
+      var att = attachmentHtml(m);
+      var body = m.body ? esc(m.body) : '';
+      html += '<div class="bg-msg-row ' + (mine ? 'mine' : 'theirs') + '">' +
+        (showSender ? '<div class="bg-msg-sender">' + esc(m.senderName) + '</div>' : '') +
+        '<div class="bg-msg-bubble">' + att + body + '</div>' + meta + '</div>';
+      prevSender = m.senderId;
+    });
+    els.messages.innerHTML = html;
+    if (force || nearBottom) els.messages.scrollTop = els.messages.scrollHeight;
+  }
+
+  function renderTyping(names) {
+    if (!names || !names.length) { els.typing.hidden = true; els.typing.textContent = ''; return; }
+    var txt;
+    if (names.length === 1) txt = names[0] + ' is typing…';
+    else if (names.length === 2) txt = names[0] + ' and ' + names[1] + ' are typing…';
+    else txt = 'Several people are typing…';
+    els.typing.textContent = txt;
+    els.typing.hidden = false;
+  }
+
+  /* ---------- new conversation overlay ---------- */
+  function openCompose(mode) {
+    state.composeMode = mode;
+    state.selected = {};
+    els.composeTitle.textContent = mode === 'group' ? 'New group' : 'New chat';
+    els.groupTitleRow.hidden = mode !== 'group';
+    els.groupTitle.value = '';
+    els.userSearch.value = '';
+    els.composeView.hidden = false;
+    renderChips();
+    searchUsers();
+    setTimeout(function () { els.userSearch.focus(); }, 60);
+  }
+  function closeCompose() {
+    els.composeView.hidden = true;
+  }
+  function searchUsers() {
+    var q = els.userSearch.value.trim();
+    api('/api/web/messages/users?q=' + encodeURIComponent(q)).then(function (j) {
+      if (!j || !j.ok) { els.userResults.innerHTML = '<div class="bg-msg-empty">Could not load people.</div>'; return; }
+      renderUsers(j.users || []);
+    });
+  }
+  function renderUsers(users) {
+    if (!users.length) { els.userResults.innerHTML = '<div class="bg-msg-empty">No people found.</div>'; return; }
+    var html = '';
+    users.forEach(function (u) {
+      var name = (u.firstname + ' ' + u.lastname).trim();
+      var sel = state.selected[u.id] ? ' selected' : '';
+      html += '<div class="bg-msg-user-item' + sel + '" data-id="' + u.id + '" data-name="' + esc(name) + '">' +
+        '<div class="bg-msg-avatar">' + esc(initials(name)) + '</div>' +
+        '<div class="bg-msg-ci-main"><div class="bg-msg-ci-title">' + esc(name) + '</div>' +
+        '<div class="bg-msg-ci-preview">' + esc(u.email) + '</div></div>' +
+        '<ion-icon class="bg-msg-user-check" name="checkmark-circle"></ion-icon>' +
+        '</div>';
+    });
+    els.userResults.innerHTML = html;
+    Array.prototype.forEach.call(els.userResults.querySelectorAll('.bg-msg-user-item'), function (it) {
+      it.addEventListener('click', function () { toggleUser(Number(it.dataset.id), it.dataset.name); });
+    });
+  }
+  function toggleUser(id, name) {
+    if (state.selected[id]) { delete state.selected[id]; }
+    else {
+      if (state.composeMode === 'direct') state.selected = {};
+      state.selected[id] = { id: id, name: name };
+    }
+    renderChips();
+    renderUsersSelection();
+    if (state.composeMode === 'direct' && state.selected[id]) { createConversation(); }
+  }
+  function renderUsersSelection() {
+    Array.prototype.forEach.call(els.userResults.querySelectorAll('.bg-msg-user-item'), function (it) {
+      var on = !!state.selected[Number(it.dataset.id)];
+      it.classList.toggle('selected', on);
+    });
+  }
+  function renderChips() {
+    var ids = Object.keys(state.selected);
+    var html = '';
+    ids.forEach(function (id) {
+      html += '<span class="bg-msg-chip">' + esc(state.selected[id].name) +
+        '<button type="button" data-id="' + id + '" aria-label="Remove">&times;</button></span>';
+    });
+    els.chips.innerHTML = html;
+    Array.prototype.forEach.call(els.chips.querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () {
+        delete state.selected[b.dataset.id];
+        renderChips(); renderUsersSelection(); updateCreateBtn();
+      });
+    });
+    updateCreateBtn();
+  }
+  function updateCreateBtn() {
+    var n = Object.keys(state.selected).length;
+    els.create.disabled = n < 1;
+    els.create.textContent = state.composeMode === 'group'
+      ? (n > 1 ? 'Create group (' + n + ')' : 'Create group')
+      : 'Start conversation';
+  }
+  function createConversation() {
+    var ids = Object.keys(state.selected).map(Number);
+    if (!ids.length) return;
+    els.create.disabled = true;
+    api('/api/web/messages/conversations', {
+      method: 'POST',
+      body: { memberIds: ids, title: els.groupTitle.value.trim() }
+    }).then(function (j) {
+      if (!j || !j.ok) { alert((j && j.message) || 'Could not start conversation.'); els.create.disabled = false; return; }
+      closeCompose();
+      loadConversations();
+      selectConversation(j.conversation.id, j.conversation.title);
+    });
+  }
+
+  /* ---------- typing indicator (outgoing) ---------- */
+  function pingTyping() {
+    if (!state.convId) return;
+    var now = Date.now();
+    if (now - state.lastTypingSent < 2200) return;
+    state.lastTypingSent = now;
+    api('/api/web/messages/conversations/' + state.convId + '/typing', { method: 'POST', body: {} });
+  }
+
+  /* ---------- send ---------- */
+  function sendMessage() {
+    var convId = state.convId;
+    var body = els.input.value.trim();
+    if (!convId || !body) return;
+    els.input.value = '';
+    api('/api/web/messages/conversations/' + convId + '/messages', { method: 'POST', body: { body: body } })
+      .then(function (j) {
+        if (!j || !j.ok) { alert((j && j.message) || 'Could not send.'); return; }
+        state.msgSig = '';
+        loadMessages(true);
+      });
+  }
+
+  /* ---------- attachment upload (starts instantly on select) ---------- */
+  function uploadFile(file) {
+    var convId = state.convId;
+    if (!convId || !file) return;
+    els.uploadingText.textContent = 'Uploading ' + file.name + '…';
+    els.uploading.hidden = false;
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/web/messages/conversations/' + convId + '/messages/upload', {
+      method: 'POST', credentials: 'same-origin', body: fd
+    }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+      .then(function (j) {
+        els.uploading.hidden = true;
+        if (!j || !j.ok) { alert((j && j.message) || 'Upload failed.'); return; }
+        state.msgSig = '';
+        loadMessages(true);
+      }).catch(function () {
+        els.uploading.hidden = true;
+        alert('Upload failed. Please try again.');
+      });
+  }
+
+  /* ---------- events ---------- */
+  els.fab.addEventListener('click', function () { state.open ? closeModal() : openModal(); });
+  els.close.addEventListener('click', closeModal);
+  els.closeSide.addEventListener('click', closeModal);
+  els.overlay.addEventListener('click', function (e) { if (e.target === els.overlay) closeModal(); });
+  els.back.addEventListener('click', backToList);
+  els.composeBack.addEventListener('click', closeCompose);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !state.open) return;
+    if (!els.composeView.hidden) closeCompose();
+    else closeModal();
+  });
+
+  els.newChat.addEventListener('click', function () { openCompose('direct'); });
+  els.newGroup.addEventListener('click', function () { openCompose('group'); });
+  els.create.addEventListener('click', createConversation);
+
+  var convSearchT, userSearchT;
+  els.convSearch.addEventListener('input', function () { clearTimeout(convSearchT); convSearchT = setTimeout(loadConversations, 250); });
+  els.userSearch.addEventListener('input', function () { clearTimeout(userSearchT); userSearchT = setTimeout(searchUsers, 250); });
+
+  els.composer.addEventListener('submit', function (e) { e.preventDefault(); sendMessage(); });
+  els.input.addEventListener('input', pingTyping);
+
+  els.attach.addEventListener('click', function () { els.file.click(); });
+  els.file.addEventListener('change', function () {
+    var f = els.file.files && els.file.files[0];
+    if (f) uploadFile(f);
+    els.file.value = '';
+  });
+
+  // Kick off badge polling for logged-in users
+  refreshBadge();
+  timers.badge = setInterval(refreshBadge, 12000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshBadge(); });
+})();
+</script>
+<% } %>
+
+<% if(typeof flashMessage !== "undefined" && flashMessage) { %>
     <script>
         showMessage("<%= flashMessage %>")
     </script>

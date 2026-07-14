@@ -3,62 +3,79 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Staff Admin — Boise Gems</title>
+  <title>Staff Admin - Boise Gems</title>
   <%- include("includes/head") %>
+  <% if (canReorderStaff) { %>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <% } %>
 </head>
-<body>
+<body class="staff-admin-page">
 <header><%- include("includes/header") %></header>
 
-<main>
-<div style="margin:12px">
-  <h1>Staff Admin</h1>
-  <p><a href="/staff/new"><button>Add Staff Member</button></a></p>
+<main class="staff-admin-main">
+  <div class="staff-admin-head">
+    <div>
+      <h1>Staff Admin</h1>
+      <p class="staff-admin-lead">Manage public staff profiles. Each person can hold multiple categories with their own position title.</p>
+    </div>
+    <a href="/staff/new"><button type="button">+ Add Staff Member</button></a>
+  </div>
 
   <% if (Object.keys(grouped).length === 0) { %>
-    <p>No staff yet.</p>
+    <div class="form-panel"><p>No staff yet. Add someone to get started.</p></div>
   <% } else { %>
-    <form action="/staff/reorder" method="POST">
-      <% Object.keys(grouped).forEach(cat => { %>
-        <section style="margin:16px 0; border:1px solid #eee; border-radius:10px; padding:12px;">
-          <h3 style="margin:0 0 8px;"><%= cat %></h3>
-
-          <div class="duple-to-single">
-            <% grouped[cat].forEach(s => { %>
-              <div class="card" style="padding:12px;">
-                <div style="display:flex; gap:10px; align-items:center;">
-                  <img src="<%= s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png' %>"
-                       alt=""
-                       style="width:56px; height:56px; object-fit:cover; border-radius:8px;">
-                  <div style="flex:1">
-                    <div><b><%= s.first %> <%= s.last %></b></div>
-                    <div class="muted"><%= s.position %></div>
-                    <small class="muted">Order:
-                      <input name="order[<%= s.id %>]" type="number" value="<%= s.sort_order %>" style="width:72px;"/>
-                    </small>
-                  </div>
-                  <div style="display:flex; gap:8px;">
-                    <a href="/staff/<%= s.id %>/edit"><button type="button">Edit</button></a>
-                    <button
-                        type="submit"
-                        formmethod="post"
-                        formaction="/staff/<%= s.id %>/delete"
-                        onclick="return confirm('Delete this staff member?')">
-                        Delete
-                    </button>
-                    </div>
-
-                </div>
-              </div>
-            <% }) %>
+    <% Object.keys(grouped).forEach(function(catName) {
+      var block = grouped[catName];
+      var cat = block.category;
+    %>
+    <section class="staff-admin-category form-panel">
+      <h2 class="staff-admin-category-title"><%= cat.section_title %></h2>
+      <p class="staff-admin-category-meta"><%= catName %><% if (cat.pages && cat.pages.length) { %> · <%= cat.pages.join(', ') %><% } %></p>
+      <div class="staff-admin-rows" data-category-id="<%= cat.id %>">
+        <% block.rows.forEach(function(row) { %>
+        <div class="staff-admin-row card" data-placement-id="<%= row.placement_id %>">
+          <img src="<%= row.image ? ('/img/publicupload/' + row.image) : '/img/ui/gem.png' %>" alt="" class="staff-admin-row-photo">
+          <div class="staff-admin-row-body">
+            <div class="staff-admin-row-name"><%= row.first %> <%= row.last %></div>
+            <div class="staff-admin-row-role"><%= row.position_title %></div>
           </div>
-        </section>
-      <% }) %>
-
-      <div><button type="submit">Save Order</button></div>
-    </form>
+          <div class="staff-admin-row-actions">
+            <a href="/staff/<%= row.id %>/edit"><button type="button">Edit</button></a>
+            <form method="POST" action="/staff/<%= row.id %>/delete" onsubmit="return confirm('Delete <%= row.first %> <%= row.last %> entirely?');">
+              <button type="submit" class="staff-admin-delete-btn">Delete</button>
+            </form>
+          </div>
+        </div>
+        <% }); %>
+      </div>
+    </section>
+    <% }); %>
   <% } %>
-</div>
 </main>
 <footer><%- include("includes/footer") %></footer>
+<% if (canReorderStaff) { %>
+<script>
+(function () {
+  document.querySelectorAll('.staff-admin-rows[data-category-id]').forEach(function (list) {
+    new Sortable(list, {
+      animation: 150,
+      draggable: '.staff-admin-row',
+      onEnd: function () {
+        var categoryId = Number(list.dataset.categoryId);
+        var placementIds = Array.from(list.querySelectorAll('[data-placement-id]')).map(function (el) {
+          return Number(el.dataset.placementId);
+        });
+        fetch('/staff/reorder-placements', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ categoryId: categoryId, placementIds: placementIds })
+        });
+      }
+    });
+  });
+})();
+</script>
+<% } %>
 </body>
 </html>

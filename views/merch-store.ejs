@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boise Gems Shop</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+</head>
+<body class="merch-page">
+<header><%- include("includes/header") %></header>
+<%- include("includes/merch-floating-cart", { cartCount }) %>
+
+<main class="merch-page-main">
+  <%- include("includes/merch-shop-hero") %>
+
+  <div class="shop-layout">
+    <aside class="shop-sidebar" aria-label="Categories">
+      <nav class="shop-cat-nav" id="shopCatNav">
+        <button type="button" class="shop-cat-btn is-active" data-category="all">All</button>
+        <% categories.forEach(function(cat) { %>
+        <button type="button" class="shop-cat-btn" data-category="<%= cat.id %>"><%= cat.name %></button>
+        <% }) %>
+      </nav>
+    </aside>
+
+    <div class="shop-main">
+      <label class="shop-cat-mobile-label" for="shopCatSelect">Category</label>
+      <select class="shop-cat-select" id="shopCatSelect" aria-label="Filter by category">
+        <option value="all" selected>All</option>
+        <% categories.forEach(function(cat) { %>
+        <option value="<%= cat.id %>"><%= cat.name %></option>
+        <% }) %>
+      </select>
+
+      <% if (!products.length) { %>
+      <div class="shop-empty">
+        <ion-icon name="shirt-outline"></ion-icon>
+        <p>No products available yet. Check back soon!</p>
+      </div>
+      <% } else { %>
+      <div class="shop-grid" id="shopGrid">
+        <% products.forEach(function(p) { %>
+        <a href="/store/product/<%= p.slug %>" class="shop-card" data-category="<%= p.category_id || 0 %>">
+          <div class="shop-card__img">
+            <img src="<%= p.default_image ? '/img/merch/' + p.default_image : '/img/ui/gem.png' %>" alt="<%= p.name %>" loading="lazy">
+          </div>
+          <p class="shop-card__name"><%= p.name %></p>
+          <p class="shop-card__price">$<%= (p.price_cents / 100).toFixed(2) %></p>
+        </a>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script src="/js/merch-store.js"></script>
+</body>
+</html>

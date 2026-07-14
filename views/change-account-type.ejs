@@ -21,7 +21,8 @@
                     </div>
                 <% }) %>
             <% } %>
-            <form action="/change-account-type/<%= thisUser.id %>" method="POST">
+            <div class="form-panel">
+<form action="/change-account-type/<%= thisUser.id %>" method="POST">
                 <label for="type">Enter new type for <%= thisUser.firstname %></label>
                 <select name="type" value="" required>
                     <option value="member" <% if((!thisUser.admin)&&(!thisUser.parent)) { %> selected="selected" <% } %>>Member</option>
@@ -35,6 +36,7 @@
                     <button>Change</button>
                 </div>
             </form>
+</div>
         </div>
         
     </main>

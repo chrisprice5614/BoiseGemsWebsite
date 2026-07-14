@@ -10,6 +10,7 @@
   <title>Boise Gems | Parent Registration</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" type="image/x-icon" href="/img/ui/favicon.ico" />
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; min-height: 100dvh; }
@@ -151,7 +152,7 @@
 
     <img class="reg-logo" src="/img/ui/gem.png" alt="Boise Gems" />
     <h1 class="reg-title">Parent Registration</h1>
-    <p class="reg-subtitle">Boise Gems — Parent / Guardian</p>
+    <p class="reg-subtitle">Boise Gems - Parent / Guardian</p>
 
     <% if (errors && errors.length) { %>
       <% errors.forEach(function(err) { %>
@@ -201,6 +202,10 @@
         <input type="password" name="passwordRetype" autocomplete="new-password" required />
       </div>
 
+      <div class="field-group">
+        <div class="g-recaptcha" data-sitekey="<%= RECAPTCHA_SITE_KEY %>"></div>
+      </div>
+
       <button class="submit-btn" type="submit">Register</button>
     </form>
 
@@ -212,7 +217,7 @@
 </div>
 
 <script>
-  // Phone formatting — strips US country code (+1) that autofill may prepend
+  // Phone formatting - strips US country code (+1) that autofill may prepend
   function normalizePhone(raw) {
     let d = raw.replace(/\D/g, '');
     if (d.length === 11 && d[0] === '1') d = d.slice(1);

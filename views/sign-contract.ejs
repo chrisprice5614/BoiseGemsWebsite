@@ -2,8 +2,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems</title>
+    <title>Sign Contract | Boise Gems</title>
     <%- include("includes/head") %>
+    <% if (typeof hasOnlineFields !== "undefined" && hasOnlineFields) { %>
+    <link rel="stylesheet" href="/css/form-wizard.css">
+    <% } %>
 </head>
 <body>
     <header>
@@ -11,8 +14,67 @@
     </header>
     <main>
         <br>
-                <div style="padding: 12;">
-            <form action="/sign-contract/<%= contractExtension.id %>" method="POST" enctype="multipart/form-data">
+        <% if (typeof hasOnlineFields !== "undefined" && hasOnlineFields && contractPdfPath) { %>
+        <div class="form-fill"
+             id="formFillRoot"
+             data-pdf="<%= contractPdfPath %>"
+             data-fields='<%- JSON.stringify(typeof contractFields !== "undefined" ? contractFields : []).replace(/'/g, "&#39;") %>'
+             data-prefill='<%- JSON.stringify(typeof existingFieldValues !== "undefined" ? existingFieldValues : {}).replace(/'/g, "&#39;") %>'>
+
+          <div class="form-fill__intro" style="padding: 0 12px;">
+            <h1 style="text-align:center;">Sign <%= group %> Contract</h1>
+            <p style="text-align:center;color:#6b5585;">
+              Fill what you can now. Prior signatures stay locked so parent and child can both sign.
+              Use <strong>Save progress</strong> to keep work without paying, or finish and continue to payment when ready.
+              Blank boxes are allowed.
+            </p>
+          </div>
+
+          <div class="fw-pdf-shell">
+            <div class="fw-pdf-pages" id="formFillPages"></div>
+          </div>
+
+          <div class="ff-panel">
+            <form id="formFillForm" action="/sign-contract/<%= contractExtension.id %>" method="POST" enctype="multipart/form-data">
+              <input type="hidden" name="field_values" id="fieldValues" value="{}">
+              <input type="hidden" name="save_progress" id="saveProgress" value="0">
+
+              <h2 style="margin-top:0;text-align:center;">Finish signing</h2>
+
+              <div style="align-items: center; display: flex; gap: 8px; margin-bottom: 16px;">
+                <label for="read">I have read and agree to the contract.</label>
+                <input type="checkbox" id="read" name="read" required/>
+              </div>
+
+              <label for="signature">Electronic Signature</label>
+              <input type="text" id="signature" name="signature" value="" required placeholder="Type your full name as your signature"/>
+              <br><br>
+
+              <label for="date">Today's Date</label>
+              <input type="date" id="date" name="date" required/>
+              <br><br>
+
+              <div style="align-items: center; display: flex; gap: 8px;">
+                <label for="pay_with_cash">Pay down payment with cash/check (no online payment)</label>
+                <input type="checkbox" id="pay_with_cash" name="pay_with_cash" />
+              </div>
+              <div style="color:#555; font-size:0.9em; margin-top:6px;">
+                If selected, your contract will be signed now and you can pay the down payment in cash/check later. You won't be sent to Stripe.
+              </div>
+              <br><br>
+
+              <div style="text-align: center; display:flex; flex-wrap:wrap; gap:12px; justify-content:center;">
+                <button type="submit" id="saveProgressBtn">Save progress</button>
+                <button type="submit" id="signSubmitBtn">Sign &amp; Continue to Payment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <script type="module" src="/js/form-wizard.js"></script>
+        <% } else { %>
+        <div style="padding: 12;">
+            <div class="form-panel">
+<form action="/sign-contract/<%= contractExtension.id %>" method="POST" enctype="multipart/form-data">
 
                 <div style="align-items: center; display: flex; gap: 8px;">
                     <label for="read">I have read and agree to the contract.</label>
@@ -57,7 +119,9 @@
                     <button id="signSubmitBtn">Sign &amp; Continue to Payment</button>
                 </div>
             </form>
+</div>
         </div>
+        <% } %>
 
     </main>
     <footer>
@@ -70,12 +134,37 @@
     (function(){
         const cashCb = document.getElementById('pay_with_cash');
         const btn = document.getElementById('signSubmitBtn');
+        const dateEl = document.getElementById('date');
+        const saveBtn = document.getElementById('saveProgressBtn');
+        const saveFlag = document.getElementById('saveProgress');
+        const readCb = document.getElementById('read');
+        if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
         if (cashCb && btn) {
             const updateText = () => {
                 btn.textContent = cashCb.checked ? 'Sign Contract (Pay Cash/Check Later)' : 'Sign & Continue to Payment';
             };
             cashCb.addEventListener('change', updateText);
             updateText();
+        }
+        if (saveBtn && saveFlag) {
+            saveBtn.addEventListener('click', function () {
+                saveFlag.value = '1';
+                if (readCb) readCb.required = false;
+                const sig = document.getElementById('signature');
+                const dateInp = document.getElementById('date');
+                if (sig) sig.required = false;
+                if (dateInp) dateInp.required = false;
+            });
+        }
+        if (btn && saveFlag) {
+            btn.addEventListener('click', function () {
+                saveFlag.value = '0';
+                if (readCb) readCb.required = true;
+                const sig = document.getElementById('signature');
+                const dateInp = document.getElementById('date');
+                if (sig) sig.required = true;
+                if (dateInp) dateInp.required = true;
+            });
         }
     })();
 </script>

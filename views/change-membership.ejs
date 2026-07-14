@@ -21,7 +21,8 @@
                     </div>
                 <% }) %>
             <% } %>
-            <form action="/change-membership/<%= thisUser.id %>" method="POST">
+            <div class="form-panel">
+<form action="/change-membership/<%= thisUser.id %>" method="POST">
                 <label for="typeCorps">Enter new CORPS membership for <%= thisUser.firstname %></label>
                 <select name="typeCorps" value="" required>
                     <option value="auditionee">Auditionee</option>
@@ -47,6 +48,7 @@
                     <button>Change</button>
                 </div>
             </form>
+</div>
         </div>
         
     </main>

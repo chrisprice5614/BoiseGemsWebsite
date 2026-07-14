@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Edit <%= label %> Contract - Boise Gems</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/form-wizard.css">
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main class="form-wizard">
+  <div style="margin:12px;">
+    <p style="margin:0 0 8px;"><a href="/contracts-admin">← Back to contracts</a></p>
+    <h1>Edit <%= label %> Contract</h1>
+    <p>
+      Upload a new PDF version if needed, then place Text, Signature, Date, or Initials boxes
+      where members should fill in. Leave boxes empty to keep the print-and-upload flow.
+    </p>
+
+    <form id="contractEditForm" action="/contracts-admin/edit/<%= ensemble %>" method="POST" enctype="multipart/form-data" class="form-panel">
+      <input type="hidden" name="fields_json" id="fieldsJson" value="[]">
+
+      <% if (contract && contract.pdf_path) { %>
+        <p><strong>Current PDF:</strong>
+          <a href="<%= contract.pdf_path %>" target="_blank" rel="noopener">Open current PDF</a>
+        </p>
+      <% } else { %>
+        <p><i>No PDF uploaded yet for this ensemble.</i></p>
+      <% } %>
+
+      <label for="contractPdf"><strong>Upload / replace PDF</strong></label>
+      <input type="file" id="contractPdf" name="contract_pdf" accept="application/pdf">
+      <p style="color:#6b5585;font-size:0.95rem;">
+        If you upload a new PDF, place the fill-in boxes again on the new pages below.
+      </p>
+
+      <div class="fw-pdf-shell" style="margin-top:16px;">
+        <div class="fw-pdf-layout">
+          <div class="fw-pdf-pages" id="contractPdfPages">
+            <p style="text-align:center;padding:24px;color:#6b5585;margin:0;">
+              <%= contract && contract.pdf_path ? "Loading…" : "Upload a PDF to place fill-in boxes." %>
+            </p>
+          </div>
+          <aside class="fw-tools fw-tools--float" id="contractTools">
+            <p class="fw-tools__hint">Choose a field type</p>
+            <button type="button" data-field-type="text">Text</button>
+            <button type="button" data-field-type="signature">Signature</button>
+            <button type="button" data-field-type="date">Date</button>
+            <button type="button" data-field-type="initials">Initials</button>
+            <button type="submit" class="fw-tools__save">Save <%= label %> contract</button>
+          </aside>
+        </div>
+      </div>
+      <div class="fw-field-list" id="contractFieldList"></div>
+
+      <div style="text-align:center;margin:24px 0 8px;">
+        <button type="submit">Save <%= label %> contract</button>
+      </div>
+    </form>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script>
+  window.__CONTRACT_EDIT_BOOT__ = {
+    pdfUrl: <%- JSON.stringify(contract && contract.pdf_path || "") %>,
+    fields: <%- (contract && contract.fields_json) || "[]" %>
+  };
+</script>
+<script type="module" src="/js/form-wizard.js"></script>
+<script type="module">
+  const boot = window.__CONTRACT_EDIT_BOOT__ || { pdfUrl: "", fields: [] };
+  function start() {
+    if (!window.FormWizardPlacer) {
+      setTimeout(start, 40);
+      return;
+    }
+    const placer = window.FormWizardPlacer.createPlacer({
+      fileInput: document.getElementById("contractPdf"),
+      pagesEl: document.getElementById("contractPdfPages"),
+      toolsEl: document.getElementById("contractTools"),
+      listEl: document.getElementById("contractFieldList"),
+      fieldsInput: document.getElementById("fieldsJson"),
+      initialFields: Array.isArray(boot.fields) ? boot.fields : [],
+    });
+    if (boot.pdfUrl) placer.renderPdfFromUrl(boot.pdfUrl);
+    document.getElementById("contractEditForm").addEventListener("submit", function () {
+      document.getElementById("fieldsJson").value = JSON.stringify(placer.getFields());
+    });
+  }
+  start();
+</script>
+</body>
+</html>

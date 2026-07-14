@@ -66,7 +66,7 @@
     <% } %>
 
     <!-- ── Check-Out Section ─────────────────────────────────────────── -->
-    <div class="checkout-card" style="max-width:600px; margin:0 auto 24px auto;">
+    <div class="form-panel form-panel--narrow" style="margin:0 auto 24px auto;">
       <h2 style="margin-top:0;">Check Out an Instrument</h2>
 
       <form id="checkout-form" method="POST" action="/admin/instrument-checkout/add">
@@ -122,7 +122,7 @@
               <div>
                 <h3 style="text-transform:capitalize;">
                   <%= inst.instrument_type %>
-                  <% if (inst.model) { %><span style="font-weight:400;">— <%= inst.model %></span><% } %>
+                  <% if (inst.model) { %><span style="font-weight:400;"> - <%= inst.model %></span><% } %>
                 </h3>
                 <p style="margin:2px 0;">
                   <b>Member:</b>
@@ -185,7 +185,7 @@
           users.forEach(u => {
             const item = document.createElement('div');
             item.className = 'user-result-item';
-            item.textContent = `${u.firstname} ${u.lastname}${u.section ? ' — ' + u.section : ''}`;
+            item.textContent = `${u.firstname} ${u.lastname}${u.section ? ' - ' + u.section : ''}`;
             item.addEventListener('click', () => {
               hiddenUserId.value = u.id;
               searchInput.value = `${u.firstname} ${u.lastname}`;

@@ -23,7 +23,8 @@
       <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border: 1px solid #ff9c9c;"><%= flashMessage %></p>
     <% } %>
 
-    <form action="/support/issue" method="post" enctype="multipart/form-data">
+    <div class="form-panel">
+<form action="/support/issue" method="post" enctype="multipart/form-data">
       <div style="margin-bottom: 12px;">
         <label>
           Subject:<br>
@@ -55,6 +56,7 @@
 
       <button type="submit">Submit Issue</button>
     </form>
+</div>
   </div>
 </main>
 

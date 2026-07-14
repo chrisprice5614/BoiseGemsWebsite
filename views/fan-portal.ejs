@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fan Portal – Boise Gems</title>
+    <title>Fan Portal - Boise Gems</title>
     <%- include("includes/head") %>
 </head>
 <body>
@@ -54,7 +54,7 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                                     <div>
                                         <strong style="text-transform: capitalize;"><%= sub.tier %></strong>
-                                        <span style="color: #666; font-size: 0.85rem;"> – $<%= (sub.amount_cents / 100).toFixed(2) %>/mo</span>
+                                        <span style="color: #666; font-size: 0.85rem;"> - $<%= (sub.amount_cents / 100).toFixed(2) %>/mo</span>
                                         <% if (sub.status === 'active') { %>
                                             <span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 6px;">Active</span>
                                         <% } else { %>
@@ -80,7 +80,7 @@
                         <% donationHistory.forEach(d => { %>
                             <div style="background: var(--light-quarter); border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px;">
                                 <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
-                                    <span style="font-weight: 600; text-transform: capitalize;"><%= d.donation_type || 'Donation' %><% if (d.tier) { %> – <%= d.tier %><% } %></span>
+                                    <span style="font-weight: 600; text-transform: capitalize;"><%= d.donation_type || 'Donation' %><% if (d.tier) { %> - <%= d.tier %><% } %></span>
                                     <span style="color: #666; font-size: 0.85rem;">$<%= (d.amount / 100).toFixed(2) %></span>
                                 </div>
                                 <p style="font-size: 0.8rem; color: #888; margin-top: 4px;"><%= new Date(d.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) %></p>
@@ -89,6 +89,10 @@
                     </div>
                 </div>
                 <% } %>
+
+                <div class="portal-section">
+                    <%- include("includes/merch-downloads", { digitalGrants }) %>
+                </div>
 
             </div>
         </div>

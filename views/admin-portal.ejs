@@ -1,119 +1,719 @@
 ﻿<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Portal – Boise Gems</title>
-    <%- include("includes/head") %>
-    <!-- styles moved to styles.css -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Portal - Boise Gems</title>
+  <%- include("includes/head") %>
 </head>
-<body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-        <div style="padding: 24px 20px;">
-            <div class="admin-top">
-                <div>
-                    <h1>Admin Portal</h1>
-                    <p style="margin-top: 4px; color: #666;">Welcome back, <b><%= user.firstname %> <%= user.lastname %></b></p>
-                </div>
-                <div>
-                    <%- include("includes/shirt-size-section") %>
-                </div>
-            </div>
+<%
+  const srcImage = member.img ? member.img : "/img/ui/gem.png";
+  const fmtUSD = (cents) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((cents || 0) / 100);
+%>
+<body class="pd-body">
+<header><%- include("includes/header") %></header>
 
-            <div class="admin-info-card" style="margin-top: 20px;">
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 24px;">
-                    <p><b>Email:</b> <%= member.email %></p>
-                    <p><b>Phone:</b> <%= member.phone %></p>
-                    <p><b>Address:</b> <%= member.address %></p>
-                    <p><b>Birthday:</b> <%= new Date(member.birthday).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).replace(/(\d{1,2})(,)/, "$1th$2") %></p>
-                    <p><b>Email verified:</b> ✅</p>
-                </div>
-            </div>
+<div class="pd-layout">
 
-            <div class="portal-grid">
-
-                <div class="portal-section">
-                    <h3>👥 Members</h3>
-                    <div class="portal-btn-list">
-                        <a href="/edit-users"><button class="portal-btn">Edit Users</button></a>
-                        <a href="/pay-history"><button class="portal-btn">Payment History</button></a>
-                        <a href="/set-tuition"><button class="portal-btn">Set Tuition Fees</button></a>
-                        <a href="/email-members"><button class="portal-btn">Bulk Email</button></a>
-                        <a href="/admin/export-member-info"><button class="portal-btn">Export Member Info</button></a>
-                        <a href="/admin/export-allergies.csv"><button class="portal-btn">Export Allergy Info</button></a>
-                        <a href="/admin/member-view"><button class="portal-btn" style="background:#e8f0fe;border-color:#4285f4;color:#1a73e8;">Member View</button></a>
-                    </div>
-                </div>
-
-                <div class="portal-section">
-                    <h3>📋 Contracts</h3>
-                    <div class="portal-btn-list">
-                        <a href="/staff/members"><button class="portal-btn" style="background:#e6f4ea;border-color:#34a853;color:#1e6e2e;font-weight:700;">Extend Contract</button></a>
-                        <a href="/contracts-admin"><button class="portal-btn">Contracts</button></a>
-                        <a href="/admin/pending-contracts"><button class="portal-btn">Pending Contracts</button></a>
-                        <a href="/admin/contract-extensions"><button class="portal-btn">Contract Extensions</button></a>
-                        <a href="/admin/contracted-members"><button class="portal-btn">Contracted Members</button></a>
-                        <a href="/admin/expired-contracts"><button class="portal-btn">Expired Contracts</button></a>
-                        <a href="/admin/callbacks"><button class="portal-btn">Extend Callback</button></a>
-                        <a href="/contracts-admin/export-contracts.csv"><button class="portal-btn">Export Contracts CSV</button></a>
-                        <a href="/contracts-admin/export-emergency.csv"><button class="portal-btn">Export Emergency CSV</button></a>
-                    </div>
-                </div>
-
-                <div class="portal-section">
-                    <h3>📰 Content</h3>
-                    <div class="portal-btn-list">
-                        <a href="/news-admin"><button class="portal-btn">News</button></a>
-                        <a href="/staff-admin"><button class="portal-btn">Staff</button></a>
-                        <a href="/events-admin"><button class="portal-btn">Events</button></a>
-                        <a href="/set-materials"><button class="portal-btn">Update Audition Materials</button></a>
-                        <a href="/view-materials"><button class="portal-btn">View Audition Materials</button></a>
-                    </div>
-                </div>
-
-                <div class="portal-section">
-                    <h3>📁 Forms &amp; Files</h3>
-                    <div class="portal-btn-list">
-                        <a href="/edit-forms"><button class="portal-btn">Edit Forms</button></a>
-                        <a href="/admin-rsvps"><button class="portal-btn">RSVPs &amp; Forms</button></a>
-                        <a href="/admin-forms"><button class="portal-btn">Forms Completion</button></a>
-                        <a href="/files"><button class="portal-btn">Music &amp; Files</button></a>
-                    </div>
-                </div>
-
-                <div class="portal-section">
-                    <h3>🤝 Community</h3>
-                    <div class="portal-btn-list">
-                        <a href="/admin/volunteer-needs"><button class="portal-btn">Volunteer Needs</button></a>
-                        <a href="/admin/donors"><button class="portal-btn">Donor List</button></a>
-                        <a href="/admin/subscriptions"><button class="portal-btn">Donors &amp; Subscriptions</button></a>
-                    </div>
-                </div>
-
-                <div class="portal-section">
-                    <h3>🎺 Instruments</h3>
-                    <div class="portal-btn-list">
-                        <a href="/admin/instrument-checkout"><button class="portal-btn">Instrument Checkout</button></a>
-                    </div>
-                </div>
-
-                <div class="portal-section">
-                    <h3>⚙️ System</h3>
-                    <div class="portal-btn-list">
-                        <a href="/support/issue"><button class="portal-btn">Submit Website Issue</button></a>
-                        <% if (user && user.email && (user.email.toLowerCase() === "austinmoldenhauer@gmail.com" || user.email.toLowerCase() === "chris@chrispricemusic.net")) { %>
-                            <a href="/admin/chris-payment"><button class="portal-btn" style="background:#fff3cd;border-color:#ffc107;color:#5a4000;">Chris Payment</button></a>
-                        <% } %>
-                    </div>
-                </div>
-
-            </div>
+  <!-- ── SIDEBAR ─────────────────────────────────────────── -->
+  <aside class="pd-sidebar" id="pdSidebar">
+    <div class="pd-sidebar-profile">
+      <a href="/update-profile-photo" style="border:none;background:none;padding:0;display:block;">
+        <div class="pd-sidebar-avatar">
+          <img src="<%= srcImage %>" alt="Profile photo">
         </div>
-    </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+      </a>
+      <div class="pd-sidebar-name"><%= member.firstname %> <%= member.lastname %></div>
+      <div class="pd-sidebar-role">Administrator</div>
+    </div>
+    <nav class="pd-nav">
+      <button class="pd-nav-item pd-active" data-label="Overview" onclick="pdShow(this,'overview')">
+        <ion-icon name="home"></ion-icon> Overview
+      </button>
+      <button class="pd-nav-item" data-label="Members" onclick="pdShow(this,'members')">
+        <ion-icon name="people"></ion-icon> Members
+      </button>
+      <button class="pd-nav-item" data-label="Contracts" onclick="pdShow(this,'contracts')">
+        <ion-icon name="document-text"></ion-icon> Contracts
+      </button>
+      <button class="pd-nav-item" data-label="Content" onclick="pdShow(this,'content')">
+        <ion-icon name="newspaper"></ion-icon> Content
+      </button>
+      <button class="pd-nav-item" data-label="Store" onclick="pdShow(this,'store')">
+        <ion-icon name="shirt"></ion-icon> Store
+      </button>
+      <button class="pd-nav-item" data-label="Schedule" onclick="pdShow(this,'schedule')">
+        <ion-icon name="calendar"></ion-icon> Schedule
+      </button>
+      <button class="pd-nav-item" data-label="Forms & Files" onclick="pdShow(this,'forms')">
+        <ion-icon name="folder-open"></ion-icon> Forms &amp; Files
+      </button>
+      <button class="pd-nav-item" data-label="Community" onclick="pdShow(this,'community')">
+        <ion-icon name="heart"></ion-icon> Community
+      </button>
+      <button class="pd-nav-item" data-label="Instruments" onclick="pdShow(this,'instruments')">
+        <ion-icon name="musical-notes"></ion-icon> Instruments
+      </button>
+      <button class="pd-nav-item" data-label="System" onclick="pdShow(this,'system')">
+        <ion-icon name="settings"></ion-icon> System
+      </button>
+      <hr class="pd-nav-divider">
+      <button class="pd-nav-item" data-label="My Info" onclick="pdShow(this,'myinfo')">
+        <ion-icon name="person"></ion-icon> My Info
+      </button>
+      <button type="button" class="pd-nav-item" style="color:rgba(255,255,255,0.72);font-style:italic;" onclick="window.location.href='/admin/member-view'">
+        <ion-icon name="eye"></ion-icon> Member View
+      </button>
+    </nav>
+  </aside>
+  <div class="pd-sidebar-overlay" id="pdOverlay" onclick="pdCloseSidebar()"></div>
+
+  <!-- ── MAIN ───────────────────────────────────────────── -->
+  <main class="pd-main">
+
+    <!-- Mobile sticky nav bar -->
+    <div class="pd-mobile-bar" id="pdMobileBar">
+      <button class="pd-mobile-bar-btn" id="pdMobileNavBtn" onclick="pdMobileBarAction()">
+        <ion-icon name="chevron-forward-circle"></ion-icon> Navigation
+      </button>
+      <span class="pd-mobile-bar-title" id="pdMobileTitle">Overview</span>
+    </div>
+
+    <% if (locals.flashMessage) { %>
+    <div class="pd-flash-msg"><%= flashMessage %></div>
+    <% } %>
+
+    <!-- ══ OVERVIEW ════════════════════════════════════════ -->
+    <div class="pd-section pd-active" id="pd-sec-overview">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Overview</div>
+        <div class="pd-section-sub">Welcome back, <%= member.firstname %>.</div>
+
+        <% if (typeof stats !== "undefined" && stats) { %>
+        <div class="pd-sub-heading">At a Glance</div>
+        <div class="pd-stats-grid">
+          <div class="pd-stat-card">
+            <div class="pd-stat-label">Total Members</div>
+            <div class="pd-stat-value"><%= stats.totalMembers %></div>
+          </div>
+          <div class="pd-stat-card pd-stat-card--accent">
+            <div class="pd-stat-label">Contracted</div>
+            <div class="pd-stat-value"><%= stats.totalContracted %></div>
+            <div class="pd-stat-detail">Corps <%= stats.contractedCorps %> · BGI <%= stats.contractedIndependent %> · Affiliate <%= stats.contractedAffiliate %></div>
+          </div>
+          <div class="pd-stat-card pd-stat-card--warn">
+            <div class="pd-stat-label">Total Balance Due</div>
+            <div class="pd-stat-value"><%= fmtUSD(stats.totalOwedCents) %></div>
+            <div class="pd-stat-detail"><%= stats.membersWithBalanceDue %> member<%= stats.membersWithBalanceDue === 1 ? "" : "s" %> with a balance</div>
+          </div>
+          <div class="pd-stat-card">
+            <div class="pd-stat-label">Staff</div>
+            <div class="pd-stat-value"><%= stats.staffCount %></div>
+          </div>
+          <div class="pd-stat-card">
+            <div class="pd-stat-label">Parents</div>
+            <div class="pd-stat-value"><%= stats.parentCount %></div>
+          </div>
+          <div class="pd-stat-card">
+            <div class="pd-stat-label">Pending Contracts</div>
+            <div class="pd-stat-value"><%= stats.pendingContracts %></div>
+          </div>
+          <div class="pd-stat-card">
+            <div class="pd-stat-label">Instruments Out</div>
+            <div class="pd-stat-value"><%= stats.instrumentsCheckedOut %></div>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Quick actions -->
+        <div class="pd-sub-heading">Quick Actions</div>
+        <div class="pd-quick-actions">
+          <a href="/edit-users" class="pd-action-btn"><ion-icon name="people"></ion-icon> Edit Users</a>
+          <a href="/news-admin" class="pd-action-btn"><ion-icon name="newspaper"></ion-icon> News</a>
+          <a href="/events-admin" class="pd-action-btn"><ion-icon name="calendar"></ion-icon> Events</a>
+          <a href="/staff-admin" class="pd-action-btn"><ion-icon name="construct"></ion-icon> Staff</a>
+          <a href="/email-members" class="pd-action-btn"><ion-icon name="mail"></ion-icon> Bulk Email</a>
+          <a href="/admin/schedules" class="pd-action-btn"><ion-icon name="calendar"></ion-icon> Schedules</a>
+          <a href="/staff/members" class="pd-action-btn pd-action-btn--primary"><ion-icon name="document-text"></ion-icon> Extend Contract</a>
+        </div>
+
+        <!-- ── Today's schedule (if published) ── -->
+        <%- include("includes/schedule-today-overview") %>
+
+        <!-- ── Announcement Feed ── -->
+        <div class="ann-section-head">
+          <div class="pd-sub-heading" style="margin:0;">Announcements</div>
+          <button type="button" class="ann-new-btn" onclick="annToggleCompose()">
+            <ion-icon name="add-circle"></ion-icon> New
+          </button>
+        </div>
+
+        <!-- Compose form (admin only) -->
+        <div class="ann-compose" id="annCompose" hidden>
+          <div class="ann-compose-head">
+            <h3 class="ann-compose-title" id="annComposeTitle">Write Announcement</h3>
+            <p class="ann-compose-hint">Type your message below. Use the toolbar to add headings, bold, italic, or underline - what you see is what gets posted.</p>
+          </div>
+          <form id="annForm" method="POST" action="/admin/announcements" onsubmit="annSubmit(event)">
+
+            <div class="ann-editor-box">
+              <div class="ann-toolbar" role="toolbar" aria-label="Formatting">
+                <button type="button" class="ann-fmt-btn" title="Heading" onclick="annFmt('heading')"><span class="ann-fmt-h">H</span></button>
+                <button type="button" class="ann-fmt-btn" title="Bold" onclick="annFmt('bold')"><strong>B</strong></button>
+                <button type="button" class="ann-fmt-btn" title="Italic" onclick="annFmt('italic')"><em>I</em></button>
+                <button type="button" class="ann-fmt-btn" title="Underline" onclick="annFmt('underline')"><span class="ann-fmt-u">U</span></button>
+                <span class="ann-toolbar-sep" aria-hidden="true"></span>
+                <button type="button" class="ann-upload-btn" onclick="document.getElementById('annImgInput').click()">
+                  <ion-icon name="image"></ion-icon> Add Image
+                </button>
+              </div>
+              <div id="annEditor" class="ann-wysiwyg" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Write your announcement here…"></div>
+              <input type="file" id="annImgInput" accept="image/*" multiple hidden onchange="annImagesSelected(this)">
+              <div id="annImgList" class="ann-img-pending"></div>
+            </div>
+
+            <div class="ann-audience">
+              <span class="ann-aud-label">Who should see this? (Admin &amp; Staff always see announcements)</span>
+              <label><input type="checkbox" name="aud_parents"> Parents</label>
+              <label><input type="checkbox" name="aud_fans"> Fans</label>
+              <label><input type="checkbox" name="aud_corps"> Contracted Corps</label>
+              <label><input type="checkbox" name="aud_independent"> Contracted Independent</label>
+              <label><input type="checkbox" name="aud_uncontracted"> Uncontracted Members</label>
+            </div>
+            <input type="hidden" id="annImagesField" name="images" value="[]">
+            <input type="hidden" id="annHtmlField" name="body_html" value="">
+            <input type="hidden" id="annMdField" name="body_md" value="">
+            <div class="ann-compose-actions">
+              <button type="submit" id="annSubmitBtn"><ion-icon name="send"></ion-icon> Post Announcement</button>
+              <button type="button" class="ann-cancel-btn" onclick="annToggleCompose()">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Feed -->
+        <%- include("includes/ann-feed", { announcements, user, annAdminTools: true }) %>
+      </div>
+    </div>
+
+    <!-- ══ MEMBERS ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-members">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Members</div>
+        <div class="pd-section-sub">Manage member accounts, payments, and communications.</div>
+        <div class="pd-quick-actions">
+          <a href="/edit-users" class="pd-action-btn pd-action-btn--primary"><ion-icon name="people"></ion-icon> Edit Users</a>
+          <a href="/pay-history" class="pd-action-btn"><ion-icon name="receipt"></ion-icon> Payment History</a>
+          <a href="/set-tuition" class="pd-action-btn"><ion-icon name="cash"></ion-icon> Set Tuition Fees</a>
+          <a href="/email-members" class="pd-action-btn"><ion-icon name="mail"></ion-icon> Bulk Email</a>
+          <a href="/admin/export-member-info" class="pd-action-btn"><ion-icon name="download"></ion-icon> Export Member Info</a>
+          <a href="/admin/export-allergies.csv" class="pd-action-btn"><ion-icon name="medkit"></ion-icon> Export Allergy Info</a>
+          <a href="/admin/member-view" class="pd-action-btn"><ion-icon name="eye"></ion-icon> Member View</a>
+          <a href="/admin/season-roster" class="pd-action-btn"><ion-icon name="people-circle"></ion-icon> Season Roster</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ CONTRACTS ══════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-contracts">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Contracts</div>
+        <div class="pd-section-sub">Manage contracts, extensions, and sign-offs.</div>
+        <div class="pd-quick-actions">
+          <a href="/staff/members" class="pd-action-btn pd-action-btn--primary"><ion-icon name="document-text"></ion-icon> Extend Contract</a>
+          <a href="/contracts-admin" class="pd-action-btn"><ion-icon name="documents"></ion-icon> Contracts</a>
+          <a href="/admin/pending-contracts" class="pd-action-btn"><ion-icon name="time"></ion-icon> Pending Contracts</a>
+          <a href="/admin/contract-extensions" class="pd-action-btn"><ion-icon name="add-circle"></ion-icon> Contract Extensions</a>
+          <a href="/admin/contracted-members" class="pd-action-btn"><ion-icon name="checkmark-circle"></ion-icon> Contracted Members</a>
+          <a href="/admin/expired-contracts" class="pd-action-btn"><ion-icon name="alert-circle"></ion-icon> Expired Contracts</a>
+          <a href="/admin/callbacks" class="pd-action-btn"><ion-icon name="call"></ion-icon> Extend Callback</a>
+          <a href="/contracts-admin/export-contracts.csv" class="pd-action-btn"><ion-icon name="download"></ion-icon> Export Contracts CSV</a>
+          <a href="/contracts-admin/export-emergency.csv" class="pd-action-btn"><ion-icon name="download"></ion-icon> Export Emergency CSV</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ CONTENT ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-content">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Content</div>
+        <div class="pd-section-sub">Manage news, events, staff, materials, and the press kit.</div>
+        <div class="pd-quick-actions">
+          <a href="/news-admin" class="pd-action-btn pd-action-btn--primary"><ion-icon name="newspaper"></ion-icon> News</a>
+          <a href="/events-admin" class="pd-action-btn pd-action-btn--primary"><ion-icon name="calendar"></ion-icon> Events</a>
+          <a href="/staff-admin" class="pd-action-btn"><ion-icon name="construct"></ion-icon> Staff</a>
+          <a href="/set-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Update Audition Materials</a>
+          <a href="/view-materials" class="pd-action-btn"><ion-icon name="folder-open"></ion-icon> View Audition Materials</a>
+          <a href="/admin/press-kit" class="pd-action-btn"><ion-icon name="image"></ion-icon> Press Kit</a>
+          <a href="/admin/join-corps" class="pd-action-btn"><ion-icon name="sparkles"></ion-icon> Join Corps Page</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ STORE ═══════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-store">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Store</div>
+        <div class="pd-section-sub">Enable the public store, shipping rates, promo codes, and products.</div>
+
+        <div class="form-panel" style="max-width:640px;margin-bottom:28px;">
+          <form method="POST" action="/admin/merch/settings">
+            <input type="hidden" name="return_to" value="/admin-portal?section=store">
+            <div class="pd-sub-heading" style="margin-top:0;">Store settings</div>
+            <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer;">
+              <input type="checkbox" name="merch_enabled" value="1" <%= (merchSettings && merchSettings.enabled) ? 'checked' : '' %>>
+              <span>Show Store in site navigation</span>
+            </label>
+            <label>Tax percentage</label>
+            <input type="number" name="merch_tax_percent" step="0.01" min="0" max="100" value="<%= merchSettings ? merchSettings.taxPercent : 0 %>" style="max-width:120px;margin-bottom:14px;">
+            <label>Domestic shipping (USD)</label>
+            <input type="number" name="merch_shipping_domestic" step="0.01" min="0" value="<%= merchSettings ? (merchSettings.shippingDomesticCents / 100).toFixed(2) : '8.99' %>" style="max-width:120px;margin-bottom:14px;">
+            <label>International shipping (USD)</label>
+            <input type="number" name="merch_shipping_intl" step="0.01" min="0" value="<%= merchSettings ? (merchSettings.shippingIntlCents / 100).toFixed(2) : '14.99' %>" style="max-width:120px;margin-bottom:14px;">
+            <label>Order notification emails</label>
+            <textarea name="merch_order_notify_emails" rows="2" placeholder="info@fermataworks.com" style="width:100%;max-width:480px;margin-bottom:6px;"><%= merchSettings ? merchSettings.orderNotifyEmailsRaw : 'info@fermataworks.com' %></textarea>
+            <p style="margin:0 0 14px;font-size:0.88rem;color:#6b5585;">Comma-separated. New purchase alerts are sent to these addresses.</p>
+            <button type="submit">Save store settings</button>
+          </form>
+        </div>
+
+        <div class="pd-quick-actions" style="margin-bottom:28px;">
+          <a href="/admin/merch" class="pd-action-btn pd-action-btn--primary"><ion-icon name="cube"></ion-icon> Manage Products &amp; Categories</a>
+          <a href="/store" class="pd-action-btn" target="_blank" rel="noopener"><ion-icon name="open-outline"></ion-icon> View Public Store</a>
+        </div>
+
+        <div class="form-panel" style="max-width:720px;margin-bottom:24px;">
+          <div class="pd-sub-heading" style="margin-top:0;">Add promo code</div>
+          <form method="POST" action="/admin/merch/promos" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end;">
+            <input type="hidden" name="return_to" value="/admin-portal?section=store">
+            <div>
+              <label>Code</label>
+              <input type="text" name="code" placeholder="SUMMER15" required style="text-transform:uppercase;">
+            </div>
+            <div>
+              <label>Type</label>
+              <select name="promo_type" id="storePromoType">
+                <option value="percent">Percent off</option>
+                <option value="fixed">Dollar off</option>
+                <option value="free_shipping">Free shipping</option>
+              </select>
+            </div>
+            <div id="storePromoValueWrap">
+              <label>Value</label>
+              <input type="number" name="value" min="0" step="0.01" placeholder="15">
+            </div>
+            <div>
+              <label>Min order ($)</label>
+              <input type="number" name="min_order" min="0" step="0.01" placeholder="0">
+            </div>
+            <div>
+              <button type="submit">Add promo</button>
+            </div>
+          </form>
+          <p style="font-size:0.85rem;color:#6b5585;margin:10px 0 0;">Example: 15% off when the cart subtotal is at least $80 (set type to percent, value 15, min order 80).</p>
+        </div>
+
+        <% if (typeof promoCodes !== 'undefined' && promoCodes && promoCodes.length) { %>
+        <div class="form-panel" style="max-width:720px;">
+          <div class="pd-sub-heading" style="margin-top:0;">Promo codes</div>
+          <table style="width:100%;border-collapse:collapse;font-size:0.92rem;">
+            <thead>
+              <tr style="border-bottom:2px solid #e4daf0;text-align:left;">
+                <th style="padding:8px 6px;">Code</th>
+                <th style="padding:8px 6px;">Discount</th>
+                <th style="padding:8px 6px;">Minimum</th>
+                <th style="padding:8px 6px;">Status</th>
+                <th style="padding:8px 6px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% promoCodes.forEach(function(p) {
+                var discountLabel = p.promo_type === 'percent' ? p.value + '% off' : (p.promo_type === 'fixed' ? fmtUSD(p.value) + ' off' : 'Free shipping');
+              %>
+              <tr style="border-bottom:1px solid #eee;">
+                <td style="padding:10px 6px;font-weight:700;"><%= p.code %></td>
+                <td style="padding:10px 6px;"><%= discountLabel %></td>
+                <td style="padding:10px 6px;"><%= p.min_order_cents ? fmtUSD(p.min_order_cents) : 'None' %></td>
+                <td style="padding:10px 6px;"><%= p.active ? 'Active' : 'Off' %></td>
+                <td style="padding:10px 6px;white-space:nowrap;">
+                  <form method="POST" action="/admin/merch/promos/<%= p.id %>/toggle" style="display:inline;">
+                    <input type="hidden" name="return_to" value="/admin-portal?section=store">
+                    <button type="submit" class="button" style="padding:4px 10px;font-size:0.75rem;"><%= p.active ? 'Disable' : 'Enable' %></button>
+                  </form>
+                  <button type="button" class="button" style="padding:4px 10px;font-size:0.75rem;background:#888;" onclick="bgConfirm('Delete this promo code?', function(){ document.getElementById('promo-del-<%= p.id %>').submit(); });">Delete</button>
+                  <form id="promo-del-<%= p.id %>" method="POST" action="/admin/merch/promos/<%= p.id %>/delete" hidden>
+                    <input type="hidden" name="return_to" value="/admin-portal?section=store">
+                  </form>
+                </td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <p style="color:#6b5585;font-size:0.9rem;">No promo codes yet.</p>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- ══ SCHEDULE ═══════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-schedule">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Schedule</div>
+        <div class="pd-section-sub">Design daily rehearsal schedules and set who can view them.</div>
+        <div class="pd-quick-actions">
+          <a href="/admin/schedules" class="pd-action-btn pd-action-btn--primary"><ion-icon name="calendar"></ion-icon> Manage Schedules</a>
+          <a href="/admin/schedules/designer" class="pd-action-btn"><ion-icon name="add-circle"></ion-icon> New Schedule</a>
+          <a href="/admin/schedules/designer/today" class="pd-action-btn"><ion-icon name="today"></ion-icon> Design Today</a>
+        </div>
+        <p style="margin-top:16px;font-size:0.9rem;color:#6b5585;line-height:1.5;">
+          Members and parents see schedules in their portal Schedule tab when they match the visibility you set
+          (Anyone, Contracted Corps, or Contracted Independent). Staff and admins always see all schedules.
+        </p>
+      </div>
+    </div>
+
+    <!-- ══ FORMS & FILES ══════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-forms">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Forms &amp; Files</div>
+        <div class="pd-section-sub">Edit forms, review RSVPs, and manage uploaded files.</div>
+        <div class="pd-quick-actions">
+          <a href="/edit-forms" class="pd-action-btn pd-action-btn--primary"><ion-icon name="create"></ion-icon> Edit Forms</a>
+          <a href="/admin-rsvps" class="pd-action-btn"><ion-icon name="list"></ion-icon> RSVPs &amp; Forms</a>
+          <a href="/admin-forms" class="pd-action-btn"><ion-icon name="checkmark-done"></ion-icon> Forms Completion</a>
+          <a href="/files" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Music &amp; Files</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ COMMUNITY ══════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-community">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Community</div>
+        <div class="pd-section-sub">Volunteer needs, donors, and subscriptions.</div>
+        <div class="pd-quick-actions">
+          <a href="/admin/volunteer-needs" class="pd-action-btn pd-action-btn--primary"><ion-icon name="hand-left"></ion-icon> Volunteer Needs</a>
+          <a href="/admin/donors" class="pd-action-btn"><ion-icon name="heart"></ion-icon> Donor List</a>
+          <a href="/admin/subscriptions" class="pd-action-btn"><ion-icon name="card"></ion-icon> Donors &amp; Subscriptions</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ INSTRUMENTS ════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-instruments">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Instruments</div>
+        <div class="pd-section-sub">Manage instrument checkout and inventory.</div>
+        <div class="pd-quick-actions">
+          <a href="/admin/instrument-checkout" class="pd-action-btn pd-action-btn--primary"><ion-icon name="musical-notes"></ion-icon> Instrument Checkout</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ SYSTEM ══════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-system">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">System</div>
+        <div class="pd-section-sub">Website tools and issue reporting.</div>
+        <div class="pd-quick-actions">
+          <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
+          <% if (user && user.email && (user.email.toLowerCase() === "austinmoldenhauer@gmail.com" || user.email.toLowerCase() === "chris@chrispricemusic.net")) { %>
+          <a href="/admin/chris-payment" class="pd-action-btn" style="background:#fff3cd;border:1px solid #ffc107;color:#5a4000;"><ion-icon name="card"></ion-icon> Chris Payment</a>
+          <% } %>
+        </div>
+
+        <div class="form-panel" style="max-width:560px;margin-top:24px;">
+          <form method="POST" action="/admin/system-settings">
+            <div class="pd-sub-heading" style="margin-top:0;">Messaging</div>
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;line-height:1.5;">
+              <input type="checkbox" name="messaging_all_users" value="1" <%= (!siteSettings || siteSettings.messaging_all_users) ? 'checked' : '' %> style="margin-top:4px;">
+              <span>Allow all logged-in users to use messaging</span>
+            </label>
+            <p style="margin:10px 0 18px;color:#6b5585;font-size:0.9rem;line-height:1.5;">
+              When off, only administrators and staff can open the messenger. Other users will not see the chat button.
+            </p>
+            <button type="submit">Save Settings</button>
+          </form>
+        </div>
+
+        <div class="form-panel" style="max-width:720px;margin-top:28px;">
+          <div class="pd-sub-heading" style="margin-top:0;">Our History page</div>
+          <p style="margin:0 0 16px;color:#6b5585;font-size:0.9rem;line-height:1.5;">
+            Edit the history section on <a href="/our-history-about" target="_blank" rel="noopener">Our History</a>.
+            Use the toolbar for headings, bold, italic, and underline.
+          </p>
+          <form method="POST" action="/admin/our-history-settings" id="ohAdminForm" onsubmit="ohSubmit(event)">
+            <div class="ann-editor-box">
+              <div class="ann-toolbar" role="toolbar" aria-label="Our History formatting">
+                <button type="button" class="ann-fmt-btn" title="Heading" onclick="ohFmt('heading')"><span class="ann-fmt-h">H</span></button>
+                <button type="button" class="ann-fmt-btn" title="Bold" onclick="ohFmt('bold')"><strong>B</strong></button>
+                <button type="button" class="ann-fmt-btn" title="Italic" onclick="ohFmt('italic')"><em>I</em></button>
+                <button type="button" class="ann-fmt-btn" title="Underline" onclick="ohFmt('underline')"><span class="ann-fmt-u">U</span></button>
+              </div>
+              <div id="ohEditor" class="ann-wysiwyg oh-wysiwyg" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Write the Our History section here…"><%- ourHistoryHtml %></div>
+            </div>
+            <input type="hidden" id="ohHtmlField" name="our_history_body_html" value="">
+            <button type="submit" style="margin-top:16px;">Save Our History</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MY INFO ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-myinfo">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">My Info</div>
+        <div class="pd-section-sub">Your account details.</div>
+
+        <!-- Hero -->
+        <div class="pd-hero">
+          <a href="/update-profile-photo" style="border:none;background:none;padding:0;display:block;flex:0 0 auto;">
+            <img class="pd-hero-avatar" src="<%= srcImage %>" alt="Profile photo">
+          </a>
+          <div>
+            <div class="pd-hero-name"><%= member.firstname %> <%= member.lastname %></div>
+            <div class="pd-hero-meta">Administrator</div>
+          </div>
+        </div>
+
+        <div class="pd-info-grid">
+          <div class="pd-info-card">
+            <div class="pd-info-label">Email</div>
+            <div class="pd-info-value" style="word-break:break-all;"><%= member.email %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Phone</div>
+            <div class="pd-info-value"><%= member.phone || '-' %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Birthday</div>
+            <div class="pd-info-value">
+              <%= new Date(member.birthday).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }) %>
+            </div>
+          </div>
+          <div class="pd-info-card" style="grid-column:span 2;">
+            <div class="pd-info-label">Address</div>
+            <div class="pd-info-value"><%= member.address || '-' %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Email Status</div>
+            <div class="pd-info-value">&#9989; Verified</div>
+          </div>
+        </div>
+
+        <%- include("includes/shirt-size-section") %>
+
+        <div class="pd-sub-heading" style="margin-top:24px;">Actions</div>
+        <div class="pd-quick-actions">
+          <a href="/update-info" class="pd-action-btn"><ion-icon name="create"></ion-icon> Update Information</a>
+          <a href="/update-profile-photo" class="pd-action-btn"><ion-icon name="camera"></ion-icon> Update Profile Photo</a>
+          <a href="/allergy-info" class="pd-action-btn"><ion-icon name="medkit"></ion-icon> Allergy Info</a>
+          <a href="/update-emergency" class="pd-action-btn"><ion-icon name="call"></ion-icon> Emergency Contacts</a>
+          <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<footer><%- include("includes/footer") %></footer>
+
+<!-- Image viewer modal (shared with ann-feed) -->
+<div id="annImgModalOverlay" class="ann-modal-overlay" onclick="this.hidden=true" hidden>
+  <div class="ann-modal-box" onclick="event.stopPropagation()">
+    <button class="ann-modal-close" onclick="document.getElementById('annImgModalOverlay').hidden=true">&times;</button>
+    <img id="annImgModalImg" src="" alt="Announcement image">
+  </div>
+</div>
+
+<script src="/js/portal-nav.js"></script>
+<script>
+/* ── Announcement compose ── */
+var _annEditingId = null;
+
+function annResetCompose() {
+  _annEditingId = null;
+  _annPendingFilenames = [];
+  document.getElementById('annForm').action = '/admin/announcements';
+  document.getElementById('annSubmitBtn').innerHTML = '<ion-icon name="send"></ion-icon> Post Announcement';
+  document.getElementById('annComposeTitle').textContent = 'Write Announcement';
+  document.getElementById('annEditor').innerHTML = '';
+  document.getElementById('annImgList').innerHTML = '';
+  document.getElementById('annImagesField').value = '[]';
+  document.querySelectorAll('.ann-audience input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+}
+
+function annToggleCompose() {
+  var el = document.getElementById('annCompose');
+  if (!el.hidden) {
+    el.hidden = true;
+    annResetCompose();
+    return;
+  }
+  annResetCompose();
+  el.hidden = false;
+  var editor = document.getElementById('annEditor');
+  if (editor) editor.focus();
+}
+
+function annStartEdit(id) {
+  var dataEl = document.getElementById('ann-data-' + id);
+  if (!dataEl) return;
+  var data = JSON.parse(dataEl.textContent);
+  _annEditingId = id;
+  _annPendingFilenames = data.images.slice();
+  document.getElementById('annForm').action = '/admin/announcements/' + id + '/edit';
+  document.getElementById('annSubmitBtn').innerHTML = '<ion-icon name="save"></ion-icon> Save Changes';
+  document.getElementById('annComposeTitle').textContent = 'Edit Announcement';
+  document.getElementById('annEditor').innerHTML = data.body_html;
+  document.getElementById('annImagesField').value = JSON.stringify(_annPendingFilenames);
+  document.querySelector('[name="aud_parents"]').checked = !!data.aud_parents;
+  document.querySelector('[name="aud_fans"]').checked = !!data.aud_fans;
+  document.querySelector('[name="aud_corps"]').checked = !!data.aud_corps;
+  document.querySelector('[name="aud_independent"]').checked = !!data.aud_independent;
+  document.querySelector('[name="aud_uncontracted"]').checked = !!data.aud_uncontracted;
+  annRenderPendingImages();
+  var el = document.getElementById('annCompose');
+  el.hidden = false;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('annEditor').focus();
+}
+
+function annFmt(cmd) {
+  var editor = document.getElementById('annEditor');
+  editor.focus();
+  if (cmd === 'heading') {
+    document.execCommand('formatBlock', false, 'h2');
+  } else {
+    document.execCommand(cmd, false, null);
+  }
+}
+
+var _annPendingFilenames = [];
+
+function annSyncImagesField() {
+  document.getElementById('annImagesField').value = JSON.stringify(_annPendingFilenames);
+}
+
+function annRemovePendingImage(filename) {
+  _annPendingFilenames = _annPendingFilenames.filter(function(f) { return f !== filename; });
+  annSyncImagesField();
+  annRenderPendingImages();
+}
+
+function annRenderPendingImages() {
+  var list = document.getElementById('annImgList');
+  list.innerHTML = '';
+  _annPendingFilenames.forEach(function(filename) {
+    var wrap = document.createElement('div');
+    wrap.className = 'ann-pending-wrap';
+    var thumb = document.createElement('img');
+    thumb.src = '/img/publicupload/' + filename;
+    thumb.className = 'ann-pending-thumb';
+    thumb.alt = 'Attached image';
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'ann-pending-remove';
+    removeBtn.title = 'Remove image';
+    removeBtn.innerHTML = '&times;';
+    removeBtn.onclick = function() { annRemovePendingImage(filename); };
+    wrap.appendChild(thumb);
+    wrap.appendChild(removeBtn);
+    list.appendChild(wrap);
+  });
+}
+
+function annImagesSelected(input) {
+  if (!input.files || !input.files.length) return;
+  Array.from(input.files).forEach(function(file) {
+    var fd = new FormData();
+    fd.append('image', file);
+    fetch('/admin/announcements/upload-image', { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok) { bgAlert('Image upload failed.'); return; }
+        _annPendingFilenames.push(data.filename);
+        annSyncImagesField();
+        annRenderPendingImages();
+      });
+  });
+  input.value = '';
+}
+
+function annEditorEmpty(editor) {
+  var text = (editor.textContent || '').replace(/\u00a0/g, ' ').trim();
+  return !text;
+}
+
+function annSubmit(e) {
+  e.preventDefault();
+  var editor = document.getElementById('annEditor');
+  if (annEditorEmpty(editor)) {
+    bgAlert('Please write some text for the announcement.', function(){ editor.focus(); });
+    return;
+  }
+  document.getElementById('annHtmlField').value = editor.innerHTML;
+  document.getElementById('annMdField').value = editor.innerText.trim();
+  e.target.submit();
+}
+
+/* Keep editor clean on paste - plain text only, browser applies formatting via toolbar */
+(function() {
+  var editor = document.getElementById('annEditor');
+  if (!editor) return;
+  editor.addEventListener('paste', function(e) {
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+})();
+
+/* ── Image modal ── */
+function annImgModal(src) {
+  document.getElementById('annImgModalImg').src = src;
+  document.getElementById('annImgModalOverlay').hidden = false;
+}
+
+(function() {
+  var typeEl = document.getElementById('storePromoType');
+  var valueWrap = document.getElementById('storePromoValueWrap');
+  if (!typeEl || !valueWrap) return;
+  function syncPromoValue() {
+    valueWrap.style.display = typeEl.value === 'free_shipping' ? 'none' : '';
+  }
+  typeEl.addEventListener('change', syncPromoValue);
+  syncPromoValue();
+})();
+
+/* ── Our History editor ── */
+function ohFmt(cmd) {
+  var editor = document.getElementById('ohEditor');
+  if (!editor) return;
+  editor.focus();
+  if (cmd === 'heading') document.execCommand('formatBlock', false, 'h2');
+  else document.execCommand(cmd, false, null);
+}
+
+function ohSubmit(e) {
+  var editor = document.getElementById('ohEditor');
+  var text = (editor.textContent || '').replace(/\u00a0/g, ' ').trim();
+  if (!text) {
+    e.preventDefault();
+    if (window.bgAlert) bgAlert('Please add some content for Our History.', function () { editor.focus(); });
+    return;
+  }
+  document.getElementById('ohHtmlField').value = editor.innerHTML;
+}
+
+(function () {
+  var editor = document.getElementById('ohEditor');
+  if (!editor) return;
+  editor.addEventListener('paste', function (e) {
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+})();
+</script>
 </body>
 </html>

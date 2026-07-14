@@ -94,7 +94,7 @@
                       <% if (ext.childFirst) { %>
                         <%= ext.childFirst %> <%= ext.childLast %>
                       <% } else { %>
-                        <em>—</em>
+                        -
                       <% } %>
                     </td>
                     <td style="border-bottom:1px solid #eee; padding:6px;"><%= groupLabel %></td>
@@ -113,7 +113,7 @@
                       <% if (typeof ext.daysRemaining === "number" && !Number.isNaN(ext.daysRemaining)) { %>
                         <%= ext.daysRemaining %> day<%= ext.daysRemaining === 1 ? "" : "s" %>
                       <% } else { %>
-                        <em>—</em>
+                        -
                       <% } %>
                     </td>
                     <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.bypass_fee ? "Yes" : "No" %></td>

@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin – Donors &amp; Subscriptions – Boise Gems</title>
+    <title>Admin - Donors &amp; Subscriptions - Boise Gems</title>
     <%- include("includes/head") %>
     <style>
         .tier-badge { display: inline-block; padding: 3px 10px; border-radius: 5px; font-weight: 700; font-size: 0.8rem; color: #fff; text-transform: capitalize; }
@@ -59,7 +59,7 @@
                                 <td><%= u.email || '' %></td>
                                 <td style="text-transform: capitalize;"><%= sub.fan_type %></td>
                                 <td>$<%= (sub.amount_cents / 100).toFixed(2) %></td>
-                                <td><%= sub.shirt_sizes ? JSON.parse(sub.shirt_sizes).join(', ') : '–' %></td>
+                                <td><%= sub.shirt_sizes ? JSON.parse(sub.shirt_sizes).join(', ') : '-' %></td>
                                 <td><%= new Date(sub.created_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) %></td>
                             </tr>
                             <% }) %>
@@ -89,7 +89,7 @@
                                 <td><%= u.email || '' %></td>
                                 <td><span class="tier-badge tier-<%= sub.tier %>"><%= tierLabels[sub.tier] || sub.tier %></span></td>
                                 <td>$<%= (sub.amount_cents / 100).toFixed(2) %>/mo</td>
-                                <td><%= sub.cancelled_at ? new Date(sub.cancelled_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) : '–' %></td>
+                                <td><%= sub.cancelled_at ? new Date(sub.cancelled_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) : '-' %></td>
                             </tr>
                             <% }) %>
                         </tbody>
@@ -122,11 +122,11 @@
                             <td><%= d.name %></td>
                             <td><%= d.email %></td>
                             <td style="text-transform: capitalize;"><%= (d.donation_type || 'one_time').replace(/_/g, ' ') %></td>
-                            <td><% if (d.tier) { %><span class="tier-badge tier-<%= d.tier %>"><%= tierLabels[d.tier] || d.tier %></span><% } else { %>–<% } %></td>
+                            <td><% if (d.tier) { %><span class="tier-badge tier-<%= d.tier %>"><%= tierLabels[d.tier] || d.tier %></span><% } else { %>-<% } %></td>
                             <td>$<%= (d.amount / 100).toFixed(2) %></td>
                             <td>$<%= (d.processing_fee / 100).toFixed(2) %></td>
                             <td>$<%= (d.total_charged / 100).toFixed(2) %></td>
-                            <td><%= d.message || '–' %></td>
+                            <td><%= d.message || '-' %></td>
                             <td><%= new Date(d.created_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) %></td>
                         </tr>
                         <% }) %>

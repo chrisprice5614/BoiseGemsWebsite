@@ -1,0 +1,31 @@
+<div class="sch-panel">
+  <div class="sch-panel-toolbar">
+    <label class="sch-date-label" for="schDateInput">
+      <ion-icon name="calendar"></ion-icon> Day
+    </label>
+    <input type="date" id="schDateInput" class="sch-date-input">
+    <span id="schStatus" class="sch-status" aria-live="polite"></span>
+  </div>
+  <div id="schViewer" class="sch-viewer"></div>
+</div>
+<script src="/js/schedule-shared.js"></script>
+<script>
+  (function() {
+    function boot() {
+      if (!window.BGSchedule) return;
+      window._schReload = function() {
+        var inp = document.getElementById('schDateInput');
+        if (inp) inp.dispatchEvent(new Event('change'));
+      };
+      BGSchedule.initSchedulePanel({
+        dateInputId: 'schDateInput',
+        viewerId: 'schViewer',
+        statusId: 'schStatus',
+        sectionId: 'schedule',
+        loadOnShow: true,
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  })();
+</script>

@@ -1,0 +1,22 @@
+<%
+  const plMode = typeof linkMode !== 'undefined' ? linkMode : 'parent_to_child';
+  const plButtonLabel = plMode === 'child_to_parent' ? 'Add Parent / Guardian' : 'Add Child';
+%>
+<div id="plModalOverlay" class="pl-modal-overlay" data-mode="<%= plMode %>" hidden>
+  <div class="pl-modal-box" onclick="event.stopPropagation()">
+    <button type="button" class="pl-modal-close" data-pl-close>&times;</button>
+    <h2 id="plModalTitle" class="pl-modal-title"><%= plButtonLabel %></h2>
+    <p id="plModalHint" class="pl-modal-hint"></p>
+    <form id="plModalForm" class="pl-modal-form">
+      <label for="plModalEmail">Email address</label>
+      <input type="email" id="plModalEmail" name="email" required autocomplete="email" placeholder="name@example.com">
+      <div id="plModalFeedback" class="pl-modal-feedback" hidden></div>
+      <div class="pl-modal-actions">
+        <button type="button" class="pd-action-btn" data-pl-close>Cancel</button>
+        <button type="submit" id="plModalSubmit" class="pd-action-btn pd-action-btn--primary">Send Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/parent-link.js"></script>

@@ -3,59 +3,85 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Add Staff — Boise Gems</title>
+  <title>Add Staff - Boise Gems</title>
   <%- include("includes/head") %>
 </head>
-<body>
+<body class="staff-admin-page">
 <header><%- include("includes/header") %></header>
-<main>
-<div style="margin:12px; max-width:780px;">
-  <h1>Add Staff Member</h1>
-  <form action="/staff/new" method="POST" enctype="multipart/form-data">
-    <div class="duple-to-single">
-      <div>
-        <label>First Name</label>
-        <input type="text" name="first" required>
-      </div>
-      <div>
-        <label>Last Name</label>
-        <input type="text" name="last" required>
-      </div>
-    </div>
-
+<main class="staff-admin-main">
+  <div class="staff-admin-head">
     <div>
-      <label>Position/Title</label>
-      <input type="text" name="position" required placeholder="e.g., Program Coordinator">
+      <a href="/staff-admin" class="staff-admin-back">← Staff Admin</a>
+      <h1>Add Staff Member</h1>
+      <p class="staff-admin-lead">One profile per person. Pick categories from the pool and type their position title for each.</p>
     </div>
+  </div>
 
-    <div class="duple-to-single">
-      <div>
-        <label>Category</label>
-        <select name="category">
-          <% categories.forEach(c => { %>
-            <option value="<%= c %>"><%= c %></option>
-          <% }) %>
-        </select>
+  <div class="form-panel staff-admin-form-panel">
+    <form action="/staff/new" method="POST" enctype="multipart/form-data" id="staffForm">
+      <div class="staff-form-grid">
+        <div class="staff-form-photo">
+          <label class="staff-form-photo-label" for="staffPhotoInput">
+            <img id="staffPhotoPreview" src="/img/ui/gem.png" alt="">
+            <span class="staff-form-photo-hint">Click to upload photo</span>
+          </label>
+          <input type="file" id="staffPhotoInput" name="image" accept="image/*" hidden>
+        </div>
+
+        <div class="staff-form-fields">
+          <div class="staff-form-row">
+            <label class="staff-field">
+              <span class="staff-field-label">First name</span>
+              <input type="text" name="first" required autocomplete="given-name">
+            </label>
+            <label class="staff-field">
+              <span class="staff-field-label">Last name</span>
+              <input type="text" name="last" required autocomplete="family-name">
+            </label>
+          </div>
+
+          <label class="staff-field">
+            <span class="staff-field-label">Bio</span>
+            <textarea name="bio" rows="5" placeholder="Short bio for their profile page…"></textarea>
+          </label>
+
+          <div class="staff-form-row">
+            <label class="staff-field">
+              <span class="staff-field-label">Email <span class="staff-field-optional">(optional)</span></span>
+              <input type="email" name="email" autocomplete="email" placeholder="contact@example.com">
+            </label>
+            <label class="staff-field">
+              <span class="staff-field-label">Phone <span class="staff-field-optional">(optional)</span></span>
+              <input type="tel" id="staffPhoneInput" name="phone" autocomplete="tel" placeholder="(208) 555 - 0100" inputmode="tel">
+            </label>
+          </div>
+        </div>
       </div>
-      <div>
-        <label>Image (optional)</label>
-        <input type="file" name="image" accept="image/*">
-        <small class="muted">Default used if empty: /img/ui/gem.png</small>
+
+      <div class="staff-placements-block">
+        <div class="staff-placements-head">
+          <h2 class="staff-placements-title">Categories &amp; position titles</h2>
+          <p class="staff-placements-hint">Example: category <strong>Director</strong> with position title <strong>Founder/CEO</strong>.</p>
+        </div>
+        <div id="staffPlacementsList" class="staff-placements-list"></div>
+        <button type="button" class="staff-add-placement-btn" id="staffAddPlacement">+ Add category</button>
       </div>
-    </div>
 
-    <div>
-      <label>Short Bio</label>
-      <textarea name="bio" rows="6" placeholder="A short bio..."></textarea>
-    </div>
-
-    <div style="margin-top:12px;">
-      <button type="submit">Create</button>
-      <a href="/staff-admin"><button type="button">Cancel</button></a>
-    </div>
-  </form>
-</div>
+      <div class="staff-form-actions">
+        <button type="submit">Create staff member</button>
+        <a href="/staff-admin"><button type="button" class="staff-cancel-btn">Cancel</button></a>
+      </div>
+    </form>
+  </div>
 </main>
 <footer><%- include("includes/footer") %></footer>
+<script>
+  window.STAFF_CATEGORIES = <%- JSON.stringify(categories.map(function(c) {
+    return { id: c.id, name: c.name, pages: c.pages };
+  })) %>;
+  window.STAFF_INITIAL_PLACEMENTS = [];
+</script>
+<script src="/js/staff-phone.js"></script>
+<script src="/js/staff-form.js"></script>
 </body>
 </html>

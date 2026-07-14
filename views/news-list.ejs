@@ -3,15 +3,18 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>News — Boise Gems</title>
+  <title>News - Boise Gems</title>
   <%- include("includes/head") %>
-  <meta name="description" content="Latest news from the Boise Gems Drum & Bugle Corps.">
+  <% if (!testSite) { %>
+<meta name="description" content="Latest news from the Boise Gems Drum & Bugle Corps.">
   <link rel="canonical" href="https://boisegems.org/news">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="News — Boise Gems">
+  <meta property="og:title" content="News - Boise Gems">
   <meta property="og:description" content="Latest news from the Boise Gems Drum & Bugle Corps.">
   <meta property="og:url" content="https://boisegems.org/news">
   <meta name="twitter:card" content="summary_large_image">
+<% } %>
+
 
   <!-- styles moved to styles.css -->
 </head>

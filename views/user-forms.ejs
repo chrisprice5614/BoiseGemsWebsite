@@ -14,16 +14,20 @@
         <div style="padding: 12px;">
             <h1 style="text-align: center;"><%= thisUser.firstname %> <%= thisUser.lastname %>'s forms</h1>
             <br>
-            <% forms.forEach(form => { %>
+            <% (typeof formSummaries !== "undefined" ? formSummaries : []).forEach(function(summary) {
+                const form = summary.form;
+                const found = summary.upload;
+            %>
                 <div class="card">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr;">
-                        <h2><%= form.title %></h2>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div>
+                            <h2 style="margin-top:0;"><%= form.title %></h2>
+                            <p style="color:#555;"><%= form.description %></p>
+                        </div>
                         <div>
                         <span>Submitted: </span>
-                        <% const found = userForms.find(item => item.document_id === form.id); %>
 
                         <% if (found) { %>
-                            <!-- When it was signed -->
                             <div style="margin-top: 4px;">
                             ✅ Upload Date:
                             <%= new Date(found.signed_date).toLocaleDateString("en-US", {
@@ -33,16 +37,59 @@
                             }) %>
                             </div>
 
-                            <!-- All submitted metadata -->
                             <div style="margin-top: 8px; font-size: 0.9rem;">
-                            <p><b>Signer Name:</b> <%= found.signer_name %></p>
-                            <p><b>Signer Email:</b> <%= found.signer_email %></p>
-                            <p><b>Electronic Signature:</b> <%= found.signature %></p>
+                            <p><b>Latest Signer Name:</b> <%= found.signer_name %></p>
+                            <p><b>Latest Signer Email:</b> <%= found.signer_email %></p>
+                            <p><b>Latest Electronic Signature:</b> <%= found.signature %></p>
                             <p><b>Consent Checkbox:</b> <%= found.consent ? "✅ Yes" : "❌ No" %></p>
                             <p><b>Device (User Agent):</b> <%= found.user_agent %></p>
                             </div>
 
-                            <!-- PDF link + inline preview -->
+                            <% if (summary.signersLog && summary.signersLog.length) { %>
+                              <div style="margin-top:10px;">
+                                <b>Signer history</b>
+                                <ul style="margin:6px 0 0; padding-left:18px;">
+                                  <% summary.signersLog.forEach(function(entry) { %>
+                                    <li>
+                                      <%= entry.name || entry.signature || "Signer" %>
+                                      <% if (entry.role) { %>(<%= entry.role %>)<% } %>
+                                      — <%= entry.at ? new Date(entry.at).toLocaleString() : "" %>
+                                    </li>
+                                  <% }) %>
+                                </ul>
+                              </div>
+                            <% } %>
+
+                            <div style="margin-top:14px; padding:10px; border:1px solid #e2b4b4; background:#fff7f7; border-radius:8px;">
+                              <b style="color:#9b1c1c;">Missing fields (<%= summary.missing.length %>)</b>
+                              <% if (!summary.missing.length) { %>
+                                <p style="margin:6px 0 0; color:#2f6b3a;">None — every placed field has a value.</p>
+                              <% } else { %>
+                                <ul style="margin:6px 0 0; padding-left:18px; color:#9b1c1c;">
+                                  <% summary.missing.forEach(function(m) { %>
+                                    <li><%= m.label %> <span style="color:#777;">(<%= m.type %>)</span></li>
+                                  <% }) %>
+                                </ul>
+                              <% } %>
+                            </div>
+
+                            <div style="margin-top:14px; padding:10px; border:1px solid #c9dcc9; background:#f5fbf5; border-radius:8px;">
+                              <b style="color:#2f6b3a;">Filled fields (<%= summary.filled.length %>)</b>
+                              <% if (!summary.filled.length) { %>
+                                <p style="margin:6px 0 0; color:#777;">No overlay values stored yet.</p>
+                              <% } else { %>
+                                <ul style="margin:6px 0 0; padding-left:18px;">
+                                  <% summary.filled.forEach(function(f) { %>
+                                    <li>
+                                      <b><%= f.label %></b>
+                                      <span style="color:#777;">(<%= f.type %>)</span>:
+                                      <%= f.value %>
+                                    </li>
+                                  <% }) %>
+                                </ul>
+                              <% } %>
+                            </div>
+
                             <% if (found.upload_path) { %>
                             <div style="margin-top: 8px;">
                                 <a href="<%= found.upload_path %>" target="_blank">
@@ -50,7 +97,6 @@
                                 </a>
                             </div>
 
-                            <!-- Inline PDF viewer for the admin -->
                             <div style="margin-top: 8px;">
                                 <iframe
                                 src="<%= found.upload_path %>"
@@ -59,7 +105,7 @@
                             </div>
                             <% } %>
                         <% } else { %>
-                            ❌
+                            ❌ Not submitted
                         <% } %>
                         </div>
                     </div>

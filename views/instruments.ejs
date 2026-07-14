@@ -18,7 +18,8 @@
 
     <div style="padding: 8px;">
         <h2>Add Instrument Checkout</h2>
-        <form method="POST" action="/instruments/<%= thisUser.id %>/add">
+        <div class="form-panel">
+<form method="POST" action="/instruments/<%= thisUser.id %>/add">
             <label for="instrument_type">Instrument Type</label>
             <input type="text" name="instrument_type" id="instrument_type" required>
 
@@ -38,6 +39,7 @@
                 <button type="submit">Check Out</button>
             </div>
         </form>
+</div>
     </div>
 
     <br>
@@ -49,7 +51,7 @@
         <% if (instruments && instruments.length) { %>
             <% instruments.forEach(inst => { %>
                 <div style="margin-bottom: 8px; border: solid 1px var(--dark-quarter); box-shadow: 0px 1px 4px rgba(0,0,0,0.6); padding: 4px; border-radius: 8px;">
-                    <h3><%= inst.instrument_type %> <%= inst.model ? ("— " + inst.model) : "" %></h3>
+                    <h3><%= inst.instrument_type %> <%= inst.model ? (" - " + inst.model) : "" %></h3>
                     <p><b>Serial:</b> <%= inst.serial || "N/A" %></p>
                     <p><b>Checked Out:</b>
                         <%= inst.checked_out_date

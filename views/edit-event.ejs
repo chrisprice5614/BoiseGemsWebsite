@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Edit Event — <%= event.title %></title>
+  <title>Edit Event - <%= event.title %></title>
   <%- include("includes/head") %>
 </head>
 <body>
@@ -12,7 +12,8 @@
 <main>
   <div style="padding:12px;">
     <h1>Edit Event</h1>
-    <form action="/events/<%= event.id %>/edit" method="POST" enctype="multipart/form-data">
+    <div class="form-panel">
+<form action="/events/<%= event.id %>/edit" method="POST" enctype="multipart/form-data">
       <label for="title">Title</label><br>
       <input type="text" id="title" name="title" required value="<%- event.title || '' %>"/>
       <br><br>
@@ -83,6 +84,7 @@
         <button type="submit">Save Changes</button>
       </div>
     </form>
+</div>
   </div>
 </main>
 

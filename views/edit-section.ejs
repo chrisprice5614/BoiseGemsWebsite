@@ -13,7 +13,8 @@
     <main>
         <br>
         <h1 style="text-align: center;">Edit section and instrument/role for <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
-        <form action="/edit-section/<%= thisUser.id %>" method="POST">
+        <div class="form-panel">
+<form action="/edit-section/<%= thisUser.id %>" method="POST">
             <label for="section" >Section</label>
                     <select name="section" id="sectionSelect" onchange="sectionChange()">
                         <% sectionOptions = ["Brass", "Drumline", "Front Ensemble", "Guard", "Drum Major", "Staff"] %>
@@ -36,6 +37,7 @@
                 <button>Update</button>
             </div>
         </form>
+</div>
     </main>
     <footer>
         <%- include("includes/footer") %>

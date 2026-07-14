@@ -3,210 +3,219 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= folder.name %> | Music & Files | Boise Gems</title>
+  <title><%= folder.name %> | Music & Files</title>
   <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/files-drive.css">
 </head>
-<body>
-<header>
-  <%- include("includes/header") %>
-</header>
+<body class="files-drive-page" data-folder-id="<%= folder.id %>" data-can-manage="<%= canManage ? '1' : '0' %>">
+<header><%- include("includes/header") %></header>
 
-<main>
-  <div style="max-width: 1100px; margin: 16px auto;">
-    <nav style="margin-bottom: 8px; font-size: 0.9rem;">
-      <% breadcrumbs.forEach(function(bc, idx) { %>
-        <% if (bc.href) { %>
-          <a href="<%= bc.href %>"><%= bc.label %></a>
-        <% } else { %>
-          <span><%= bc.label %></span>
-        <% } %>
-        <% if (idx < breadcrumbs.length - 1) { %> &raquo; <% } %>
-      <% }) %>
-    </nav>
+<main class="files-drive">
+  <div class="files-drive__search-wrap">
+    <ion-icon name="search" aria-hidden="true"></ion-icon>
+    <input type="search" id="filesSearch" class="files-drive__search" placeholder="Search this folder and subfolders..." autocomplete="off">
+  </div>
 
-    <h1><%= folder.name %></h1>
-    <% if (section) { %>
-      <p><strong>Section:</strong> <%= section %> — <strong><%= scope === "corps" ? "Corps" : "Independent" %> <%= year %></strong></p>
-    <% } %>
+  <nav class="files-drive__breadcrumb" aria-label="Breadcrumb">
+    <% breadcrumbs.forEach(function(bc, idx) { %>
+      <% if (bc.href) { %><a href="<%= bc.href %>"><%= bc.label %></a><% } else { %><span><%= bc.label %></span><% } %>
+      <% if (idx < breadcrumbs.length - 1) { %><span class="files-drive__breadcrumb-sep">/</span><% } %>
+    <% }) %>
+  </nav>
 
-    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
-      <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border: 1px solid #ff9c9c;"><%= flashMessage %></p>
-    <% } %>
+  <div class="files-drive__top">
+    <div>
+      <h1 class="files-drive__title"><%= folder.name %></h1>
+      <% if (section) { %>
+      <p class="files-drive__subtitle"><%= section %> &middot; <%= scopeLabel %> <%= year %></p>
+      <% } %>
+    </div>
+    <div class="files-drive__toolbar">
+      <label class="files-drive__sort-label" for="filesSort">Sort</label>
+      <select id="filesSort" class="files-drive__sort">
+        <option value="az">A-Z</option>
+        <option value="za">Z-A</option>
+        <option value="newest">Most Recent</option>
+        <option value="oldest">Oldest</option>
+        <option value="type">File type</option>
+      </select>
+      <button type="button" class="files-drive__view-btn" data-view="grid">Grid</button>
+      <button type="button" class="files-drive__view-btn" data-view="list">List</button>
+    </div>
+  </div>
 
-    <div class="duple-to-single" style="gap: 16px; align-items: flex-start;">
-      <div style="flex: 2;">
-        <h2>Subfolders</h2>
-        <% if (!subfolders.length) { %>
-          <p><em>No subfolders yet.</em></p>
-        <% } else { %>
-          <ul>
-            <% subfolders.forEach(function(f) { %>
-              <li>
-                <a href="/files/folder/<%= f.id %>"><%= f.name %></a>
-              </li>
-            <% }) %>
-          </ul>
-        <% } %>
+  <div class="files-drive-layout<%= canManage && roster.length ? '' : ' files-drive-layout--solo' %>">
+    <div class="files-drive-main" id="filesDropZone">
+      <div class="files-drive__items files-drive__grid" id="filesDriveItems">
+        <% subfolders.forEach(function(f) { %>
+        <a href="/files/folder/<%= f.id %>"
+           class="files-drive-item files-drive-card"
+           data-kind="folder"
+           data-id="<%= f.id %>"
+           data-name="<%= f.name %>"
+           data-created="<%= f.created_at || 0 %>"
+           data-type="folder">
+          <div class="files-drive-card__icon"><ion-icon name="folder"></ion-icon></div>
+          <p class="files-drive-card__name"><%= f.name %></p>
+          <p class="files-drive-card__meta">Folder</p>
+        </a>
+        <% }) %>
 
-        <h2 style="margin-top: 24px;">Files</h2>
-        <% if (!files.length) { %>
-          <p><em>No files have been uploaded here yet.</em></p>
-        <% } else { %>
-          <table style="width: 100%; border-collapse: collapse; font-size: 0.95rem;">
-            <thead>
-              <tr>
-                <th style="text-align: left; border-bottom: 1px solid #ccc; padding: 4px;">Title</th>
-                <th style="text-align: left; border-bottom: 1px solid #ccc; padding: 4px;">Type</th>
-                <th style="text-align: left; border-bottom: 1px solid #ccc; padding: 4px;">Uploaded</th>
-                <% if (canManage) { %>
-                  <th style="border-bottom: 1px solid #ccc; padding: 4px;">Actions</th>
-                <% } %>
-              </tr>
-            </thead>
-            <tbody>
-              <% files.forEach(function(f) { %>
-                <tr>
-                  <td style="border-bottom: 1px solid #eee; padding: 4px;">
-                    <a href="<%= f.stored_path %>" target="_blank"><%= f.title %></a>
-                  </td>
-                  <td style="border-bottom: 1px solid #eee; padding: 4px;">
-                    <%= (f.mime_type || "").split("/")[1] || "file" %>
-                  </td>
-                  <td style="border-bottom: 1px solid #eee; padding: 4px;">
-                    <%= new Date(f.created_at).toLocaleString() %>
-                  </td>
-                  <% if (canManage) { %>
-                    <td style="border-bottom: 1px solid #eee; padding: 4px;">
-                      <form action="/files/item/<%= f.id %>/delete" method="post" style="display: inline;" onsubmit="return confirm('Delete this file?');">
-                        <button type="submit">Delete</button>
-                      </form>
-                    </td>
-                  <% } %>
-                </tr>
-              <% }) %>
-            </tbody>
-          </table>
-        <% } %>
-
-        <% if (canManage) { %>
-          <hr style="margin: 24px 0;">
-          <h2>Create Subfolder</h2>
-          <form action="/files/folder/<%= folder.id %>/new-folder" method="post">
-            <label>
-              Folder name:
-              <input type="text" name="name" required />
-            </label>
-            <br><br>
-            <button type="submit">Create Folder</button>
-          </form>
-
-          <hr style="margin: 24px 0;">
-          <h2>Upload Files</h2>
-          <form action="/files/folder/<%= folder.id %>/upload" method="post" enctype="multipart/form-data">
-            <p>Select one or more files to upload (PDF, audio, etc.).</p>
-            <input type="file" name="files" multiple required />
-
-            <p style="margin-top: 12px;">
-              <strong>Display names (optional):</strong><br>
-              <small>One title per line. If left blank, the original filename will be used.</small><br>
-              <textarea name="titlesText" rows="5" style="width: 100%;"></textarea>
-            </p>
-
-            <p style="margin-top: 12px;">
-              <strong>Who should see these files?</strong><br>
-              <label><input type="radio" name="audience" value="corps" <%= scope === "corps" ? "checked" : "" %>> Corps contracted members only</label><br>
-              <label><input type="radio" name="audience" value="independent" <%= scope === "indoor" ? "checked" : "" %>> BGI contracted members only</label><br>
-              <label><input type="radio" name="audience" value="affiliate"> Affiliate contracted members only</label><br>
-              <label><input type="radio" name="audience" value="both"> Corps &amp; BGI contracted members</label><br>
-              <label><input type="radio" name="audience" value="all_contracted"> All contracted members (corps, BGI, affiliate)</label><br>
-              <label><input type="radio" name="audience" value="everyone"> Everyone in this section (contracted or not)</label>
-            </p>
-
-            <button type="submit" style="margin-top: 12px;">Upload</button>
-          </form>
-          <% if (section && canManage) { %>
-          <form action="/files/folder/<%= folder.id %>/notify" method="post" style="margin-top: 16px;">
-            <!-- Default to notify everyone in this section -->
-            <input type="hidden" name="audience" value="everyone" />
-            <button type="submit" style="
-              padding: 8px 16px;
-              border-radius: 6px;
-              border: none;
-              background: #2c7be5;
-              color: #fff;
-              cursor: pointer;
-            ">
-              Notify <%= section %>
-            </button>
-            <p style="font-size: 0.85rem; color: #555; margin-top: 4px;">
-              Sends a separate email to each member in this section about new files in this folder.
-            </p>
-          </form>
-        <% } %>
-        <% } %>
+        <% files.forEach(function(f) {
+          var icon = f.iconKind === 'audio' ? 'musical-notes' : (f.iconKind === 'image' ? 'image' : 'document-text');
+        %>
+        <div role="button" tabindex="0"
+           class="files-drive-item files-drive-card"
+           data-kind="file"
+           data-id="<%= f.id %>"
+           data-name="<%= f.title %>"
+           data-url="<%= f.stored_path %>"
+           data-mime="<%= f.mime_type || '' %>"
+           data-icon-kind="<%= f.iconKind %>"
+           data-created="<%= f.created_at || 0 %>"
+           data-type="<%= f.typeLabel %>"
+           data-allow-anyone="<%= f.allow_noncontracted ? '1' : '0' %>"
+           data-allow-corps="<%= f.allow_corps ? '1' : '0' %>"
+           data-allow-independent="<%= f.allow_independent ? '1' : '0' %>">
+          <div class="files-drive-card__icon"><ion-icon name="<%= icon %>"></ion-icon></div>
+          <p class="files-drive-card__name"><%= f.title %></p>
+          <p class="files-drive-card__meta"><%= f.typeLabel %></p>
+        </div>
+        <% }) %>
       </div>
 
-      <div style="flex: 1;">
-        <% if(user.admin || user.staff)  { %>
-            <% if (section && roster.length) { %>
-            <h2>Section Roster</h2>
-            <p>
-                <small>
-                Underline = contracted in this ensemble.<br>
-                👁 = has opened this folder since the last change.<br>
-                — = has not opened this folder yet.
-                </small>
-            </p>
-
-            <ul style="list-style: none; padding-left: 0;">
-                  <% roster.forEach(function(m) { 
-    const contracted = (scope === "corps"
-      ? (m.contractedCorps || m.contractedAffiliate)
-      : (m.indoorSection && m.indoorSection.trim() !== ""));
-  %>
-                <li style="margin-bottom: 8px;">
-                <% const srcImage = m.img == null ? "/img/ui/gem.png" : m.img; %>
-
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <div style="
-                        height: 72px;
-                        width: 72px;
-                        border-radius: 8px;
-                        overflow: hidden;
-                        box-shadow: 2px 2px 8px rgba(0,0,0,0.4);
-                        background-color: #333;
-                        flex-shrink: 0;
-                    ">
-                        <img src="<%= srcImage %>" 
-                            alt="Member photo for <%= m.firstname %> <%= m.lastname %>" 
-                            style="object-fit: cover; width: 100%; height: 100%;">
-                    </div>
-
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="<%= contracted ? 'text-decoration: underline;' : '' %>">
-                            <%= m.name %> <small>(<%= m.instrument %>)</small>
-                        </span>
-
-                        <% if (m.hasViewed) { %>
-                            <span title="Has viewed this folder" style="color: #3ba21f;">👁</span>
-                        <% } else { %>
-                            <span title="Has not yet viewed this folder" style="color: #900f0f;">—</span>
-                        <% } %>
-                    </div>
-                </div>
-            </li>
-
-                <% }) %>
-            </ul>
-            <% } %>
+      <div class="files-drive-empty" id="filesEmpty" <%= (subfolders.length || files.length) ? 'hidden' : '' %>>
+        <ion-icon name="folder-open-outline"></ion-icon>
+        <% if (canManage) { %>
+        <p class="files-drive-empty__copy files-drive-empty__copy--desktop">This folder is empty, right click or drag and drop to upload files.</p>
+        <p class="files-drive-empty__copy files-drive-empty__copy--mobile">This folder is empty. Press and hold an empty spot to upload files or create a folder.</p>
+        <% } else { %>
+        <p>This folder is empty.</p>
         <% } %>
+      </div>
+      <div class="files-drive-empty" id="filesSearchEmpty" hidden>
+        <ion-icon name="search-outline"></ion-icon>
+        <p>No results found.</p>
       </div>
     </div>
+
+    <% if (canManage && roster.length) { %>
+    <aside class="files-drive-side">
+      <h2>Section roster</h2>
+      <ul class="files-drive-roster">
+        <% roster.forEach(function(m) {
+          var contracted = scope === 'corps'
+            ? (m.contractedCorps || m.contractedAffiliate)
+            : m.contractedIndependent;
+          var srcImage = m.img ? m.img : '/img/ui/gem.png';
+        %>
+        <li>
+          <img class="files-drive-roster__photo" src="<%= srcImage %>" alt="">
+          <div>
+            <div class="files-drive-roster__name" style="<%= contracted ? 'text-decoration:underline;' : '' %>"><%= m.name %></div>
+            <div class="files-drive-roster__pos"><%= m.instrument %></div>
+          </div>
+        </li>
+        <% }) %>
+      </ul>
+      <p style="margin-top:14px;font-size:0.82rem;"><a href="/admin/season-roster?season=<%= scope === 'indoor' ? '2026-independent' : '2026-corps' %>">Edit season roster</a></p>
+    </aside>
+    <% } %>
   </div>
 </main>
 
-<footer>
-  <%- include("includes/footer") %>
-</footer>
+<!-- Preview modal -->
+<div class="fd-modal" id="filesPreviewModal" hidden>
+  <div class="fd-modal__backdrop" data-close-preview></div>
+  <div class="fd-modal__panel fd-modal__panel--preview" role="dialog" aria-modal="true" aria-labelledby="filesPreviewTitle">
+    <div class="fd-modal__head">
+      <h2 id="filesPreviewTitle" class="fd-modal__title">Preview</h2>
+      <div class="fd-modal__head-actions">
+        <a id="filesPreviewDownload" class="button fd-modal__download" href="#" download>Download</a>
+        <button type="button" class="fd-modal__close" data-close-preview aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <div class="fd-modal__body" id="filesPreviewBody"></div>
+  </div>
+</div>
+
+<!-- Upload permissions modal -->
+<div class="fd-modal" id="filesUploadModal" hidden>
+  <div class="fd-modal__backdrop" data-close-upload></div>
+  <div class="fd-modal__panel" role="dialog" aria-modal="true" aria-labelledby="filesUploadTitle">
+    <div class="fd-modal__head">
+      <h2 id="filesUploadTitle" class="fd-modal__title">Upload files</h2>
+      <button type="button" class="fd-modal__close" data-close-upload aria-label="Close">&times;</button>
+    </div>
+    <div class="fd-modal__body">
+      <p class="fd-modal__hint" id="filesUploadCount"></p>
+      <p class="fd-modal__label">Who can view these files?</p>
+      <label class="fd-check"><input type="checkbox" id="upAnyone"> Anyone <span class="fd-check__note">(Including Auditionees and non-contracted)</span></label>
+      <label class="fd-check"><input type="checkbox" id="upCorps" checked> Corps Contracted</label>
+      <label class="fd-check"><input type="checkbox" id="upIndependent"> Independent Contracted</label>
+      <p class="fd-modal__error" id="filesUploadError" hidden></p>
+      <div class="fd-modal__actions">
+        <button type="button" class="ann-cancel-btn" data-close-upload>Cancel</button>
+        <button type="button" class="button" id="filesUploadConfirm">Upload</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Permissions modal -->
+<div class="fd-modal" id="filesPermsModal" hidden>
+  <div class="fd-modal__backdrop" data-close-perms></div>
+  <div class="fd-modal__panel" role="dialog" aria-modal="true" aria-labelledby="filesPermsTitle">
+    <div class="fd-modal__head">
+      <h2 id="filesPermsTitle" class="fd-modal__title">Permissions</h2>
+      <button type="button" class="fd-modal__close" data-close-perms aria-label="Close">&times;</button>
+    </div>
+    <div class="fd-modal__body">
+      <p class="fd-modal__hint" id="filesPermsFileName"></p>
+      <label class="fd-check"><input type="checkbox" id="permAnyone"> Anyone <span class="fd-check__note">(Including Auditionees and non-contracted)</span></label>
+      <label class="fd-check"><input type="checkbox" id="permCorps"> Corps Contracted</label>
+      <label class="fd-check"><input type="checkbox" id="permIndependent"> Independent Contracted</label>
+      <p class="fd-modal__error" id="filesPermsError" hidden></p>
+      <div class="fd-modal__actions">
+        <button type="button" class="ann-cancel-btn" data-close-perms>Cancel</button>
+        <button type="button" class="button" id="filesPermsSave">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Name modal (create folder / rename) -->
+<div class="fd-modal" id="filesNameModal" hidden>
+  <div class="fd-modal__backdrop" data-close-name></div>
+  <div class="fd-modal__panel" role="dialog" aria-modal="true" aria-labelledby="filesNameTitle">
+    <div class="fd-modal__head">
+      <h2 id="filesNameTitle" class="fd-modal__title">Name</h2>
+      <button type="button" class="fd-modal__close" data-close-name aria-label="Close">&times;</button>
+    </div>
+    <div class="fd-modal__body">
+      <p class="fd-modal__warning" id="filesNameWarning" hidden>Warning! Auditionees and non-contracted may see the folder names. Avoid leaking show info.</p>
+      <label class="fd-modal__label" for="filesNameInput" id="filesNameLabel">Name</label>
+      <input type="text" id="filesNameInput" class="fd-modal__input" autocomplete="off">
+      <p class="fd-modal__error" id="filesNameError" hidden></p>
+      <div class="fd-modal__actions">
+        <button type="button" class="ann-cancel-btn" data-close-name>Cancel</button>
+        <button type="button" class="button" id="filesNameConfirm">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div class="fd-ctx" id="filesCtx" hidden>
+  <button type="button" class="fd-ctx__item" data-action="download">Download</button>
+  <button type="button" class="fd-ctx__item" data-action="rename" hidden>Rename</button>
+  <button type="button" class="fd-ctx__item" data-action="permissions" hidden>Permissions</button>
+  <button type="button" class="fd-ctx__item fd-ctx__item--danger" data-action="delete" hidden>Delete</button>
+  <button type="button" class="fd-ctx__item" data-action="upload" hidden>Upload</button>
+  <button type="button" class="fd-ctx__item" data-action="create-folder" hidden>Create Folder</button>
+</div>
+
+<footer><%- include("includes/footer") %></footer>
+<script src="/js/files-drive.js"></script>
 </body>
 </html>

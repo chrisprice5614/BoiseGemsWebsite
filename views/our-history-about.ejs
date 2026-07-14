@@ -3,71 +3,44 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Our History — Boise Gems</title>
+  <title>Our History - Boise Gems</title>
   <%- include("includes/head") %>
-  <meta name="description" content="History and leadership for Boise Gems Performing Arts.">
+  <% if (!testSite) { %>
+<meta name="description" content="History and leadership for Boise Gems Performing Arts.">
   <link rel="canonical" href="https://boisegems.org/our-history-about">
+<% } %>
 
-  <!-- styles moved to styles.css -->
 </head>
-<body class="about-page" style="background:#fafafa;">
+<body class="about-page history-page">
 <header><%- include("includes/header") %></header>
 
 <section class="about-hero hero-history">
   <div class="about-hero__content">
     <div class="about-hero__card">
-      <h1 class="about-hero__title" style="color:#fff;">Our Mission</h1>
+      <h1 class="about-hero__title">Our Mission</h1>
       <p class="about-hero__text">
         Our goal is to provide youth with performing arts programs that will enhance their musical appreciation and skills,
-        teach self-discipline and self-confidence, and instill dignity and pride in their community — all through music education.
+        teach self-discipline and self-confidence, and instill dignity and pride in their community, all through music education.
       </p>
     </div>
   </div>
 </section>
 
-<section class="about-section">
-  <div class="about-wrap about-prose">
-    <h2>Our History</h2>
-    <p>Gems Drum and Bugle Corps is a recently established drum corps in the Treasure Valley. Our goal is to provide youth with performing arts programs that will help make them more well-rounded individuals in both life and their performing arts pursuits.</p>
-    <p>We were founded in 2022 with the simple realization that Idaho was lacking this type of opportunity, and our founders wanted to provide our community and state with this type of program. Thus Gems were created, and will strive for excellence in all ways.</p>
-    <p>In 2023, we fielded our first corps, and toured to three cities in the northwest. These include Kennewick, Washington — Boise, Idaho — and Salt Lake City, Utah. We made our official DCI debut at Corps Encore in Salt Lake City, and were proud to represent Idaho on the international stage. The 2023 program was entitled <em>Esto Perpetua</em>, which is also Idaho's state motto.</p>
-    <p>In 2024, the Gems fielded a corps of over 80+ members from 8 different states. The 2024 program, <em>Ghost Stallion</em>, featured music from <em>The Rite of Spring</em>, <em>Mahler 5</em>, and <em>Symphonie Fantastique</em> alongside original compositions and arrangements.</p>
-    <p>The 2025 season brought firsts in design, production, and growth, and closed with the announcement of Boise Gems Independent as the next chapter of Gems Performing Arts.</p>
+<section class="history-story" aria-labelledby="history-story-title">
+  <div class="history-story__inner">
+    <h2 id="history-story-title" class="history-story__title history-reveal">Our History</h2>
+    <div class="history-story__prose history-reveal history-reveal--delay"><%- historyHtml %></div>
   </div>
 </section>
 
-<section class="about-section">
+<section class="about-section about-section--staff">
   <div class="about-wrap">
     <h2>Staff</h2>
-
-    <% if (staffSections && staffSections.length) { %>
-      <% staffSections.forEach(section => { %>
-        <h3 class="staff-category"><%= section.title %></h3>
-        <div class="staff-block">
-          <div class="staff-grid">
-            <% section.staff.forEach(s => {
-              const imgUrl = s.image ? ("/img/publicupload/" + s.image) : "/img/ui/gem.png";
-              const href = s.slug ? ("/staff/" + s.slug) : ("/staff/" + s.id);
-            %>
-              <article class="staff-card card">
-                <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">
-                  <div class="staff-media" style="background-image:url('<%= imgUrl %>');"></div>
-                  <div class="staff-meta">
-                    <h4 class="staff-name"><%= s.first %> <%= s.last %></h4>
-                    <p class="staff-role"><%= s.position %></p>
-                  </div>
-                </a>
-              </article>
-            <% }); %>
-          </div>
-        </div>
-      <% }); %>
-    <% } else { %>
-      <p>No staff available right now.</p>
-    <% } %>
+    <%- include("includes/staff-gem-wall", { staffSections: staffSections }) %>
   </div>
 </section>
 
 <footer><%- include("includes/footer") %></footer>
+<script src="/js/our-history-page.js" defer></script>
 </body>
 </html>

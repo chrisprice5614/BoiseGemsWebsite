@@ -3,51 +3,55 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Contract PDFs — Boise Gems</title>
+  <title>Contract PDFs - Boise Gems</title>
   <%- include("includes/head") %>
 </head>
 <body>
 <header><%- include("includes/header") %></header>
 <main>
-  <div style="margin:12px;">
+  <div style="margin:12px; max-width:720px;">
     <h1>Contract PDFs</h1>
-    <p>Upload the official contract PDFs for Corps, Independent, and Affiliate. These will be shown on the contract acceptance page instead of the long HTML.</p>
+    <p>
+      Choose an ensemble to upload a new contract PDF or place fill-in fields
+      (Text, Signature, Date, Initials) so members can sign online.
+    </p>
 
-    <form action="/contracts-admin" method="POST" enctype="multipart/form-data">
-      <h2>Corps Contract</h2>
-      <% if (corpsContract) { %>
-        <p>Current file: <a href="<%= corpsContract.pdf_path %>" target="_blank">View PDF</a></p>
-      <% } else { %>
-        <p><i>No corps contract PDF uploaded yet.</i></p>
-      <% } %>
-      <label>Upload new Corps PDF</label>
-      <input type="file" name="corps_pdf" accept="application/pdf">
-      <br><br>
+    <%
+      const contracts = [
+        { key: "corps", label: "Corps", row: corpsContract },
+        { key: "independent", label: "Independent", row: independentContract },
+        { key: "affiliate", label: "Affiliate", row: affiliateContract },
+      ];
+    %>
 
-      <h2>Independent Contract</h2>
-      <% if (independentContract) { %>
-        <p>Current file: <a href="<%= independentContract.pdf_path %>" target="_blank">View PDF</a></p>
-      <% } else { %>
-        <p><i>No independent contract PDF uploaded yet.</i></p>
-      <% } %>
-      <label>Upload new Independent PDF</label>
-      <input type="file" name="independent_pdf" accept="application/pdf">
-      <br><br>
-
-      <h2>Affiliate Contract</h2>
-      <% if (affiliateContract) { %>
-        <p>Current file: <a href="<%= affiliateContract.pdf_path %>" target="_blank">View PDF</a></p>
-      <% } else { %>
-        <p><i>No affiliate contract PDF uploaded yet.</i></p>
-      <% } %>
-      <label>Upload new Affiliate PDF</label>
-      <input type="file" name="affiliate_pdf" accept="application/pdf">
-      <br><br>
-
-      <div style="text-align:center;">
-        <button>Save PDFs</button>
+    <% contracts.forEach(function (c) {
+      const fieldCount = (function () {
+        try {
+          const parsed = JSON.parse((c.row && c.row.fields_json) || "[]");
+          return Array.isArray(parsed) ? parsed.length : 0;
+        } catch (_) { return 0; }
+      })();
+    %>
+      <div class="form-panel" style="margin-bottom:16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+        <div>
+          <h2 style="margin:0 0 6px;"><%= c.label %> Contract</h2>
+          <% if (c.row && c.row.pdf_path) { %>
+            <p style="margin:0; color:#555;">
+              PDF on file ·
+              <a href="<%= c.row.pdf_path %>" target="_blank" rel="noopener">View</a>
+              <% if (fieldCount) { %>
+                · <%= fieldCount %> online field<%= fieldCount === 1 ? "" : "s" %>
+              <% } else { %>
+                · print &amp; upload (no online fields)
+              <% } %>
+            </p>
+          <% } else { %>
+            <p style="margin:0; color:#888;"><i>No PDF uploaded yet.</i></p>
+          <% } %>
+        </div>
+        <a href="/contracts-admin/edit/<%= c.key %>"><button type="button">Edit</button></a>
       </div>
-    </form>
+    <% }) %>
   </div>
 </main>
 <footer><%- include("includes/footer") %></footer>

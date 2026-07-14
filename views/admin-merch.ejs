@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merch Admin | Boise Gems</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main class="merch-wrap" style="padding-top:32px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+    <h1 style="margin:0;color:var(--secondary-color);">Merch Admin</h1>
+    <a href="/admin-portal" class="button">Admin Portal</a>
+  </div>
+  <% if (locals.flash) { %><div class="merch-flash"><%= flash %></div><% } %>
+
+  <div class="form-panel" style="margin-bottom:28px;">
+    <h2 style="margin-top:0;">Store Settings</h2>
+    <form method="POST" action="/admin/merch/settings">
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <input type="checkbox" name="merch_enabled" value="1" <%= settings.enabled ? 'checked' : '' %>>
+        <span>Enable merch store (shows Store link in navigation)</span>
+      </label>
+      <label>Tax percentage</label>
+      <input type="number" name="merch_tax_percent" step="0.01" min="0" max="100" value="<%= settings.taxPercent %>" style="max-width:120px;">
+      <label>Domestic shipping (USD)</label>
+      <input type="number" name="merch_shipping_domestic" step="0.01" min="0" value="<%= (settings.shippingDomesticCents / 100).toFixed(2) %>" style="max-width:120px;">
+      <label>International shipping (USD)</label>
+      <input type="number" name="merch_shipping_intl" step="0.01" min="0" value="<%= (settings.shippingIntlCents / 100).toFixed(2) %>" style="max-width:120px;">
+      <label>Order notification emails</label>
+      <textarea name="merch_order_notify_emails" rows="2" placeholder="info@fermataworks.com" style="width:100%;max-width:480px;"><%= settings.orderNotifyEmailsRaw %></textarea>
+      <p class="merch-cat-hint" style="margin-top:6px;">Comma-separated. New purchase alerts are sent to these addresses.</p>
+      <button type="submit" style="margin-top:16px;">Save Settings</button>
+    </form>
+  </div>
+
+  <div class="merch-admin-grid">
+    <div class="form-panel">
+      <h2 style="margin-top:0;">Categories</h2>
+      <p class="merch-cat-hint">Drag to reorder how categories appear in the store.</p>
+      <form method="POST" action="/admin/merch/categories" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <input type="text" name="name" placeholder="Category name" required style="flex:1;min-width:140px;">
+        <button type="submit">Add</button>
+      </form>
+      <ul class="merch-cat-list" id="merchCatList">
+        <% categories.forEach(function(c) { %>
+        <li class="merch-cat-row" data-category-id="<%= c.id %>">
+          <span class="merch-cat-grip" aria-hidden="true">⠿</span>
+          <span class="merch-cat-name"><%= c.name %></span>
+          <button type="button" class="merch-cat-del" data-category-id="<%= c.id %>">Delete</button>
+        </li>
+        <% }) %>
+      </ul>
+      <% categories.forEach(function(c) { %>
+      <form id="merch-cat-del-<%= c.id %>" method="POST" action="/admin/merch/categories/<%= c.id %>/delete" hidden></form>
+      <% }) %>
+    </div>
+
+    <div class="form-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <h2 style="margin:0;">Products</h2>
+        <a href="/admin/merch/products/new" class="button">New Product</a>
+      </div>
+      <p class="merch-cat-hint">Drag to reorder. Click the star to feature a product in the store hero carousel.</p>
+      <ul class="merch-prod-list" id="merchProdList">
+        <% products.forEach(function(p) { %>
+        <li class="merch-prod-row" data-product-id="<%= p.id %>">
+          <span class="merch-cat-grip" aria-hidden="true">⠿</span>
+          <button type="button"
+            class="merch-featured-btn<%= p.featured ? ' is-featured' : '' %>"
+            data-id="<%= p.id %>"
+            title="<%= p.featured ? 'Remove from featured' : 'Add to featured carousel' %>"
+            aria-label="<%= p.featured ? 'Featured' : 'Not featured' %>">
+            <ion-icon name="<%= p.featured ? 'star' : 'star-outline' %>"></ion-icon>
+          </button>
+          <div class="merch-prod-row-body">
+            <strong><%= p.name %></strong>
+            <span style="font-size:0.85rem;color:#666;"> · $<%= (p.price_cents/100).toFixed(2) %> · <%= p.category_name || 'Uncategorized' %></span>
+            <% if (!p.active) { %><span style="color:#c1272d;font-size:0.8rem;"> (hidden)</span><% } %>
+          </div>
+          <a href="/admin/merch/products/<%= p.id %>/edit" style="flex-shrink:0;">Edit</a>
+        </li>
+        <% }) %>
+      </ul>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script>
+(function () {
+  var list = document.getElementById('merchCatList');
+  if (list && typeof Sortable !== 'undefined') {
+    new Sortable(list, {
+      animation: 150,
+      handle: '.merch-cat-grip',
+      draggable: '.merch-cat-row',
+      onEnd: function () {
+        var ids = Array.from(list.querySelectorAll('[data-category-id]')).map(function (el) {
+          return Number(el.dataset.categoryId);
+        });
+        fetch('/admin/merch/categories/reorder', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ categoryIds: ids })
+        });
+      }
+    });
+  }
+
+  var prodList = document.getElementById('merchProdList');
+  if (prodList && typeof Sortable !== 'undefined') {
+    new Sortable(prodList, {
+      animation: 150,
+      handle: '.merch-cat-grip',
+      draggable: '.merch-prod-row',
+      onEnd: function () {
+        var ids = Array.from(prodList.querySelectorAll('[data-product-id]')).map(function (el) {
+          return Number(el.dataset.productId);
+        });
+        fetch('/admin/merch/products/reorder', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productIds: ids })
+        });
+      }
+    });
+  }
+
+  document.querySelectorAll('.merch-cat-del').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-category-id');
+      bgConfirm('Delete this category?', function () {
+        var form = document.getElementById('merch-cat-del-' + id);
+        if (form) form.submit();
+      });
+    });
+  });
+
+  document.querySelectorAll('.merch-featured-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.dataset.id;
+      fetch('/admin/merch/products/' + id + '/featured', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        if (!data.ok) return;
+        var isFeatured = data.featured;
+        btn.classList.toggle('is-featured', isFeatured);
+        btn.title = isFeatured ? 'Remove from featured' : 'Add to featured carousel';
+        btn.setAttribute('aria-label', isFeatured ? 'Featured' : 'Not featured');
+        var icon = btn.querySelector('ion-icon');
+        if (icon) icon.setAttribute('name', isFeatured ? 'star' : 'star-outline');
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

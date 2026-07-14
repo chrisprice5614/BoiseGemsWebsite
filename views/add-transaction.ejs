@@ -16,7 +16,8 @@
             <br>
             <h2 style="text-align: center;">Total Balance Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(thisUser.owed / 100) %></h2>
             <br>
-            <form action="/add-transaction/<%= thisUser.id %>" method="POST">
+            <div class="form-panel">
+<form action="/add-transaction/<%= thisUser.id %>" method="POST">
                 <label for="title">Enter Payment Title</label>
                 <input type="text" name="title" placeholder="Tuition payment" required/>
                 <br>
@@ -48,6 +49,7 @@
                     <button>Make Payment</button>
                 </div>
             </form>
+</div>
 
             <hr style="margin: 32px 0;">
 
@@ -56,7 +58,8 @@
             <p style="text-align: center;">This will increase how much this member owes.</p>
             <br>
 
-            <form action="/add-charge/<%= thisUser.id %>" method="POST">
+            <div class="form-panel">
+<form action="/add-charge/<%= thisUser.id %>" method="POST">
                 <label for="chargeTitle">Charge Title</label>
                 <input
                     type="text"
@@ -94,6 +97,7 @@
                     <button type="submit">Add Charge</button>
                 </div>
             </form>
+</div>
 
             <br>
         </div>

@@ -16,7 +16,8 @@
             <br>
             <h2 style="text-align: center;">Total Amount Due: <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></h2>
             <br>
-            <form action="/pay-behalf/<%= child.id %>" method="POST">
+            <div class="form-panel">
+<form action="/pay-behalf/<%= child.id %>" method="POST">
                 <label for="payment">Enter Amount to Pay</label>
                 <input type="number" name="payment" step="0.01" min="0.50" max="<%= (child.owed / 100).toFixed(2) %>" autocomplete="off" placeholder="<%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %>" value="" required/>
                 <br>
@@ -27,6 +28,7 @@
                     <button>Make Payment</button>
                 </div>
             </form>
+</div>
             <br>
         </div>
     </main>

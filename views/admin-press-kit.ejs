@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Press Kit - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    .pk-admin-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .pk-admin-meta .full { grid-column: 1 / -1; }
+    .pk-admin-meta label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .pk-admin-meta input,
+    .pk-admin-meta textarea {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .pk-dropzone {
+      margin-top: 14px;
+      padding: 28px 18px;
+      border: 2px dashed rgba(98, 0, 238, 0.35);
+      background: rgba(98, 0, 238, 0.04);
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+      border-radius: 0;
+      clip-path: var(--bevel-clip);
+    }
+    .pk-dropzone.is-dragover {
+      background: rgba(98, 0, 238, 0.1);
+      border-color: var(--primary-color);
+    }
+    .pk-dropzone.is-uploading {
+      opacity: 0.65;
+      pointer-events: none;
+    }
+    .pk-dropzone__title {
+      font-weight: 800;
+      margin: 0 0 6px;
+      color: var(--dark-full);
+    }
+    .pk-dropzone__hint {
+      margin: 0;
+      color: #666;
+      font-size: 0.92rem;
+    }
+    .pk-dropzone input[type="file"] { display: none !important; }
+    .pk-admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .pk-admin-item {
+      background: #fff;
+      border-radius: 0;
+      clip-path: var(--bevel-clip);
+      filter: drop-shadow(0 6px 14px rgba(15, 10, 40, 0.1));
+      overflow: hidden;
+    }
+    .pk-admin-item__thumb {
+      aspect-ratio: 1;
+      background: #f0ebf8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .pk-admin-item__thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .pk-admin-item__file {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      color: var(--secondary-color);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    .pk-admin-item__body {
+      padding: 10px;
+    }
+    .pk-admin-item__name {
+      margin: 0 0 8px;
+      font-size: 0.78rem;
+      line-height: 1.35;
+      word-break: break-word;
+      color: #444;
+    }
+    .pk-admin-item__del {
+      width: 100%;
+      padding: 6px 10px;
+      background: #fdecea;
+      border: 1px solid #f5c6c2;
+      color: #b71c1c;
+      font-weight: 700;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .pk-admin-item__del:hover { background: #fbd2cf; }
+    .pk-upload-status {
+      min-height: 1.2em;
+      margin-top: 8px;
+      font-size: 0.88rem;
+      color: #555;
+    }
+    .pk-upload-status.is-error { color: #b71c1c; }
+    .pk-upload-status.is-ok { color: #1e6e2e; }
+    @media (max-width: 640px) {
+      .pk-admin-meta { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header><%- include("includes/header") %></header>
+
+  <main>
+    <div style="padding: 24px; max-width: 1100px; margin: 0 auto;">
+      <a href="/admin-portal">&larr; Admin Portal</a>
+      <h1 style="margin-top: 12px;">Press Kit</h1>
+      <p style="margin-top: 8px; color: #555;">
+        Manage the public <a href="/press-kit" target="_blank">/press-kit</a> page.
+        Uploads start instantly when files are selected or dropped.
+      </p>
+
+      <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+        <div class="flash-box"><%= flashMessage %></div>
+      <% } %>
+
+      <div class="form-panel">
+<form action="/admin/press-kit" method="POST" class="pk-admin-meta">
+        <div>
+          <label for="location">Location</label>
+          <input type="text" id="location" name="location" value="<%= meta.location || '' %>" placeholder="Boise, Idaho">
+        </div>
+        <div>
+          <label for="founded">Founded</label>
+          <input type="text" id="founded" name="founded" value="<%= meta.founded || '' %>" placeholder="2022">
+        </div>
+        <div class="full">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" rows="6" placeholder="Short organization description for press use."><%= meta.description || '' %></textarea>
+        </div>
+        <div class="full">
+          <button type="submit">Save Details</button>
+        </div>
+      </form>
+</div>
+
+      <hr style="margin: 32px 0 24px;">
+
+      <% const renderLibrary = (category, title, items) => { %>
+      <section class="pk-library" data-category="<%= category %>">
+        <h2><%= title %></h2>
+        <div class="pk-dropzone" data-dropzone="<%= category %>">
+          <input type="file" multiple accept="image/*,.svg,.pdf,application/pdf,image/svg+xml">
+          <p class="pk-dropzone__title">Drop files here or click to browse</p>
+          <p class="pk-dropzone__hint">Images, SVG, or PDF - multiple files upload instantly</p>
+        </div>
+        <p class="pk-upload-status" data-status="<%= category %>"></p>
+        <div class="pk-admin-grid" data-grid="<%= category %>">
+          <% (items || []).forEach((item) => { %>
+          <article class="pk-admin-item" data-id="<%= item.id %>">
+            <div class="pk-admin-item__thumb">
+              <% if (item.mime_type === 'application/pdf') { %>
+                <div class="pk-admin-item__file"><ion-icon name="document-text"></ion-icon><span>PDF</span></div>
+              <% } else if (item.mime_type === 'image/svg+xml') { %>
+                <div class="pk-admin-item__file"><ion-icon name="image"></ion-icon><span>SVG</span></div>
+              <% } else { %>
+                <img src="/img/press-kit/<%= item.filename %>" alt="">
+              <% } %>
+            </div>
+            <div class="pk-admin-item__body">
+              <p class="pk-admin-item__name"><%= item.original_name %></p>
+              <button type="button" class="pk-admin-item__del" data-delete="<%= item.id %>">Remove</button>
+            </div>
+          </article>
+          <% }) %>
+        </div>
+      </section>
+      <% } %>
+
+      <% renderLibrary('logo', 'Logo Graphics', logoImages) %>
+
+      <hr style="margin: 32px 0 24px;">
+
+      <% renderLibrary('action', 'Action Shots', actionImages) %>
+    </div>
+  </main>
+
+  <footer><%- include("includes/footer") %></footer>
+
+  <script>
+    function pkThumbHtml(file) {
+      if (file.isPdf) {
+        return '<div class="pk-admin-item__file"><ion-icon name="document-text"></ion-icon><span>PDF</span></div>';
+      }
+      if (file.isSvg) {
+        return '<div class="pk-admin-item__file"><ion-icon name="image"></ion-icon><span>SVG</span></div>';
+      }
+      return '<img src="' + file.url + '" alt="">';
+    }
+
+    function pkItemHtml(file) {
+      return '<article class="pk-admin-item" data-id="' + file.id + '">' +
+        '<div class="pk-admin-item__thumb">' + pkThumbHtml(file) + '</div>' +
+        '<div class="pk-admin-item__body">' +
+          '<p class="pk-admin-item__name">' + (file.original_name || 'file') + '</p>' +
+          '<button type="button" class="pk-admin-item__del" data-delete="' + file.id + '">Remove</button>' +
+        '</div></article>';
+    }
+
+    async function pkUpload(category, files) {
+      const dropzone = document.querySelector('[data-dropzone="' + category + '"]');
+      const status = document.querySelector('[data-status="' + category + '"]');
+      const grid = document.querySelector('[data-grid="' + category + '"]');
+      if (!files || !files.length) return;
+
+      dropzone.classList.add('is-uploading');
+      status.className = 'pk-upload-status';
+      status.textContent = 'Uploading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…';
+
+      const fd = new FormData();
+      fd.append('category', category);
+      Array.from(files).forEach((f) => fd.append('files', f));
+
+      try {
+        const res = await fetch('/admin/press-kit/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || 'Upload failed');
+
+        data.files.forEach((file) => {
+          grid.insertAdjacentHTML('afterbegin', pkItemHtml(file));
+        });
+        status.className = 'pk-upload-status is-ok';
+        status.textContent = data.files.length + ' file' + (data.files.length === 1 ? '' : 's') + ' uploaded.';
+      } catch (err) {
+        status.className = 'pk-upload-status is-error';
+        status.textContent = err.message || 'Upload failed.';
+      } finally {
+        dropzone.classList.remove('is-uploading');
+      }
+    }
+
+    document.querySelectorAll('[data-dropzone]').forEach((zone) => {
+      const category = zone.getAttribute('data-dropzone');
+      const input = zone.querySelector('input[type="file"]');
+
+      zone.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => {
+        pkUpload(category, input.files);
+        input.value = '';
+      });
+
+      ['dragenter', 'dragover'].forEach((evt) => {
+        zone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          zone.classList.add('is-dragover');
+        });
+      });
+      ['dragleave', 'drop'].forEach((evt) => {
+        zone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          zone.classList.remove('is-dragover');
+        });
+      });
+      zone.addEventListener('drop', (e) => {
+        pkUpload(category, e.dataTransfer.files);
+      });
+    });
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-delete]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-delete');
+      if (!confirm('Remove this file from the press kit?')) return;
+
+      btn.disabled = true;
+      try {
+        const res = await fetch('/admin/press-kit/image/' + id + '/delete', {
+          method: 'POST',
+          headers: { Accept: 'application/json' }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || 'Delete failed');
+        const item = btn.closest('.pk-admin-item');
+        if (item) item.remove();
+      } catch (err) {
+        alert(err.message || 'Delete failed.');
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

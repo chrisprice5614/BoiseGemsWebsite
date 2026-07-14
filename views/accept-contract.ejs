@@ -15,11 +15,18 @@
         <br>
         <div style="padding: 24px; max-width: 960px; margin: 0 auto;">
           <div style="margin-bottom: 24px;">
+            <% if (typeof hasOnlineFields !== "undefined" && hasOnlineFields) { %>
+            <p>
+              Please carefully read the contract before proceeding.
+              On the next step you will <strong>fill in and sign online</strong> — no printing or upload needed.
+            </p>
+            <% } else { %>
             <p>
               Please carefully read the contract before proceeding.
               You will need to <strong>download</strong> it, <strong>fill it out and sign it</strong>,
               then <strong>upload the signed PDF</strong> on the next step when you accept the contract.
             </p>
+            <% } %>
           </div>
 
           <% if (contractPdfPath) { %>
@@ -49,13 +56,23 @@
             <% } else { %>
               <p>
                 Your contract is set to <strong>bypass the down payment</strong>. You will still need
-                to upload your signed contract PDF to complete the process.
+                <% if (typeof hasOnlineFields !== "undefined" && hasOnlineFields) { %>
+                  to complete online signing to finish the process.
+                <% } else { %>
+                  to upload your signed contract PDF to complete the process.
+                <% } %>
               </p>
             <% } %>
 
             <br>
             <a href="/sign-contract/<%= contractExtension.id %>">
-              <button>Continue to Sign &amp; Upload Contract</button>
+              <button>
+                <% if (typeof hasOnlineFields !== "undefined" && hasOnlineFields) { %>
+                  Continue to Sign Contract Online
+                <% } else { %>
+                  Continue to Sign &amp; Upload Contract
+                <% } %>
+              </button>
             </a>
           </div>
         </div>

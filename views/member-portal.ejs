@@ -2,246 +2,442 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems</title>
+    <title>Boise Gems | Member Portal</title>
     <%- include("includes/head") %>
-    <!-- styles moved to styles.css -->
-
+    <link rel="stylesheet" href="/css/merch.css">
 </head>
-<body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-        <div style="margin: 12px;">
-            <% if (typeof previewMode !== 'undefined' && previewMode) { %>
-                <div style="position: sticky; top: 0; z-index: 999; padding: 10px 18px; background: linear-gradient(90deg,#1a73e8,#4285f4); color:#fff; border-radius: 8px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.18);">
-                    <strong>👁 Admin Preview — Member View</strong>
-                    <a href="/admin-portal" style="padding:5px 14px; border-radius:6px; background:rgba(255,255,255,0.25); color:#fff; text-decoration:none; font-weight:700; border:1px solid rgba(255,255,255,0.5);">← Back to Admin</a>
-                </div>
-            <% } %>
-            <% if (member.minor && (!member.parentId || member.parentId == 0)) { %>
-                <div style="padding: 18px; border-radius: 10px; background: linear-gradient(90deg,#fff6e6,#ffecea); border: 3px solid #ff8a6b; margin-bottom: 16px;">
-                    <h2 style="margin-top:0;">Action required: Parent/Guardian Needed</h2>
-                    <p style="font-weight:700;">We see you're under 18. A parent/guardian must claim you as their child to upload forms and sign contracts.</p>
-                    <p>Enter your parent or guardian's email below and we'll send them an email with simple instructions to register or login and claim you.</p>
-                    <form action="/member-portal/request-parent-invite" method="POST" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-                        <input type="email" name="parentEmail" placeholder="Parent or guardian email" required style="flex:1; padding:8px; border-radius:6px; border:1px solid #ccc;" />
-                        <button type="submit" style="padding:10px 14px; border-radius:8px; background:#ff7a5a; color:#fff; border:0; font-weight:700;">Send Invite</button>
-                    </form>
-                </div>
-            <% } %>
-            <% if(member.staff){ %>
-                <div style="padding: 12px; border-radius: 8px; margin-bottom: 12px; box-shadow: 2px 2px 3px rgba(0,0,0,0.1);" class="purple-storm">
-                    <h2>Staff Portal</h2>
-                </div>
-            <% } %>
-            <% if((member.section != "staff") || (member.staff == 0)) { %>
-                <br>
-                
-                <br>
-            <% } %>
-            <div style="display: grid; grid-template-columns: 1fr 2fr; place-items: center; background: url('/img/ui/gem-back.jpg'); border-radius: 8px; box-shadow: 2px 2px 3px rgba(0,0,0,0.1);">
-                <div>   
-                    <div class="image-wrapper">
-                         <a href="/update-profile-photo">
-                            <% const srcImage = member.img == null ? "/img/ui/gem.png" : member.img %>
-                            <% const displayFirst = (typeof previewMode !== 'undefined' && previewMode) ? member.firstname : user.firstname; %>
-                            <% const displayLast  = (typeof previewMode !== 'undefined' && previewMode) ? member.lastname  : user.lastname; %>
-                            <img src="<%= srcImage %>" alt="Member photo for <%= displayFirst %> <%= displayLast %>">
-                        </a>
-                        <% if(member.img == null && !(typeof previewMode !== 'undefined' && previewMode)) { %>
-                            <span style="color: #fff;">Click image to change profile photo.</span>
-                        <% } %>
-                    </div>
-                </div>
-                <div>
-                    <h2 style="text-align: center; text-transform: capitalize;"><b><%= displayFirst %> <%= displayLast %></b> - <%= member.section %>, <%= member.instrument %></h2>
-                    <% if(member.contractedIndependent) {%>
-                        <p style="text-align: center;">Contracted for <b>Boise Gems Independent</b></p>
-                    <% } %>
-                                        <% if(member.contractedAffiliate) {%>
-                                                <p style="text-align: center;">Contracted for <b>Boise Gems Affiliate</b></p>
-                                        <% } %>
-                    <% if(member.contractedCorps) {%>
-                        <p style="text-align: center;">Contracted for <b>Boise Gems Drum & Bugle Corps</b></p>
-                    <% } %>
-                    <% 
-                                            const isContracted = member.contractedIndependent || member.contractedCorps || member.contractedAffiliate;
-                      let videoAuditionUrl = null;
-                      if (!isContracted && member.section) {
-                        if (member.section === "brass") {
-                          videoAuditionUrl = "https://www.omnipply.com/programs/34bbd8ff-73b0-4452-a1ae-617a566d8817/apply";
-                        } else if (member.section === "front ensemble" || member.section === "drumline") {
-                          videoAuditionUrl = "https://www.omnipply.com/programs/54e57104-fb5f-4df1-8ad4-8a61f24513b8/apply";
-                        }
-                      }
-                    %>
-                    <% if (videoAuditionUrl) { %>
-                      <div style="text-align: center; margin-top: 12px;">
-                        <a href="<%= videoAuditionUrl %>" target="_blank" rel="noopener">
-                          <button>Video audition for <%= member.section %></button>
-                        </a>
-                      </div>
-                    <% } %>
+<%
+  const displayFirst = (typeof previewMode !== 'undefined' && previewMode) ? member.firstname : user.firstname;
+  const displayLast  = (typeof previewMode !== 'undefined' && previewMode) ? member.lastname  : user.lastname;
+  const srcImage = member.img ? member.img : "/img/ui/gem.png";
+  const isContracted = member.contractedIndependent || member.contractedCorps || member.contractedAffiliate;
+  let videoAuditionUrl = null;
+  if (!isContracted && member.section) {
+    if (member.section === "brass") {
+      videoAuditionUrl = "https://www.omnipply.com/programs/34bbd8ff-73b0-4452-a1ae-617a566d8817/apply";
+    } else if (member.section === "front ensemble" || member.section === "drumline") {
+      videoAuditionUrl = "https://www.omnipply.com/programs/54e57104-fb5f-4df1-8ad4-8a61f24513b8/apply";
+    }
+  }
+%>
+<body class="pd-body">
+<header><%- include("includes/header") %></header>
 
+<div class="pd-layout">
 
-                </div>
+  <!-- ── SIDEBAR ─────────────────────────────────────────── -->
+  <aside class="pd-sidebar" id="pdSidebar">
+    <div class="pd-sidebar-profile">
+      <% if (!(typeof previewMode !== 'undefined' && previewMode)) { %>
+        <a href="/update-profile-photo" style="border:none;background:none;padding:0;display:block;">
+          <div class="pd-sidebar-avatar">
+            <img src="<%= srcImage %>" alt="Profile photo">
+          </div>
+        </a>
+      <% } else { %>
+        <div class="pd-sidebar-avatar"><img src="<%= srcImage %>" alt="Profile photo"></div>
+      <% } %>
+      <div class="pd-sidebar-name"><%= displayFirst %> <%= displayLast %></div>
+      <div class="pd-sidebar-role">
+        <%= member.section %><% if (member.instrument) { %> &middot; <%= member.instrument %><% } %>
+      </div>
+    </div>
+    <nav class="pd-nav">
+      <button class="pd-nav-item pd-active" data-label="Overview" onclick="pdShow(this,'overview')">
+        <ion-icon name="home"></ion-icon> Overview
+      </button>
+      <button class="pd-nav-item" data-label="My Info" onclick="pdShow(this,'info')">
+        <ion-icon name="person"></ion-icon> My Info
+      </button>
+      <button class="pd-nav-item" data-label="Contracts &amp; Payments" onclick="pdShow(this,'contracts')">
+        <ion-icon name="document-text"></ion-icon> Contracts &amp; Payments
+        <% if (contracts.length) { %><span class="pd-nav-badge"><%= contracts.length %></span><% } %>
+      </button>
+      <button class="pd-nav-item" data-label="Files &amp; Forms" onclick="pdShow(this,'files')">
+        <ion-icon name="folder-open"></ion-icon> Files &amp; Forms
+        <% if (!member.staff && leftoverForms > 0) { %><span class="pd-nav-badge"><%= leftoverForms %></span><% } %>
+      </button>
+      <button class="pd-nav-item" data-label="Schedule" onclick="pdShow(this,'schedule')">
+        <ion-icon name="calendar"></ion-icon> Schedule
+      </button>
+      <button class="pd-nav-item" data-label="Emergency Contacts" onclick="pdShow(this,'emergency')">
+        <ion-icon name="medkit"></ion-icon> Emergency Contacts
+      </button>
+      <% if (member.staff) { %>
+      <hr class="pd-nav-divider">
+      <button class="pd-nav-item" data-label="Staff Tools" onclick="pdShow(this,'staff')">
+        <ion-icon name="construct"></ion-icon> Staff Tools
+      </button>
+      <% } %>
+    </nav>
+  </aside>
+  <div class="pd-sidebar-overlay" id="pdOverlay" onclick="pdCloseSidebar()"></div>
+
+  <!-- ── MAIN ───────────────────────────────────────────── -->
+  <main class="pd-main">
+
+    <!-- Mobile sticky nav bar -->
+    <div class="pd-mobile-bar" id="pdMobileBar">
+      <button class="pd-mobile-bar-btn" id="pdMobileNavBtn" onclick="pdMobileBarAction()">
+        <ion-icon name="chevron-forward-circle"></ion-icon> Navigation
+      </button>
+      <span class="pd-mobile-bar-title" id="pdMobileTitle">Overview</span>
+    </div>
+
+    <% if (typeof previewMode !== 'undefined' && previewMode) { %>
+    <div class="pd-preview-bar">
+      <strong>&#128065; Admin Preview - Member View</strong>
+      <a href="/admin-portal" style="padding:4px 14px;border-radius:6px;background:rgba(255,255,255,0.25);color:#fff;text-decoration:none;font-weight:700;">&#8592; Back to Admin</a>
+    </div>
+    <% } %>
+
+    <!-- ══ OVERVIEW ══════════════════════════════════════ -->
+    <div class="pd-section pd-active" id="pd-sec-overview">
+      <div class="pd-section-inner">
+
+        <!-- Alerts -->
+        <% if (member.minor && !member.hasLinkedParent) { %>
+        <div class="pd-alert pd-alert--danger">
+          <ion-icon name="alert-circle"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-title">Action Required: Parent/Guardian Needed</div>
+            <div class="pd-alert-text">You're under 18. A parent/guardian must be linked to upload forms and sign contracts. Enter their email to send a link request.</div>
+            <div style="margin-top:10px;">
+              <%- include("includes/parent-link-open-btn", { linkMode: 'child_to_parent' }) %>
             </div>
-            <div class="duple-to-single">
-                <div style="margin: 24px 8px; padding: 8px; background-color: #dfdfdf; border-radius: 12px; box-shadow: 2px 2px 6px rgba(0,0,0,0.25);">
-                    <%- include("includes/shirt-size-section") %>
-                    <br>
-                    <p><b>Email:</b> <%= member.email %></p>
-                    <br>
-                    <p><b>Address:</b> <%= member.address %></p>
-                    <br>
-                    <p><b>Phone:</b> <%= member.phone %></p>
-                    <br>
-                    <p><b>Birthday:</b> <%= new Date( member.birthday ).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
-                    <br>
-                    <p><b>Email verified: </b>✅</p>
-                    <br>
-                    <% if(!member.staff) { %>
-                    <p><b>Balance Due: </b><%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(member.owed / 100) %></p>
-                    <% } %>
-                </div>
-                <div style="margin: 24px 8px; padding: 8px; background-color: #dfdfdf; border-radius: 12px; box-shadow: 2px 2px 6px rgba(0,0,0,0.25);">
-                     <% if (contracts.length) { %>
-                        <div style="text-align: center;">
-                            <h3>You have a membership contract to view!</h3>
-                            <% contracts.forEach(function (contract) { 
-                                let groupString = "Corps";
-
-                                if (contract.season && contract.season.includes("independent")) {
-                                    groupString = "Independent";
-                                } else if (contract.season && contract.season.includes("affiliate")) {
-                                    groupString = "Affiliate";
-                                }
-
-                                const dueMs = Number(contract.due_date || 0);
-                                let daysRemaining = null;
-                                let dueLabel = "";
-
-                                if (dueMs) {
-                                    const now = Date.now();
-                                    const diffMs = dueMs - now;
-                                    daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
-
-                                    const dueDateObj = new Date(dueMs);
-                                    dueLabel = dueDateObj.toLocaleDateString("en-US", {
-                                        year: "numeric",
-                                        month: "long",
-                                        day: "numeric"
-                                    });
-                                }
-                            %>
-                                <br>
-                                <% if (dueLabel) { %>
-                                    <p style="margin: 4px 0;">
-                                        Contract due by <%= dueLabel %>
-                                        <% if (typeof daysRemaining === "number" && !Number.isNaN(daysRemaining)) { %>
-                                            (
-                                            <% if (daysRemaining > 0) { %>
-                                                <%= daysRemaining %> day<%= daysRemaining === 1 ? "" : "s" %> remaining
-                                            <% } else if (daysRemaining === 0) { %>
-                                                due today
-                                            <% } else { %>
-                                                past due
-                                            <% } %>
-                                            )
-                                        <% } %>
-                                    </p>
-                                <% } %>
-                                <% const needsParentSig = !!(contract.child_id && contract.user_id !== user.userid); %>
-                                <% if (needsParentSig) { %>
-                                    <button onclick="document.getElementById('parent-sign-modal-<%= contract.id %>').style.display='flex'">
-                                        View/Accept Contract - <%= groupString %>
-                                    </button>
-                                    <div id="parent-sign-modal-<%= contract.id %>" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
-                                        <div style="background:#fff; border-radius:12px; padding:28px 24px; max-width:400px; width:90%; text-align:center; box-shadow:0 4px 24px rgba(0,0,0,0.25);">
-                                            <h3 style="margin-top:0; color:#333;">Parent/Guardian Required</h3>
-                                            <p style="color:#444; line-height:1.5;">
-                                                This contract must be signed by your parent or guardian.
-                                                Please have them log in to their <strong>parent account</strong> and sign it from their Parent Portal.
-                                            </p>
-                                            <button onclick="document.getElementById('parent-sign-modal-<%= contract.id %>').style.display='none'" style="margin-top:12px; padding:8px 24px; border-radius:8px; background:#0b71d9; color:#fff; border:none; font-weight:700; cursor:pointer;">
-                                                Got it
-                                            </button>
-                                        </div>
-                                    </div>
-                                <% } else { %>
-                                    <a href="/accept-contract/<%= contract.id %>">
-                                        <button>View/Accept Contract - <%= groupString %></button>
-                                    </a>
-                                <% } %>
-                                <br>
-                            <% }); %>
-                        </div>
-                    <% } %>
-                    <div style="text-align: center;">
-                        <br>
-                        <a href="/view-materials"><button>View Audition Materials</button></a>
-                        <br>
-                        <br>
-                        <a href="/files"><button>Music &amp; Files</button></a>
-                        <br>
-                        <br>
-                        <a href="/support/issue"><button>Submit Website Issue</button></a>
-                        <br>
-                        <br>
-                        
-                        <a href="/update-emergency"><button>Emergency Contacts</button></a>
-                        <br>
-                        <br>
-                        <a href="/update-info"><button>Update Information</button></a>
-                        <br>
-                        <br>
-                        <a href="/member-transactions"><button>View Payment History</button></a>
-                        <br>
-                        <br>
-                        <% if(member.owed>0) { %>
-                            <a href="/make-payment"><button>Make Payment</button></a>
-                            <br>
-                            <br>
-                        <% } %>
-                        <% if(!allergy) { %>
-                            <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You <b>MUST</b> set your allergy information</i></h3>
-                            <br>
-                        <% } %>
-                        <a href="/allergy-info"><button>Allergy Info</button></a>
-                    </div>
-                    <br>
-                    <% if(!member.staff) { %>
-                        <% if((leftoverForms > -5)) { %>
-                            <div style="text-align: center;">
-                                <% if((leftoverForms > 0)) { %>
-                                <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
-                                <% } %>
-                                <br>
-                                <a href="/member-forms"><button>View Forms</button></a>
-                            </div>
-                        <% } %>
-                    <% } else { %>
-                        <div style="text-align: center;">
-                            <a href="/audition-member"><button>Audition Member</button></a>
-                            <br>
-                            <br>
-                            <a href="/staff/members"><button>Extend Contract</button></a>
-                            <br>
-                            <br>
-                            <a href="/set-materials"><button>Set Audition Material</button></a>
-                            <br>
-                            <br>
-                            <a href="/admin/callbacks"><button>Extend Callback</button></a>
-                    <br><br>
-                        </div>
-                    <% } %>
-                </div>
-            </div>
+          </div>
         </div>
-    </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+        <% } %>
+
+        <%- include("includes/parent-link-requests", { linkRequests: linkRequests || [] }) %>
+
+        <% if (!allergy) { %>
+        <div class="pd-alert pd-alert--warning">
+          <ion-icon name="warning"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-title">Allergy information required</div>
+            <div class="pd-alert-text">You <strong>must</strong> set your allergy information before the season begins.</div>
+            <div style="margin-top:8px;"><a href="/allergy-info"><button type="button">Set Allergy Info</button></a></div>
+          </div>
+        </div>
+        <% } %>
+
+        <% if (!member.staff && leftoverForms > 0) { %>
+        <div class="pd-alert pd-alert--danger">
+          <ion-icon name="documents"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-title"><%= leftoverForms %> required form<%= leftoverForms === 1 ? '' : 's' %> to upload</div>
+            <div style="margin-top:8px;"><a href="/member-forms"><button type="button">View Forms</button></a></div>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Hero -->
+        <div class="pd-hero">
+          <% if (!(typeof previewMode !== 'undefined' && previewMode)) { %>
+            <a href="/update-profile-photo" style="border:none;background:none;padding:0;display:block;flex:0 0 auto;">
+              <img class="pd-hero-avatar" src="<%= srcImage %>" alt="Profile photo">
+            </a>
+          <% } else { %>
+            <img class="pd-hero-avatar" src="<%= srcImage %>" alt="Profile photo">
+          <% } %>
+          <div>
+            <div class="pd-hero-name"><%= displayFirst %> <%= displayLast %></div>
+            <div class="pd-hero-meta"><%= member.section %><% if (member.instrument) { %> &middot; <%= member.instrument %><% } %></div>
+            <div class="pd-hero-badges">
+              <% if (member.contractedCorps) { %><span class="pd-hero-badge">Drum &amp; Bugle Corps</span><% } %>
+              <% if (member.contractedIndependent) { %><span class="pd-hero-badge">Independent</span><% } %>
+              <% if (member.contractedAffiliate) { %><span class="pd-hero-badge">Affiliate</span><% } %>
+              <% if (!isContracted) { %><span class="pd-hero-badge" style="background:rgba(255,255,255,0.13)">Not yet contracted</span><% } %>
+              <% if (!member.staff && member.owed > 0) { %>
+                <span class="pd-hero-badge pd-hero-badge--warn">Balance due: <%= new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(member.owed/100) %></span>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <% if (typeof linkedParents !== 'undefined' && linkedParents.length) { %>
+        <div class="pd-sub-heading">Parents / Guardians</div>
+        <div class="pd-info-grid" style="margin-bottom:8px;">
+          <% linkedParents.forEach(function(parent) { %>
+          <div class="pd-info-card">
+            <div class="pd-info-value"><%= parent.firstname %> <%= parent.lastname %></div>
+            <div style="font-size:0.82rem;color:#666;margin-top:4px;word-break:break-all;"><%= parent.email %></div>
+          </div>
+          <% }); %>
+        </div>
+        <% } %>
+
+        <!-- Quick actions -->
+        <div class="pd-sub-heading">Quick Actions</div>
+        <div class="pd-quick-actions">
+          <a href="/view-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Audition Materials</a>
+          <% if (isContracted || member.staff) { %>
+          <a href="/files" class="pd-action-btn"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
+          <% } %>
+          <a href="/allergy-info" class="pd-action-btn"><ion-icon name="medkit"></ion-icon> Allergy Info</a>
+          <% if (!member.staff && member.owed > 0) { %>
+            <a href="/make-payment" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
+          <% } %>
+          <% if (videoAuditionUrl) { %>
+            <a href="<%= videoAuditionUrl %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> Video Audition</a>
+          <% } %>
+          <% if (contracts.length) { %>
+            <a class="pd-action-btn pd-action-btn--primary" href="#" onclick="pdShow(document.querySelector('[onclick*=contracts]'),'contracts');return false;"><ion-icon name="document-text"></ion-icon> View Contracts</a>
+          <% } %>
+        </div>
+
+        <!-- Today's schedule (if published) -->
+        <%- include("includes/schedule-today-overview") %>
+
+        <!-- Announcements feed -->
+        <div class="pd-sub-heading" style="margin-top:32px;">Announcements</div>
+        <%- include("includes/ann-feed", { announcements: announcements || [], user }) %>
+
+      </div>
+    </div>
+
+    <!-- ══ MY INFO ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-info">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">My Info</div>
+        <div class="pd-section-sub">Your personal details currently on file.</div>
+
+        <div class="pd-info-grid">
+          <div class="pd-info-card">
+            <div class="pd-info-label">Email</div>
+            <div class="pd-info-value" style="word-break:break-all;"><%= member.email %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Phone</div>
+            <div class="pd-info-value"><%= member.phone || '-' %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Birthday</div>
+            <div class="pd-info-value"><%= new Date(member.birthday).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'}) %></div>
+          </div>
+          <div class="pd-info-card" style="grid-column: span 2;">
+            <div class="pd-info-label">Address</div>
+            <div class="pd-info-value"><%= member.address || '-' %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Email Status</div>
+            <div class="pd-info-value">&#9989; Verified</div>
+          </div>
+          <% if (!member.staff) { %>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Balance Due</div>
+            <div class="pd-info-value" style="<%= member.owed > 0 ? 'color:#ef4444' : '' %>">
+              <%= new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(member.owed/100) %>
+            </div>
+          </div>
+          <% } %>
+        </div>
+
+        <% if (typeof linkedParents !== 'undefined' && linkedParents.length) { %>
+        <div class="pd-sub-heading" style="margin-top:24px;">Parents / Guardians</div>
+        <div class="pd-info-grid">
+          <% linkedParents.forEach(function(parent) { %>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Parent / Guardian</div>
+            <div class="pd-info-value"><%= parent.firstname %> <%= parent.lastname %></div>
+            <div style="font-size:0.82rem;color:#666;margin-top:4px;word-break:break-all;"><%= parent.email %></div>
+          </div>
+          <% }); %>
+        </div>
+        <% } else if (member.minor) { %>
+        <div class="pd-sub-heading" style="margin-top:24px;">Parents / Guardians</div>
+        <div class="pd-alert pd-alert--info" style="margin-top:8px;">
+          <ion-icon name="information-circle"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-text">No parent or guardian linked yet.</div>
+            <div style="margin-top:8px;">
+              <%- include("includes/parent-link-open-btn", { linkMode: 'child_to_parent' }) %>
+            </div>
+          </div>
+        </div>
+        <% } %>
+
+        <%- include("includes/shirt-size-section") %>
+
+        <div class="pd-sub-heading" style="margin-top:24px;">Actions</div>
+        <div class="pd-quick-actions">
+          <a href="/update-info" class="pd-action-btn"><ion-icon name="create"></ion-icon> Update Information</a>
+          <a href="/allergy-info" class="pd-action-btn"><ion-icon name="medkit"></ion-icon> Allergy Info</a>
+          <a href="/update-emergency" class="pd-action-btn"><ion-icon name="call"></ion-icon> Emergency Contacts</a>
+          <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ CONTRACTS & PAYMENTS ═══════════════════════════ -->
+    <div class="pd-section" id="pd-sec-contracts">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Contracts &amp; Payments</div>
+        <div class="pd-section-sub">Review and sign membership contracts, or manage your payments.</div>
+
+        <% if (contracts.length) { %>
+          <div class="pd-sub-heading">Pending Contracts</div>
+          <% contracts.forEach(function(contract) {
+            let groupString = "Corps";
+            if (contract.season && contract.season.includes("independent")) groupString = "Independent";
+            else if (contract.season && contract.season.includes("affiliate")) groupString = "Affiliate";
+            const dueMs = Number(contract.due_date || 0);
+            let daysRemaining = null, dueLabel = "";
+            if (dueMs) {
+              const now = Date.now();
+              daysRemaining = Math.ceil((dueMs - now) / (24*60*60*1000));
+              dueLabel = new Date(dueMs).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+            }
+            const needsParentSig = !!(contract.child_id && contract.user_id !== user.userid);
+          %>
+          <div class="pd-contract-card">
+            <div class="pd-contract-icon"><ion-icon name="document-text"></ion-icon></div>
+            <div class="pd-contract-body">
+              <div class="pd-contract-title">Membership Contract - <%= groupString %></div>
+              <% if (dueLabel) { %>
+              <div class="pd-contract-due <%= daysRemaining !== null && daysRemaining < 0 ? 'overdue' : '' %>">
+                Due <%= dueLabel %>
+                <% if (typeof daysRemaining === 'number' && !isNaN(daysRemaining)) { %>
+                  (<% if (daysRemaining > 0) { %><%= daysRemaining %> day<%= daysRemaining === 1 ? '' : 's' %> remaining<% } else if (daysRemaining === 0) { %>due today<% } else { %>past due<% } %>)
+                <% } %>
+              </div>
+              <% } %>
+            </div>
+            <% if (needsParentSig) { %>
+              <button type="button" onclick="document.getElementById('psm-<%= contract.id %>').style.display='flex'">View / Accept</button>
+              <div id="psm-<%= contract.id %>" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;">
+                <div style="background:#fff;border-radius:14px;padding:28px 24px;max-width:400px;width:90%;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,0.25);">
+                  <h3 style="margin-top:0;color:#333;">Parent/Guardian Required</h3>
+                  <p style="color:#444;line-height:1.5;">This contract must be signed by your parent or guardian from their Parent Portal.</p>
+                  <button type="button" onclick="document.getElementById('psm-<%= contract.id %>').style.display='none'" style="margin-top:12px;">Got it</button>
+                </div>
+              </div>
+            <% } else { %>
+              <a href="/accept-contract/<%= contract.id %>"><button type="button">View / Accept</button></a>
+            <% } %>
+          </div>
+          <% }); %>
+        <% } else { %>
+          <div class="pd-alert pd-alert--success" style="margin-bottom:22px;">
+            <ion-icon name="checkmark-circle"></ion-icon>
+            <div class="pd-alert-body">
+              <div class="pd-alert-title">No pending contracts</div>
+              <div class="pd-alert-text">You have no contracts waiting for your signature.</div>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (!member.staff) { %>
+          <div class="pd-sub-heading">Payments</div>
+          <div class="pd-info-grid" style="margin-bottom:14px;">
+            <div class="pd-info-card">
+              <div class="pd-info-label">Balance Due</div>
+              <div class="pd-info-value" style="font-size:1.2rem;<%= member.owed > 0 ? 'color:#ef4444' : '' %>">
+                <%= new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(member.owed/100) %>
+              </div>
+            </div>
+          </div>
+          <div class="pd-quick-actions">
+            <% if (member.owed > 0) { %>
+              <a href="/make-payment" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
+            <% } %>
+            <a href="/member-transactions" class="pd-action-btn"><ion-icon name="receipt"></ion-icon> Payment History</a>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- ══ FILES & FORMS ══════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-files">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Files &amp; Forms</div>
+        <div class="pd-section-sub">Access audition materials, music files, and required forms.</div>
+
+        <div class="pd-quick-actions">
+          <a href="/view-materials" class="pd-action-btn pd-action-btn--primary"><ion-icon name="musical-notes"></ion-icon> Audition Materials</a>
+          <% if (isContracted || member.staff) { %>
+          <a href="/files" class="pd-action-btn pd-action-btn--primary"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
+          <% } %>
+          <% if (!member.staff && leftoverForms > -5) { %>
+            <a href="/member-forms" class="pd-action-btn <%= leftoverForms > 0 ? 'pd-action-btn--primary' : '' %>">
+              <ion-icon name="documents"></ion-icon> View Forms<% if (leftoverForms > 0) { %> (<%= leftoverForms %> required)<% } %>
+            </a>
+          <% } %>
+        </div>
+
+        <% if (!member.staff && leftoverForms > 0) { %>
+        <div class="pd-alert pd-alert--danger">
+          <ion-icon name="warning"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-title"><%= leftoverForms %> required form<%= leftoverForms === 1 ? '' : 's' %> still need to be uploaded.</div>
+          </div>
+        </div>
+        <% } %>
+
+        <%- include("includes/merch-downloads", { digitalGrants }) %>
+      </div>
+    </div>
+
+    <!-- ══ SCHEDULE ═══════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-schedule">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Schedule</div>
+        <div class="pd-section-sub">Daily rehearsal and activity schedule. Pick a day to view.</div>
+        <%- include("includes/schedule-panel") %>
+      </div>
+    </div>
+
+    <!-- ══ EMERGENCY CONTACTS ═════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-emergency">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Emergency Contacts</div>
+        <div class="pd-section-sub">Keep your emergency contact information current so staff can reach the right people.</div>
+        <div class="pd-quick-actions">
+          <a href="/update-emergency" class="pd-action-btn pd-action-btn--primary"><ion-icon name="create"></ion-icon> Update Emergency Contacts</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ STAFF TOOLS ════════════════════════════════════ -->
+    <% if (member.staff) { %>
+    <div class="pd-section" id="pd-sec-staff">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Staff Tools</div>
+        <div class="pd-section-sub">Administrative tools for staff members.</div>
+        <div class="pd-quick-actions">
+          <a href="/audition-member" class="pd-action-btn"><ion-icon name="person-add"></ion-icon> Audition Member</a>
+          <a href="/staff/members" class="pd-action-btn"><ion-icon name="people"></ion-icon> Extend Contract</a>
+          <a href="/admin/season-roster" class="pd-action-btn"><ion-icon name="people-circle"></ion-icon> Season Roster</a>
+          <a href="/files" class="pd-action-btn"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
+          <a href="/set-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Set Audition Material</a>
+          <a href="/admin/callbacks" class="pd-action-btn"><ion-icon name="call"></ion-icon> Extend Callback</a>
+        </div>
+      </div>
+    </div>
+    <% } %>
+
+  </main>
+</div>
+
+<footer><%- include("includes/footer") %></footer>
+
+<%- include("includes/parent-link-widgets", { linkMode: 'child_to_parent' }) %>
+
+<!-- Image viewer modal (for announcements) -->
+<div id="annImgModalOverlay" class="ann-modal-overlay" onclick="this.hidden=true" hidden>
+  <div class="ann-modal-box" onclick="event.stopPropagation()">
+    <button class="ann-modal-close" onclick="document.getElementById('annImgModalOverlay').hidden=true">&times;</button>
+    <img id="annImgModalImg" src="" alt="Announcement image">
+  </div>
+</div>
+
+<script src="/js/portal-nav.js"></script>
+<script>
+function annImgModal(src) {
+  document.getElementById('annImgModalImg').src = src;
+  document.getElementById('annImgModalOverlay').hidden = false;
+}
+</script>
 </body>
 </html>

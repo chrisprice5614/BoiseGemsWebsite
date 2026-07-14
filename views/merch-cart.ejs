@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cart | Boise Gems Shop</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+</head>
+<body class="merch-page merch-cart-page">
+<header><%- include("includes/header") %></header>
+<%- include("includes/merch-floating-cart", { cartCount }) %>
+
+<main class="merch-page-main">
+  <%- include("includes/merch-shop-hero") %>
+
+  <div class="merch-cart-page-wrap">
+    <nav class="merch-breadcrumb" aria-label="Breadcrumb">
+      <a href="/store">Shop</a>
+      <span class="merch-breadcrumb__sep" aria-hidden="true">/</span>
+      <span class="merch-breadcrumb__current">Cart</span>
+    </nav>
+
+    <% if (locals.flash) { %><div class="merch-flash merch-cart-flash"><%= flash %></div><% } %>
+
+    <% if (!lines.length) { %>
+    <div class="merch-cart-empty">
+      <div class="merch-cart-empty__card">
+        <div class="merch-cart-empty__icon" aria-hidden="true">
+          <ion-icon name="cart-outline"></ion-icon>
+        </div>
+        <h1 class="merch-cart-empty__title">Your cart is empty</h1>
+        <p class="merch-cart-empty__text">Looks like you have not added anything yet. Browse the shop to find Boise Gems gear and downloads.</p>
+        <a href="/store" class="button merch-cart-empty__btn">Browse the shop</a>
+      </div>
+    </div>
+    <% } else { %>
+    <h1 class="merch-cart-heading">Your cart</h1>
+    <div class="merch-cart-layout">
+      <div class="merch-cart-items">
+        <% lines.forEach(function(line) { %>
+        <article class="merch-cart-item">
+          <img class="merch-cart-item__img" src="<%= line.image %>" alt="">
+          <div class="merch-cart-item__body">
+            <h2 class="merch-cart-item__name"><%= line.product.name %></h2>
+            <% if (line.color) { %><p class="merch-cart-item__meta"><%= line.color.color_name %></p><% } %>
+            <% if (line.item.size) { %><p class="merch-cart-item__meta">Size: <%= line.item.size %></p><% } %>
+            <p class="merch-cart-item__price">$<%= (line.product.price_cents / 100).toFixed(2) %> each</p>
+            <div class="merch-cart-item__actions">
+              <% if (line.product.product_type !== 'digital') { %>
+              <form action="/store/cart/update" method="POST" class="merch-cart-qty-form">
+                <input type="hidden" name="index" value="<%= line.index %>">
+                <label class="sr-only" for="qty-<%= line.index %>">Quantity</label>
+                <input type="number" id="qty-<%= line.index %>" name="qty" value="<%= line.item.qty %>" min="1" max="99">
+                <button type="submit" class="button button--small">Update</button>
+              </form>
+              <% } else { %>
+              <span class="merch-cart-item__meta">Qty: 1</span>
+              <% } %>
+              <form action="/store/cart/remove" method="POST">
+                <input type="hidden" name="index" value="<%= line.index %>">
+                <button type="submit" class="merch-text-btn">Remove</button>
+              </form>
+            </div>
+          </div>
+          <div class="merch-cart-item__total">$<%= (line.lineTotal / 100).toFixed(2) %></div>
+        </article>
+        <% }) %>
+      </div>
+
+      <aside class="merch-summary merch-summary--cart">
+        <h2 class="merch-summary__title">Summary</h2>
+        <div class="merch-summary-row"><span>Subtotal</span><span>$<%= (totals.subtotalCents / 100).toFixed(2) %></span></div>
+        <% if (hasPhysical) { %>
+        <div class="merch-summary-row"><span>Est. shipping (US)</span><span>$<%= (totals.shippingCents / 100).toFixed(2) %></span></div>
+        <% } %>
+        <% if (settings.taxPercent > 0) { %>
+        <div class="merch-summary-row"><span>Tax (<%= settings.taxPercent %>%)</span><span>$<%= (totals.taxCents / 100).toFixed(2) %></span></div>
+        <% } %>
+        <div class="merch-summary-row merch-summary-row--total"><span>Estimated total</span><span>$<%= (totals.totalCents / 100).toFixed(2) %></span></div>
+        <a href="/store/checkout" class="button merch-checkout-cta">Proceed to checkout</a>
+        <a href="/store" class="merch-continue-link">Continue shopping</a>
+      </aside>
+    </div>
+    <% } %>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

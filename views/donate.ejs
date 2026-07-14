@@ -26,8 +26,37 @@
             margin: 0 auto; line-height: 1.6; text-shadow: 0 1px 6px rgba(0,0,0,.4);
         }
 
-        /* ── Page wrapper ── */
-        .donate-page { max-width: 1080px; margin: 0 auto; padding: 0 20px 48px; }
+        .dn-page { max-width: 1080px; margin: 0 auto; padding: 0 20px 48px; }
+
+        .dn-guest-notice {
+            margin: 28px 0 0;
+            padding: 16px 20px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #f3ebfc, #ebe2f8);
+            border: 1px solid #d8c8ec;
+            color: #3b3049;
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+        .dn-guest-notice a { color: var(--secondary-color); }
+        .dn-guest-contact {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin: 18px 0 8px;
+            padding: 18px 20px;
+            background: #fff;
+            border: 1px solid #e4daf0;
+            border-radius: 12px;
+        }
+        .dn-guest-contact label { display: block; font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; }
+        .dn-guest-contact input {
+            width: 100%; box-sizing: border-box; padding: 10px 12px;
+            border: 1px solid #d8c8ec; border-radius: 8px; font-size: 1rem;
+        }
+        @media (max-width: 640px) {
+            .dn-guest-contact { grid-template-columns: 1fr; }
+        }
 
         /* ── Tabs ── */
         .dn-tabs {
@@ -189,6 +218,14 @@
             font-size: .88rem; color: var(--secondary-color); font-weight: 600;
         }
 
+        /* Beveled-corner identity for all donate cards/panels */
+        .dn-tabs, .dn-section-header, .ftc-card, .dn-donate-card,
+        .rewards-panel, .next-tier-nudge, .dn-expand-form, .dn-guest-card {
+            border-radius: 0 !important;
+            clip-path: var(--bevel-clip);
+            filter: drop-shadow(0 6px 14px rgba(15, 10, 40, 0.12));
+        }
+
         /* ── Form panels (expanded after card selection) ── */
         .dn-expand-form {
             display: none; margin-top: 20px; background: #fff; border-radius: 14px;
@@ -293,7 +330,7 @@
         <!-- ═══════════════════════════════════════
              HERO BANNER
              ═══════════════════════════════════════ -->
-        <!-- IMAGE NEEDED: donate-hero.jpg — a wide, cinematic shot of the full corps
+        <!-- IMAGE NEEDED: donate-hero.jpg - a wide, cinematic shot of the full corps
              performing on a field at golden hour. The group photo from the capitol
              steps (boise-gems-01.jpg) could work, or any dramatic wide-angle
              performance photo that shows the scale of the corps. -->
@@ -307,11 +344,13 @@
 
         <div class="donate-page">
 
-            <% if (typeof user !== 'undefined' && user) { %>
-
-            <!-- ──────────────────────────────────────
-                 LOGGED-IN DONATION EXPERIENCE
-                 ────────────────────────────────────── -->
+            <% if (typeof user === 'undefined' || !user) { %>
+            <div class="dn-guest-notice">
+                <strong>Donating as a guest?</strong> You can use every option below: tier rewards, Feed the Corps, and subscriptions.
+                Your donation progress and history <strong>won't be saved to an account</strong> unless you
+                <a href="/login?returnTo=/donate">log in</a> or <a href="/register-fan">create a fan account</a>.
+            </div>
+            <% } %>
 
             <div class="dn-tabs">
                 <button class="dn-tab active" onclick="switchTab('onetime')">Make a One-Time Donation</button>
@@ -322,7 +361,7 @@
             <div class="dn-panel active" id="panel-onetime">
 
                 <!-- Feed the Corps -->
-                <!-- IMAGE NEEDED: donate-feed.jpg — a casual/warm photo of members eating
+                <!-- IMAGE NEEDED: donate-feed.jpg - a casual/warm photo of members eating
                      together, getting water during practice, or the community interacting
                      with the corps during a break. The community.jpg photo (kid playing
                      drums with members) is a great option. -->
@@ -365,6 +404,12 @@
                 <form id="ftc-form" action="/donate/feed-the-corps" method="POST" class="dn-expand-form">
                     <input type="hidden" name="ftcTier" id="ftcTier" value="" />
                     <input type="hidden" name="ftcAmount" id="ftcAmount" value="" />
+                    <% if (typeof user === 'undefined' || !user) { %>
+                    <div class="dn-guest-contact">
+                        <div><label for="ftcDonorEmail">Your Email</label><input type="email" name="donorEmail" id="ftcDonorEmail" required placeholder="email@website.com"></div>
+                        <div><label for="ftcDonorName">Your Name</label><input type="text" name="donorName" id="ftcDonorName" required placeholder="First and Last Name"></div>
+                    </div>
+                    <% } %>
                     <label for="ftcMessage">Your message for the sign</label>
                     <textarea name="ftcMessage" id="ftcMessage" placeholder="Write your personal message here..." required></textarea>
                     <p class="dn-fee-note">A processing fee is added to all transactions.</p>
@@ -386,6 +431,12 @@
                         <form id="onetime-form" action="/donate/onetime" method="POST">
                             <input type="hidden" name="selectedTier" id="onetimeTier" value="" />
                             <input type="hidden" name="tierMinCents" id="onetimeTierMin" value="" />
+                            <% if (typeof user === 'undefined' || !user) { %>
+                            <div class="dn-guest-contact">
+                                <div><label for="otDonorEmail">Your Email</label><input type="email" name="donorEmail" id="otDonorEmail" required placeholder="email@website.com"></div>
+                                <div><label for="otDonorName">Your Name</label><input type="text" name="donorName" id="otDonorName" required placeholder="First and Last Name"></div>
+                            </div>
+                            <% } %>
 
                             <label for="onetimeAmount" style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">How much would you like to donate?</label>
                             <div class="dn-amount-group">
@@ -438,6 +489,12 @@
                         <form id="onetime-form" action="/donate/onetime" method="POST">
                             <input type="hidden" name="selectedTier" value="" />
                             <input type="hidden" name="tierMinCents" value="" />
+                            <% if (typeof user === 'undefined' || !user) { %>
+                            <div class="dn-guest-contact">
+                                <div><label for="otSimpleDonorEmail">Your Email</label><input type="email" name="donorEmail" id="otSimpleDonorEmail" required placeholder="email@website.com"></div>
+                                <div><label for="otSimpleDonorName">Your Name</label><input type="text" name="donorName" id="otSimpleDonorName" required placeholder="First and Last Name"></div>
+                            </div>
+                            <% } %>
 
                             <label for="onetimeAmountSimple" style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">Donation Amount</label>
                             <div class="dn-amount-group">
@@ -471,6 +528,12 @@
                         <form id="sub-form-corporate" action="/donate/subscribe" method="POST">
                             <input type="hidden" name="tier" id="corpSubTier" value="" />
                             <input type="hidden" name="fanType" value="corporate" />
+                            <% if (typeof user === 'undefined' || !user) { %>
+                            <div class="dn-guest-contact">
+                                <div><label for="corpDonorEmail">Your Email</label><input type="email" name="donorEmail" id="corpDonorEmail" required placeholder="email@website.com"></div>
+                                <div><label for="corpDonorName">Your Name</label><input type="text" name="donorName" id="corpDonorName" required placeholder="First and Last Name"></div>
+                            </div>
+                            <% } %>
 
                             <label style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">Monthly Sponsorship Amount</label>
                             <div class="dn-amount-group">
@@ -533,6 +596,12 @@
                         <form id="sub-form-individual" action="/donate/subscribe" method="POST">
                             <input type="hidden" name="tier" id="indSubTier" value="" />
                             <input type="hidden" name="fanType" value="individual" />
+                            <% if (typeof user === 'undefined' || !user) { %>
+                            <div class="dn-guest-contact">
+                                <div><label for="indDonorEmail">Your Email</label><input type="email" name="donorEmail" id="indDonorEmail" required placeholder="email@website.com"></div>
+                                <div><label for="indDonorName">Your Name</label><input type="text" name="donorName" id="indDonorName" required placeholder="First and Last Name"></div>
+                            </div>
+                            <% } %>
 
                             <label style="font-weight:700; font-size:1.05rem; margin-bottom:10px;">Monthly Amount</label>
                             <div class="dn-amount-group">
@@ -580,28 +649,6 @@
                     </div>
                 <% } %>
             </div><!-- /panel-subscribe -->
-
-            <% } else { %>
-
-            <!-- ──────────────────────────────────────
-                 NOT LOGGED IN — guest donation
-                 ────────────────────────────────────── -->
-            <div class="dn-guest-card">
-                <form action="/donate" method="POST" style="border:none; box-shadow:none; padding:0; margin:0; background:none;">
-                    <label for="email">Your Email</label>
-                    <input type="email" name="email" placeholder="email@website.com" required>
-                    <label for="name">Your Name</label>
-                    <input type="text" name="name" required placeholder="First and Last Name">
-                    <label for="message">Optional Message</label>
-                    <textarea name="message" id="message" placeholder="Your message here..." style="min-height:70px; resize:vertical;"></textarea>
-                    <label for="payment">Donation Amount ($)</label>
-                    <input type="number" name="payment" step="0.01" min="0.50" max="999999" required />
-                    <p class="dn-fee-note">A processing fee is added to all transactions.</p>
-                    <button type="submit" class="dn-submit">Make Donation</button>
-                </form>
-            </div>
-
-            <% } %>
 
         </div><!-- /donate-page -->
 

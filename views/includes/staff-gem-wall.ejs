@@ -1,0 +1,32 @@
+<%
+  /* Requires: staffSections (array of { title, staff[] }) */
+%>
+<% if (staffSections && staffSections.length) { %>
+  <% staffSections.forEach(function(section, sectionIndex) { %>
+    <h3 class="staff-gem-section-title"><%= section.title %></h3>
+    <div class="staff-gem-wall" data-staff-section data-section-index="<%= sectionIndex %>">
+      <% section.staff.forEach(function(s) {
+        var imgUrl = s.image ? ('/img/publicupload/' + s.image) : '/img/ui/gem.png';
+        var href = s.slug ? ('/staff/' + s.slug) : ('/staff/' + s.id);
+      %>
+      <a class="staff-gem-tile" href="<%= href %>"
+         aria-label="<%= s.first %> <%= s.last %> - <%= s.position %>"
+         data-staff-id="<%= s.id %>">
+        <div class="staff-gem-tile__gem">
+          <span class="staff-gem-tile__facet staff-gem-tile__facet--a"></span>
+          <span class="staff-gem-tile__facet staff-gem-tile__facet--b"></span>
+          <span class="staff-gem-tile__img" style="background-image:url('<%= imgUrl %>');"></span>
+          <span class="staff-gem-tile__shade"></span>
+        </div>
+        <div class="staff-gem-tile__text">
+          <span class="staff-gem-tile__name"><%= s.first %> <%= s.last %></span>
+          <span class="staff-gem-tile__role"><%= s.position %></span>
+        </div>
+      </a>
+      <% }); %>
+    </div>
+  <% }); %>
+  <script src="/js/staff-gem-wall.js" defer></script>
+<% } else { %>
+  <p class="staff-gem-empty">No staff available right now.</p>
+<% } %>

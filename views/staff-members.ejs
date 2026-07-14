@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Staff — Members & Contract Extensions</title>
+    <title>Staff - Members & Contract Extensions</title>
     <%- include("includes/head") %>
   </head>
   <body>
@@ -91,7 +91,7 @@
                     <strong><%= m.firstname %> <%= m.lastname %></strong>
                   </td>
                   <td style="border-bottom:1px solid #eee; padding:6px; text-transform:capitalize;">
-                    <%= m.section || "—" %>
+                    <%= m.section || "-" %>
                   </td>
                   <td style="border-bottom:1px solid #eee; padding:6px;">
                     <%= m.contractedCorps ? "✅" : "❌" %>
@@ -103,7 +103,7 @@
                     <%= m.contractedAffiliate ? "✅" : "❌" %>
                   </td>
                   <td style="border-bottom:1px solid #eee; padding:6px;">
-                    <%= m.email || "—" %>
+                    <%= m.email || "-" %>
                   </td>
                   <td style="border-bottom:1px solid #eee; padding:6px;">
                     <a href="/extend-contract/<%= m.id %>">

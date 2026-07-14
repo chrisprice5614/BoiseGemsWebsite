@@ -2,28 +2,174 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Boise Gems</title>
+  <title>Update Profile Photo - Boise Gems</title>
   <%- include("includes/head") %>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 </head>
+<%
+  const backUrl = (typeof returnPortal !== 'undefined' && returnPortal) ? returnPortal : '/member-portal';
+%>
 <body>
-  <header>
-    <%- include("includes/header") %>
-  </header>
-  <main>
-    <div style="padding: 8px">
-      <br>
-      <h1 style="text-align: center;">Update Profile Photo</h1>
-      <br>
+  <header><%- include("includes/header") %></header>
+  <main class="pfp-main">
+    <div class="pfp-wrap">
+      <h1 class="pfp-title">Update Profile Photo</h1>
+      <p class="pfp-hint">Choose a photo, then drag to reposition, pinch or scroll to zoom, and rotate until it looks right.</p>
+
       <form id="photoForm" method="POST" action="/update-profile-photo" enctype="multipart/form-data">
-        <input type="file" name="photo" accept="image/*" required />
-        <br><br>
-        <button type="submit">Save Profile Photo</button>
+        <input type="file" id="photoInput" name="photo" accept="image/*" hidden>
+
+        <div class="pfp-pick-row">
+          <button type="button" id="chooseBtn"><ion-icon name="images"></ion-icon> Choose Photo</button>
+          <a href="<%= backUrl %>" class="pfp-cancel-link">Cancel</a>
+        </div>
+
+        <div id="cropStage" class="pfp-crop-stage" hidden>
+          <div class="pfp-crop-frame">
+            <img id="cropImage" src="" alt="Crop preview">
+          </div>
+
+          <div class="pfp-toolbar" role="toolbar" aria-label="Photo editor">
+            <button type="button" class="pfp-tool-btn" data-action="zoom-in" title="Zoom in"><ion-icon name="add"></ion-icon></button>
+            <button type="button" class="pfp-tool-btn" data-action="zoom-out" title="Zoom out"><ion-icon name="remove"></ion-icon></button>
+            <span class="pfp-toolbar-sep"></span>
+            <button type="button" class="pfp-tool-btn" data-action="rotate-left" title="Rotate left"><ion-icon name="arrow-undo"></ion-icon></button>
+            <button type="button" class="pfp-tool-btn" data-action="rotate-right" title="Rotate right"><ion-icon name="arrow-redo"></ion-icon></button>
+            <span class="pfp-toolbar-sep"></span>
+            <button type="button" class="pfp-tool-btn" data-action="reset" title="Reset"><ion-icon name="refresh"></ion-icon></button>
+          </div>
+
+          <div class="pfp-save-row">
+            <button type="submit" id="saveBtn"><ion-icon name="checkmark"></ion-icon> Save Profile Photo</button>
+            <button type="button" class="ann-cancel-btn" id="clearBtn">Choose Different Photo</button>
+          </div>
+        </div>
       </form>
-      <br>
     </div>
   </main>
-  <footer>
-    <%- include("includes/footer") %>
-  </footer>
+  <footer><%- include("includes/footer") %></footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+  <script>
+  (function() {
+    var cropper = null;
+    var objectUrl = null;
+    var input = document.getElementById('photoInput');
+    var cropImage = document.getElementById('cropImage');
+    var cropStage = document.getElementById('cropStage');
+    var form = document.getElementById('photoForm');
+    var saveBtn = document.getElementById('saveBtn');
+
+    function revokeUrl() {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
+    }
+
+    function destroyCropper() {
+      if (cropper) {
+        cropper.destroy();
+        cropper = null;
+      }
+    }
+
+    function loadFile(file) {
+      if (!file || !file.type.match(/^image\//)) {
+        if (window.bgAlert) bgAlert('Please choose an image file.');
+        return;
+      }
+      destroyCropper();
+      revokeUrl();
+      objectUrl = URL.createObjectURL(file);
+      cropImage.onload = function() {
+        cropStage.hidden = false;
+        cropper = new Cropper(cropImage, {
+          aspectRatio: 1,
+          viewMode: 1,
+          dragMode: 'move',
+          autoCropArea: 0.92,
+          checkOrientation: true,
+          responsive: true,
+          background: false,
+          guides: true,
+          center: true,
+          highlight: false,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+          toggleDragModeOnDblclick: false,
+          minContainerWidth: 280,
+          minContainerHeight: 280,
+        });
+      };
+      cropImage.src = objectUrl;
+    }
+
+    document.getElementById('chooseBtn').addEventListener('click', function() {
+      input.click();
+    });
+
+    input.addEventListener('change', function() {
+      if (input.files && input.files[0]) loadFile(input.files[0]);
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', function() {
+      destroyCropper();
+      revokeUrl();
+      cropImage.removeAttribute('src');
+      cropStage.hidden = true;
+      input.value = '';
+    });
+
+    document.querySelectorAll('.pfp-tool-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (!cropper) return;
+        var action = btn.getAttribute('data-action');
+        if (action === 'zoom-in') cropper.zoom(0.1);
+        else if (action === 'zoom-out') cropper.zoom(-0.1);
+        else if (action === 'rotate-left') cropper.rotate(-90);
+        else if (action === 'rotate-right') cropper.rotate(90);
+        else if (action === 'reset') cropper.reset();
+      });
+    });
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      if (!cropper) {
+        if (window.bgAlert) bgAlert('Please choose a photo first.');
+        return;
+      }
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      var canvas = cropper.getCroppedCanvas({
+        width: 640,
+        height: 640,
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high',
+      });
+
+      if (!canvas) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<ion-icon name="checkmark"></ion-icon> Save Profile Photo';
+        if (window.bgAlert) bgAlert('Could not process this image. Try a different photo.');
+        return;
+      }
+
+      canvas.toBlob(function(blob) {
+        if (!blob) {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = '<ion-icon name="checkmark"></ion-icon> Save Profile Photo';
+          if (window.bgAlert) bgAlert('Could not process this image. Try a different photo.');
+          return;
+        }
+        var dt = new DataTransfer();
+        dt.items.add(new File([blob], 'profile.webp', { type: 'image/webp' }));
+        input.files = dt.files;
+        form.submit();
+      }, 'image/webp', 0.88);
+    });
+  })();
+  </script>
 </body>
 </html>

@@ -3,34 +3,73 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= scope === "corps" ? "Corps" : "Indoor" %> Files — <%= year %> | Boise Gems</title>
+  <title><%= scopeLabel %> <%= year %> | Music & Files</title>
   <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/files-drive.css">
 </head>
-<body>
-<header>
-  <%- include("includes/header") %>
-</header>
+<body class="files-drive-page" data-can-manage="0">
+<header><%- include("includes/header") %></header>
 
-<main>
-  <div style="max-width: 960px; margin: 16px auto;">
-    <p><a href="/files">&larr; Back to Files Home</a></p>
-    <h1><%= scope === "corps" ? "Corps" : "Indoor" %> Files — <%= year %></h1>
+<main class="files-drive">
+  <div class="files-drive__search-wrap">
+    <ion-icon name="search" aria-hidden="true"></ion-icon>
+    <input type="search" id="filesSearch" class="files-drive__search" placeholder="Filter folders..." autocomplete="off">
+  </div>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 16px;">
-      <% sections.forEach(function(sec) { %>
-        <a href="/files/folder/<%= sec.id %>" style="text-decoration: none;">
-          <div style="padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12);">
-            <h2 style="margin-top: 0;"><%= sec.name %></h2>
-            <p>Section folder for <%= sec.section %>.</p>
-          </div>
-        </a>
-      <% }) %>
+  <nav class="files-drive__breadcrumb" aria-label="Breadcrumb">
+    <a href="/files">Music &amp; Files</a>
+    <span class="files-drive__breadcrumb-sep">/</span>
+    <span><%= scopeLabel %> <%= year %></span>
+  </nav>
+
+  <div class="files-drive__top">
+    <div>
+      <h1 class="files-drive__title"><%= scopeLabel %> &middot; <%= year %></h1>
+      <p class="files-drive__subtitle">Open a section folder to browse music and files.</p>
+    </div>
+    <div class="files-drive__toolbar">
+      <label class="files-drive__sort-label" for="filesSort">Sort</label>
+      <select id="filesSort" class="files-drive__sort">
+        <option value="az">A-Z</option>
+        <option value="za">Z-A</option>
+        <option value="newest">Most Recent</option>
+        <option value="oldest">Oldest</option>
+        <option value="type">File type</option>
+      </select>
+      <button type="button" class="files-drive__view-btn" data-view="grid">Grid</button>
+      <button type="button" class="files-drive__view-btn" data-view="list">List</button>
     </div>
   </div>
+
+  <% if (!sections.length) { %>
+  <div class="files-drive-empty">
+    <ion-icon name="folder-open-outline"></ion-icon>
+    <p>No section folders yet.</p>
+  </div>
+  <% } else { %>
+  <div class="files-drive__items files-drive__grid" id="filesDriveItems">
+    <% sections.forEach(function(sec) { %>
+    <a href="/files/folder/<%= sec.id %>"
+       class="files-drive-item files-drive-card"
+       data-kind="folder"
+       data-id="<%= sec.id %>"
+       data-name="<%= sec.name %>"
+       data-created="<%= sec.created_at || 0 %>"
+       data-type="folder">
+      <div class="files-drive-card__icon"><ion-icon name="folder"></ion-icon></div>
+      <p class="files-drive-card__name"><%= sec.name %></p>
+      <p class="files-drive-card__meta">Folder</p>
+    </a>
+    <% }) %>
+  </div>
+  <div class="files-drive-empty" id="filesSearchEmpty" hidden>
+    <ion-icon name="search-outline"></ion-icon>
+    <p>No results found.</p>
+  </div>
+  <% } %>
 </main>
 
-<footer>
-  <%- include("includes/footer") %>
-</footer>
+<footer><%- include("includes/footer") %></footer>
+<script src="/js/files-drive.js"></script>
 </body>
 </html>

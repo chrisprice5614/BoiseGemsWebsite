@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <title>Chris Payment — Boise Gems</title>
+  <title>Chris Payment - Boise Gems</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <%- include("includes/head") %>
 </head>
@@ -37,7 +37,8 @@
     <% if (canRecordPayment) { %>
       <section style="margin-bottom: 32px; border: 1px solid #ddd; padding: 12px; border-radius: 8px;">
         <h3>Record "Payment Made"</h3>
-        <form action="/admin/chris-payment/pay" method="POST">
+        <div class="form-panel">
+<form action="/admin/chris-payment/pay" method="POST">
           <label for="amount">Amount paid (USD)</label><br/>
           <input
             type="number"
@@ -62,6 +63,7 @@
 
           <button type="submit">Payment Made</button>
         </form>
+</div>
       </section>
     <% } %>
 

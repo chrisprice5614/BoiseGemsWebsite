@@ -14,7 +14,8 @@
             <br>
             <h1 style="text-align: center;">Allergy Information</h1>
             <br>
-            <form action="/set-allergies" method="POST">
+            <div class="form-panel">
+<form action="/set-allergies" method="POST">
                 <div style="align-items: center;">
                     <label for="no_allergies">Check box for No Allergies</label>
                     <input type="checkbox" name="no_allergies" <% if(allergyInfo.no_allergies) {%> checked <% } %>>
@@ -29,6 +30,7 @@
                     <button>Save Allergy Information</button>
                 </div>
             </form>
+</div>
             <br>
         </div>
     </main>

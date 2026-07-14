@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donor List – Admin</title>
+    <title>Donor List - Admin</title>
     <%- include("includes/head") %>
     <!-- styles moved to styles.css -->
 </head>
@@ -23,7 +23,8 @@
                 <div class="flash-box"><%= flashMessage %></div>
             <% } %>
 
-            <form action="/admin/donors" method="POST" style="margin-top: 20px;">
+            <div class="form-panel">
+<form action="/admin/donors" method="POST">
                 <label for="names" style="margin-left: 0; display: block; margin-bottom: 6px; font-weight: 600;">
                     Donor Names (comma-separated)
                 </label>
@@ -32,6 +33,7 @@
                     <button type="submit">Save Donor List</button>
                 </div>
             </form>
+</div>
 
             <% if (names && names.trim()) { %>
             <hr style="margin: 28px 0 20px;">

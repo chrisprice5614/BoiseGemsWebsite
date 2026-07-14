@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedules - Admin - Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main class="pd-main" style="max-width:960px;margin:0 auto;padding:24px 16px;">
+  <div class="sch-page-head">
+    <div>
+      <h1 style="margin:0;">Schedules</h1>
+      <p style="margin:6px 0 0;color:#666;">One schedule per day. Design times, sections, and locations for each rehearsal day.</p>
+    </div>
+    <div class="sch-page-head__actions">
+      <a href="/admin-portal"><button type="button">← Admin Portal</button></a>
+      <a href="/admin/schedules/designer/today"><button type="button">Design Today</button></a>
+      <a href="/admin/schedules/designer"><button type="button">+ New Schedule</button></a>
+    </div>
+  </div>
+
+  <% if (locals.flashMessage) { %>
+    <div class="pd-flash-msg"><%= flashMessage %></div>
+  <% } %>
+
+  <% if (!schedules.length) { %>
+    <div class="form-panel"><p>No schedules yet. Create one to get started.</p></div>
+  <% } else { %>
+    <div class="sch-admin-list">
+      <% schedules.forEach(function(s) {
+        var aud = [];
+        if (s.aud_everyone) aud.push('Everyone');
+        if (s.aud_corps) aud.push('Corps');
+        if (s.aud_independent) aud.push('Independent');
+        if (!aud.length) aud.push('Hidden');
+      %>
+        <a href="/admin/schedules/designer/<%= s.id %>" class="sch-admin-row">
+          <div class="sch-admin-row-date"><%= s.date %></div>
+          <div class="sch-admin-row-body">
+            <div class="sch-admin-row-title"><%= s.date %></div>
+            <div class="sch-admin-row-meta"><%= s.time_count || 0 %> time<%= (s.time_count || 0) === 1 ? '' : 's' %></div>
+            <div class="sch-admin-row-aud"><%= aud.join(' · ') %></div>
+          </div>
+          <ion-icon name="chevron-forward"></ion-icon>
+        </a>
+      <% }) %>
+    </div>
+  <% } %>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

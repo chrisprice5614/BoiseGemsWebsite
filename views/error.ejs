@@ -1,0 +1,306 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | <%= code %> <%= type %></title>
+    <%- include("includes/head") %>
+    <!-- reCAPTCHA v2 (used by the Send to Developer modal) -->
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <style>
+        /* Full-width background/section (override the site-wide max-width + centering on <main>) */
+        .error-main{
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            box-sizing: border-box;
+            padding: clamp(2rem, 6vw, 4rem) clamp(1.25rem, 4vw, 2rem) clamp(7rem, 16vw, 11rem);
+            text-align: center;
+            align-items: center; /* <main> is display:flex column - center the content */
+        }
+
+        /* Constrained, centered message so the trumpet doesn't cover it on desktop */
+        .error-content{
+            width: min(640px, 100%);
+            margin: 0 auto;
+        }
+
+        .error-code{
+            margin: 0;
+            font-weight: 800;
+            line-height: 1;
+            font-size: clamp(5rem, 20vw, 11rem);
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.25));
+        }
+
+        .error-type{
+            margin: 0.25rem 0 1.75rem;
+            font-weight: 700;
+            font-size: clamp(1.25rem, 4vw, 2rem);
+            color: var(--dark-half);
+        }
+
+        .error-detail-label{
+            display: block;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--dark-quarter);
+            margin: 0 0 0.5rem;
+        }
+
+        .error-detail{
+            width: 100%;
+            min-height: 120px;
+            height: auto;
+            max-height: 260px;
+            resize: vertical;
+            box-sizing: border-box;
+            padding: 14px 16px;
+            border-radius: 10px;
+            border: 1px solid #cfc7de;
+            background: #fff;
+            color: #111;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            white-space: pre;
+            overflow: auto;
+        }
+
+        /* Keep the error box white/black regardless of hover or focus */
+        .error-detail:hover,
+        .error-detail:focus{
+            background: #fff;
+            color: #111;
+            border-color: #cfc7de;
+            box-shadow: none;
+            outline: none;
+        }
+
+        .error-actions{
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1.25rem;
+        }
+
+        .error-trumpet{
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: clamp(140px, 22vw, 300px);
+            height: auto;
+            z-index: 5;
+            pointer-events: none;
+            filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.45));
+        }
+
+        /* Send to Developer modal */
+        .report-overlay{
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.72);
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .report-overlay.is-open{
+            display: flex;
+        }
+
+        .report-modal{
+            background: #fff;
+            color: var(--dark-half);
+            width: min(440px, 100%);
+            border-radius: 0;
+            clip-path: var(--bevel-clip);
+            padding: clamp(1.5rem, 4vw, 2.25rem);
+            filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.5));
+            text-align: center;
+        }
+
+        .report-modal h2{
+            margin: 0 0 0.5rem;
+            font-size: 1.4rem;
+        }
+
+        .report-modal p{
+            margin: 0 0 1.25rem;
+            color: var(--dark-quarter);
+            font-size: 0.95rem;
+        }
+
+        .report-modal .g-recaptcha{
+            display: inline-block;
+            margin-bottom: 1.25rem;
+        }
+
+        .report-modal-actions{
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .report-status{
+            margin-top: 1rem;
+            font-weight: 600;
+            min-height: 1.2em;
+        }
+
+        .report-status.is-error{ color: #c0392b; }
+        .report-status.is-success{ color: #1e7e46; }
+    </style>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+
+    <main class="error-main">
+        <div class="error-content">
+            <h1 class="error-code"><%= code %></h1>
+            <p class="error-type"><%= type %></p>
+
+            <label class="error-detail-label" for="error-detail">Error message</label>
+            <textarea id="error-detail" class="error-detail" readonly rows="6"><%= detail %></textarea>
+
+            <div class="error-actions">
+                <button type="button" id="copy-error-btn">Copy</button>
+                <button type="button" id="send-dev-btn">Send to Developer</button>
+            </div>
+        </div>
+    </main>
+
+    <img src="/img/action/errortrumpet.png" alt="" class="error-trumpet" aria-hidden="true">
+
+    <!-- Send to Developer modal -->
+    <div class="report-overlay" id="report-overlay" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <div class="report-modal">
+            <div id="report-form-wrap">
+                <h2 id="report-title">Send this error to the developer</h2>
+                <p>Please confirm you're human, then we'll email the details to the developer.</p>
+                <div class="g-recaptcha" data-sitekey="<%= RECAPTCHA_SITE_KEY %>"></div>
+                <div class="report-modal-actions">
+                    <button type="button" id="report-cancel-btn">Cancel</button>
+                    <button type="button" id="report-send-btn">Send</button>
+                </div>
+                <p class="report-status" id="report-status" role="status"></p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+
+    <script>
+        (function () {
+            const detailEl = document.getElementById('error-detail');
+            const copyBtn = document.getElementById('copy-error-btn');
+            const sendDevBtn = document.getElementById('send-dev-btn');
+            const overlay = document.getElementById('report-overlay');
+            const cancelBtn = document.getElementById('report-cancel-btn');
+            const sendBtn = document.getElementById('report-send-btn');
+            const statusEl = document.getElementById('report-status');
+
+            const errorPayload = {
+                code: <%- JSON.stringify(String(code)) %>,
+                type: <%- JSON.stringify(String(type)) %>,
+                detail: detailEl ? detailEl.value : ''
+            };
+
+            // Copy the full error message to the clipboard.
+            copyBtn.addEventListener('click', async () => {
+                const text = detailEl.value;
+                try {
+                    await navigator.clipboard.writeText(text);
+                } catch (e) {
+                    detailEl.removeAttribute('readonly');
+                    detailEl.select();
+                    document.execCommand('copy');
+                    detailEl.setAttribute('readonly', '');
+                    window.getSelection().removeAllRanges();
+                }
+                const original = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = original; }, 1600);
+            });
+
+            const openModal = () => {
+                overlay.classList.add('is-open');
+                statusEl.textContent = '';
+                statusEl.className = 'report-status';
+                if (window.grecaptcha && typeof grecaptcha.reset === 'function') {
+                    try { grecaptcha.reset(); } catch (e) {}
+                }
+            };
+
+            const closeModal = () => overlay.classList.remove('is-open');
+
+            sendDevBtn.addEventListener('click', openModal);
+            cancelBtn.addEventListener('click', closeModal);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeModal();
+            });
+
+            sendBtn.addEventListener('click', async () => {
+                const token = (window.grecaptcha && grecaptcha.getResponse) ? grecaptcha.getResponse() : '';
+                if (!token) {
+                    statusEl.textContent = 'Please complete the captcha first.';
+                    statusEl.className = 'report-status is-error';
+                    return;
+                }
+
+                sendBtn.disabled = true;
+                cancelBtn.disabled = true;
+                statusEl.textContent = 'Sending…';
+                statusEl.className = 'report-status';
+
+                try {
+                    const res = await fetch('/report-error', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            code: errorPayload.code,
+                            type: errorPayload.type,
+                            detail: errorPayload.detail,
+                            token: token
+                        })
+                    });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (res.ok && data.ok) {
+                        statusEl.textContent = data.message || 'The error message was sent. Thank you!';
+                        statusEl.className = 'report-status is-success';
+                        sendBtn.style.display = 'none';
+                        cancelBtn.textContent = 'Close';
+                        cancelBtn.disabled = false;
+                    } else {
+                        statusEl.textContent = (data && data.message) || 'Could not send the report. Please try again.';
+                        statusEl.className = 'report-status is-error';
+                        sendBtn.disabled = false;
+                        cancelBtn.disabled = false;
+                        if (window.grecaptcha && grecaptcha.reset) { try { grecaptcha.reset(); } catch (e) {} }
+                    }
+                } catch (e) {
+                    statusEl.textContent = 'Network error. Please try again.';
+                    statusEl.className = 'report-status is-error';
+                    sendBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

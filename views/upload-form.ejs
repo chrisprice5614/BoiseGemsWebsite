@@ -1,100 +1,86 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems</title>
-    <%- include("includes/head") %>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= thisForm.title %> | Boise Gems</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/form-wizard.css">
 </head>
 <body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-  <div style="padding: 12px;">
-    <h1 style="text-align: center;"><%= thisForm.title %></h1>
-    <br>
-    <p><%= thisForm.description %></p>
+<header><%- include("includes/header") %></header>
+<main class="form-fill"
+      id="formFillRoot"
+      data-pdf="<%= thisForm.document_path || '' %>"
+      data-fields='<%- JSON.stringify(typeof formFields !== "undefined" ? formFields : []).replace(/'/g, "&#39;") %>'
+      data-prefill='<%- JSON.stringify(typeof existingFieldValues !== "undefined" ? existingFieldValues : {}).replace(/'/g, "&#39;") %>'>
 
-    <% if (thisForm.document_path) { %>
-      <hr>
-      <h2>Form PDF</h2>
-      <p>
-        Please review the PDF below.
-        <% if (typeof hasFillablePdf !== "undefined" && hasFillablePdf) { %>
-          This PDF has fillable fields – you can type directly into it using your browser’s PDF viewer.
-        <% } %>
-      </p>
+  <div class="form-fill__intro">
+    <h1><%= thisForm.title %></h1>
+    <p style="margin:0;font-size:1.05rem;line-height:1.45;"><%= thisForm.description %></p>
+    <p style="margin:14px 0 0;color:#6b5585;">
+      You can submit with some boxes blank and come back later.
+      Prior signatures stay locked so parent and child can both sign the same form legally.
+      <% if (typeof existingUpload !== "undefined" && existingUpload) { %>
+        <br><strong>This form already has saved fields</strong> — blank boxes are waiting for another signer.
+      <% } %>
+    </p>
+  </div>
 
-      <div style="margin: 16px 0;">
-        <iframe
-          src="<%= thisForm.document_path %>"
-          style="width:100%; max-width:900px; height:600px; border:1px solid #ccc; border-radius:6px;"
-        ></iframe>
-      </div>
+  <% if (thisForm.document_path) { %>
+  <div class="fw-pdf-shell">
+    <div class="fw-pdf-pages" id="formFillPages"></div>
+  </div>
+  <% } else { %>
+  <p>There is no PDF attached to this form. You can still sign below.</p>
+  <% } %>
 
-      <p style="font-size: 0.9rem; color:#555;">
-        <% if (typeof hasFillablePdf !== "undefined" && hasFillablePdf) { %>
-          After you fill in all fields, use the PDF viewer’s <strong>Download/Save</strong> button to save a copy to your device,
-          then upload that filled-out PDF below.
-        <% } else { %>
-          Print or download the PDF, fill it out, then upload a scanned or saved copy below.
-        <% } %>
-      </p>
-    <% } %>
-
-    <br>
+  <div class="ff-panel">
     <form
+      id="formFillForm"
       <% if (typeof parent !== "undefined" && parent) { %>
         action="/upload-form-parent/<%= thisForm.id %>/<%= parent %>"
       <% } else { %>
         action="/upload-form/<%= thisForm.id %>"
       <% } %>
-      enctype="multipart/form-data"
       method="POST"
+      enctype="multipart/form-data"
     >
-      <h2 style="text-align: center;">
-        Sign <% if (thisForm.upload) { %>and Upload <% } %>Form
-      </h2>
+      <input type="hidden" name="field_values" id="fieldValues" value="{}">
 
-      <br>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 5%;">
-        <input type="checkbox" name="read" id="read" required style="margin: 0;" />
-        <label for="read" style="margin: 0;">I Have Read And Agree To The Form</label>
+      <h2 style="margin-top:0;text-align:center;">Save &amp; sign</h2>
+      <p style="text-align:center;color:#6b5585;">Confirm who you are. Empty PDF boxes are OK.</p>
+
+      <div style="display:flex;align-items:center;gap:0.6rem;margin:12px 0 18px;">
+        <input type="checkbox" name="read" id="read" required style="width:20px;height:20px;">
+        <label for="read" style="margin:0;font-size:1.05rem;">I have read this form and agree</label>
       </div>
 
-      <br>
-      <label for="name">Your Name</label>
-      <input type="text" name="name" required />
+      <label for="name"><strong>Your full name</strong></label>
+      <input type="text" name="name" id="name" required style="width:100%;padding:12px;font-size:1.1rem;margin:6px 0 14px;border:2px solid #d8c8ec;">
 
-      <br>
-      <label for="email">Your Email</label>
-      <input type="email" name="email" required />
+      <label for="email"><strong>Your email</strong></label>
+      <input type="email" name="email" id="email" required style="width:100%;padding:12px;font-size:1.1rem;margin:6px 0 14px;border:2px solid #d8c8ec;">
 
-      <br>
-      <label for="signature">Signature</label>
-      <input type="text" name="signature" required />
+      <label for="signature"><strong>Type your signature</strong></label>
+      <input type="text" name="signature" id="signature" required placeholder="Type your full name as your signature" style="width:100%;padding:12px;font-size:1.2rem;margin:6px 0 14px;border:2px solid #d8c8ec;font-family:'Segoe Script','Comic Sans MS',cursive;">
 
-      <br>
-      <label for="date">Today's Date</label>
-      <input type="date" name="date" required />
+      <label for="date"><strong>Today's date</strong></label>
+      <input type="date" name="date" id="date" required style="width:100%;padding:12px;font-size:1.1rem;margin:6px 0 18px;border:2px solid #d8c8ec;">
 
-      <% if (thisForm.upload) { %>
-        <br>
-        <label for="document_path">
-          Upload Completed PDF (required)
-        </label>
-        <input type="file" name="document_path" accept="application/pdf" required />
-      <% } %>
-
-      <br><br>
-      <div style="text-align: center;">
-        <button>Sign</button>
+      <div style="text-align:center;">
+        <button type="submit" class="button" style="font-size:1.1rem;padding:14px 28px;">Save form</button>
       </div>
     </form>
   </div>
 </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+<footer><%- include("includes/footer") %></footer>
+<script>
+  (function () {
+    var d = document.getElementById("date");
+    if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+  })();
+</script>
+<script type="module" src="/js/form-wizard.js"></script>
 </body>
 </html>

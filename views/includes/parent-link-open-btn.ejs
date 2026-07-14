@@ -1,0 +1,8 @@
+<%
+  const plButtonLabel = (typeof linkMode !== 'undefined' && linkMode === 'child_to_parent')
+    ? 'Add Parent / Guardian'
+    : 'Add Child';
+%>
+<button type="button" class="pd-action-btn pd-action-btn--primary" data-pl-open>
+  <ion-icon name="person-add"></ion-icon> <%= plButtonLabel %>
+</button>

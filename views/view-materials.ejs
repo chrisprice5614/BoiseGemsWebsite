@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Boise Gems — Audition Materials</title>
+  <title>Boise Gems - Audition Materials</title>
   <%- include("includes/head") %>
   <style>
     .edit-panel {
@@ -54,7 +54,7 @@
   <div style="padding: 8px;">
     <h1 style="text-align:center; margin: 8px 0 4px;">Audition Materials</h1>
     <p class="note">
-      Download the latest audition packets for your section. If a section shows "Coming soon," check back later—materials are being updated.
+      Download the latest audition packets for your section. If a section shows "Coming soon," check back later - materials are being updated.
     </p>
     <% if (admin || staff) { %>
       <p style="text-align:center; font-size:0.85rem; color:#888; margin: 4px 0 0;">
@@ -113,13 +113,15 @@
                 <summary><button type="button" class="btn-edit-mat">Edit</button></summary>
                 <div class="edit-panel">
                   <label>Upload new PDF for <em><%= pretty[key] %></em>:</label>
-                  <form action="/set-materials" method="POST" enctype="multipart/form-data">
+                  <div class="form-panel">
+<form action="/set-materials" method="POST" enctype="multipart/form-data">
                     <div class="upload-row">
                       <input type="file" name="<%= fieldName[key] %>" accept="application/pdf" required />
                       <button type="submit">Upload &amp; Replace</button>
                     </div>
                     <small style="color:#888;">This will replace the current PDF for this section.</small>
                   </form>
+</div>
                 </div>
               </details>
             <% } %>

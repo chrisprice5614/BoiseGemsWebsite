@@ -2,127 +2,312 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems | Parents Area</title>
+    <title>Boise Gems | Parent Portal</title>
     <%- include("includes/head") %>
 </head>
-<body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-        <div style="margin: 12px;">
-            <div class="duple-to-single">
-                <div style="margin: 4px">
-                    <h1>Hello, <%= user.firstname %> <%= user.lastname %></h1>
-                    <br>
-                    <p><b>Email:</b> <%= member.email %></p>
-                    <br>
-                    <p><b>Address:</b> <%= member.address %></p>
-                    <br>
-                    <p><b>Phone:</b> <%= member.phone %></p>
-                    <br>
-                    <p><b>Birthday:</b> <%= new Date( member.birthday ).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).replace(/(\d{1,2})(,)/, '$1th$2') %></p>
-                    <br>
-                    <p><b>Email verified: </b>✅</p>
-                    <br>
-                </div>
-                <div style="margin: 4px">
-                    <h2>Your Children</h2>
-                    <p>Members you're the parent/guardian of</p>
-                    <br>
-                    <% if(children.length == 0) { %>
-                        <p><i>No members</i></p>
-                    <% } else { %>
-                        <% children.forEach(child => { %>
-                            <div style="border: solid 1px #666; padding: 4px; border-radius: 4px; margin-bottom: 8px; box-shadow: 1px 1px 4px rgba(0,0,0,0.2); background-color: var(--light-half);">
-                                <div>
-                                            <p><b><%= child.firstname %> <%= child.lastname %></b></p>
-                                            <hr>
-                                        </div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr;">
-                                    <div>
-                                        
-                                        <div>
-                                            <p><b>Due: </b> <%= new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(child.owed / 100) %></p>
-                                        </div>
-                                        <div>
-                                            <p><b>Age: </b><%= Math.floor((Date.now() - child.birthday) / (1000 * 60 * 60 * 24 * 365.25)) %></p>
-                                        </div>
-                                        <div>
-                                            <p style="text-transform: capitalize;"><b>Section: </b><%= child.section %></p>
-                                        </div>
-                                        <div>
-                                            <p style="text-transform: capitalize;"><b>Instrument/Role: </b><%= child.instrument %></p>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style="text-align: center;">
-                                                <% if(child.owed > 0) { %>
-                                                <a href="/pay-behalf/<%= child.id %>"><button>Make Payment</button></a>
-                                                <% } %>
-                                                <br>
-                                                <% if((child.leftoverForms) > -1 && (child.minor)) { %>
-                                                    <div style="text-align: center;">
-                                                        <br>
-                                                        <% if(child.leftoverForms > 0)  { %>
-                                                        <h3 style="padding: 8px; border: solid 2px red; border-radius: 16px;"><i>You have required forms to upload!!</i></h3>
-                                                        <% } %>
-                                                        <br>
-                                                        <a href="/member-forms-parent/<%= child.id %>"><button>View Forms</button></a>
-                                                    </div>
-                                                <% } %>
-                                                <br>
-                                                <br>
-                                                <a href="/parent/transactions/<%= child.id %>">
-                                                <button>View <%= child.firstname %>'s Transactions</button>
-                                                </a>
-                                        </div>
-                                    </div>
-                                </div>
-                                        <% if (child.contractExtensions && child.contractExtensions.length) { %>
-                                            <div style="margin-top: 12px; text-align: center;">
-                                                <h3>Contract Offers for <%= child.firstname %></h3>
-                                                <% child.contractExtensions.forEach(function(ext) { 
-                                                    const seasonLabel = String(ext.season || '');
-                                                    const isCorps = seasonLabel.includes('corps');
-                                                    const isAffiliate = seasonLabel.includes('affiliate');
-                                                %>
-                                                <p>
-                                                    <b>
-                                                    <%= isCorps ? 'Drum & Bugle Corps' : (isAffiliate ? 'Affiliate' : 'Independent') %>
-                                                    &mdash; Season <%= CURRENTSEASON %>
-                                                    </b>
-                                                    <br>
-                                                    <a href="/accept-contract/<%= ext.id %>">
-                                                    <button>Review &amp; Sign Contract</button>
-                                                    </a>
-                                                </p>
-                                                <% }) %>
-                                            </div>
-                                            <% } %>
+<body class="pd-body">
+<header><%- include("includes/header") %></header>
 
-                            </div>
-                        <% }) %>
-                    <% } %>
-                    <br>
-                    <br>
-                    <a href="/support/issue"><button>Submit Website Issue</button></a>
-                        <br>
-                        <br>
-                    <a href="/add-member"><button>+Add Child</button></a>
-                    <br>
-                    <br>
-                    <a href="/update-info"><button>Update Information</button></a>
-                        <br>
-                        <br>
-                </div>
+<div class="pd-layout">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────── -->
+  <aside class="pd-sidebar" id="pdSidebar">
+    <div class="pd-sidebar-profile">
+      <div class="pd-sidebar-avatar" style="font-size:1.6rem;">&#128106;</div>
+      <div class="pd-sidebar-name"><%= user.firstname %> <%= user.lastname %></div>
+      <div class="pd-sidebar-role">Parent / Guardian</div>
+    </div>
+    <nav class="pd-nav">
+      <button class="pd-nav-item pd-active" data-label="Overview" onclick="pdShow(this,'overview')">
+        <ion-icon name="home"></ion-icon> Overview
+      </button>
+      <button class="pd-nav-item" data-label="My Children" onclick="pdShow(this,'children')">
+        <ion-icon name="people"></ion-icon> My Children
+        <% if (children.length) { %><span class="pd-nav-badge"><%= children.length %></span><% } %>
+      </button>
+      <button class="pd-nav-item" data-label="Schedule" onclick="pdShow(this,'schedule')">
+        <ion-icon name="calendar"></ion-icon> Schedule
+      </button>
+      <button class="pd-nav-item" data-label="My Info" onclick="pdShow(this,'info')">
+        <ion-icon name="person"></ion-icon> My Info
+      </button>
+      <button class="pd-nav-item" data-label="Actions" onclick="pdShow(this,'actions')">
+        <ion-icon name="apps"></ion-icon> Actions
+      </button>
+    </nav>
+  </aside>
+  <div class="pd-sidebar-overlay" id="pdOverlay" onclick="pdCloseSidebar()"></div>
+
+  <!-- ── MAIN ───────────────────────────────────────────── -->
+  <main class="pd-main">
+
+    <!-- Mobile sticky nav bar -->
+    <div class="pd-mobile-bar" id="pdMobileBar">
+      <button class="pd-mobile-bar-btn" id="pdMobileNavBtn" onclick="pdMobileBarAction()">
+        <ion-icon name="chevron-forward-circle"></ion-icon> Navigation
+      </button>
+      <span class="pd-mobile-bar-title" id="pdMobileTitle">Overview</span>
+    </div>
+
+    <!-- ══ OVERVIEW ══════════════════════════════════════ -->
+    <div class="pd-section pd-active" id="pd-sec-overview">
+      <div class="pd-section-inner">
+
+        <!-- Hero -->
+        <div class="pd-hero">
+          <div class="pd-hero-avatar" style="background:linear-gradient(135deg,var(--primary-color),var(--secondary-color));display:flex;align-items:center;justify-content:center;font-size:2.2rem;">&#128106;</div>
+          <div>
+            <div class="pd-hero-name">Hello, <%= user.firstname %> <%= user.lastname %>!</div>
+            <div class="pd-hero-meta">Parent / Guardian Portal</div>
+            <div class="pd-hero-badges">
+              <% if (children.length === 0) { %>
+                <span class="pd-hero-badge" style="background:rgba(255,255,255,0.13)">No children linked yet</span>
+              <% } else { %>
+                <span class="pd-hero-badge"><%= children.length %> child<%= children.length === 1 ? '' : 'ren' %> linked</span>
+              <% } %>
             </div>
-            <br>
+          </div>
         </div>
 
-    </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+        <%- include("includes/parent-link-requests", { linkRequests: linkRequests || [] }) %>
+
+        <!-- Per-child alerts -->
+        <% let hasAlerts = false;
+           children.forEach(function(child) {
+             if (child.leftoverForms > 0 && child.minor) hasAlerts = true;
+             if (child.owed > 0) hasAlerts = true;
+             if (child.contractExtensions && child.contractExtensions.length) hasAlerts = true;
+           });
+        %>
+        <% children.forEach(function(child) { %>
+          <% if (child.leftoverForms > 0 && child.minor) { %>
+          <div class="pd-alert pd-alert--danger">
+            <ion-icon name="documents"></ion-icon>
+            <div class="pd-alert-body">
+              <div class="pd-alert-title"><%= child.firstname %> has <%= child.leftoverForms %> required form<%= child.leftoverForms === 1 ? '' : 's' %> to upload</div>
+              <div style="margin-top:8px;"><a href="/member-forms-parent/<%= child.id %>"><button type="button">View Forms</button></a></div>
+            </div>
+          </div>
+          <% } %>
+          <% if (child.contractExtensions && child.contractExtensions.length) { %>
+          <div class="pd-alert pd-alert--warning">
+            <ion-icon name="document-text"></ion-icon>
+            <div class="pd-alert-body">
+              <div class="pd-alert-title"><%= child.firstname %> has a contract offer waiting for signature</div>
+              <div class="pd-alert-text">Review and sign from the My Children tab.</div>
+            </div>
+          </div>
+          <% } %>
+          <% if (child.owed > 0) { %>
+          <div class="pd-alert pd-alert--warning">
+            <ion-icon name="card"></ion-icon>
+            <div class="pd-alert-body">
+              <div class="pd-alert-title"><%= child.firstname %> has a balance of <%= new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(child.owed/100) %> due</div>
+              <div style="margin-top:8px;"><a href="/pay-behalf/<%= child.id %>"><button type="button">Make Payment</button></a></div>
+            </div>
+          </div>
+          <% } %>
+        <% }); %>
+
+        <% if (!hasAlerts && children.length) { %>
+        <div class="pd-alert pd-alert--success">
+          <ion-icon name="checkmark-circle"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-title">Everything looks good!</div>
+            <div class="pd-alert-text">No outstanding forms, payments, or contracts for your children.</div>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Children summary -->
+        <% if (children.length) { %>
+        <div class="pd-sub-heading">Your Children</div>
+        <div class="pd-info-grid">
+          <% children.forEach(function(child) { %>
+          <div class="pd-info-card" style="cursor:pointer;" onclick="pdShow(document.querySelector('[onclick*=children]'),'children')">
+            <div class="pd-info-label" style="text-transform:capitalize;"><%= child.section %> &middot; <%= child.instrument %></div>
+            <div class="pd-info-value"><%= child.firstname %> <%= child.lastname %></div>
+            <div style="font-size:0.78rem;color:#aaa;margin-top:4px;">Age <%= Math.floor((Date.now() - child.birthday) / (1000*60*60*24*365.25)) %></div>
+          </div>
+          <% }); %>
+        </div>
+        <% } %>
+
+        <div class="pd-quick-actions" style="margin-top:8px;">
+          <%- include("includes/parent-link-open-btn", { linkMode: 'parent_to_child' }) %>
+          <a href="/update-info" class="pd-action-btn"><ion-icon name="create"></ion-icon> Update My Info</a>
+          <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
+        </div>
+
+        <!-- Today's schedule (if published) -->
+        <%- include("includes/schedule-today-overview") %>
+
+        <!-- Announcements feed -->
+        <div class="pd-sub-heading" style="margin-top:32px;">Announcements</div>
+        <%- include("includes/ann-feed", { announcements: announcements || [], user }) %>
+
+      </div>
+    </div>
+
+    <!-- ══ MY CHILDREN ════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-children">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">My Children</div>
+        <div class="pd-section-sub">Members you are the parent or guardian of.</div>
+
+        <% if (children.length === 0) { %>
+          <div class="pd-alert pd-alert--info">
+            <ion-icon name="information-circle"></ion-icon>
+            <div class="pd-alert-body">
+              <div class="pd-alert-title">No children linked yet</div>
+              <div class="pd-alert-text">Add a child so you can manage their forms, payments, and contracts.</div>
+              <div style="margin-top:8px;"><%- include("includes/parent-link-open-btn", { linkMode: 'parent_to_child' }) %></div>
+            </div>
+          </div>
+        <% } else { %>
+          <% children.forEach(function(child) {
+            const initials = (child.firstname||'?')[0].toUpperCase() + (child.lastname||'?')[0].toUpperCase();
+          %>
+          <div class="pd-child-card">
+            <div class="pd-child-header">
+              <div class="pd-child-avt"><%= initials %></div>
+              <div>
+                <div class="pd-child-name"><%= child.firstname %> <%= child.lastname %></div>
+                <div class="pd-child-meta"><%= child.section %> &middot; <%= child.instrument %></div>
+              </div>
+            </div>
+
+            <div class="pd-child-stats">
+              <div class="pd-child-stat">
+                <div class="pd-info-label">Age</div>
+                <div class="pd-info-value"><%= Math.floor((Date.now() - child.birthday) / (1000*60*60*24*365.25)) %></div>
+              </div>
+              <div class="pd-child-stat">
+                <div class="pd-info-label">Balance Due</div>
+                <div class="pd-info-value" style="<%= child.owed > 0 ? 'color:#ef4444' : '' %>">
+                  <%= new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(child.owed/100) %>
+                </div>
+              </div>
+            </div>
+
+            <div class="pd-quick-actions">
+              <% if (child.owed > 0) { %>
+                <a href="/pay-behalf/<%= child.id %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
+              <% } %>
+              <% if ((child.leftoverForms) > -1 && child.minor) { %>
+                <a href="/member-forms-parent/<%= child.id %>" class="pd-action-btn <%= child.leftoverForms > 0 ? 'pd-action-btn--primary' : '' %>">
+                  <ion-icon name="documents"></ion-icon> View Forms<% if (child.leftoverForms > 0) { %> (<%= child.leftoverForms %> required)<% } %>
+                </a>
+              <% } %>
+              <a href="/parent/transactions/<%= child.id %>" class="pd-action-btn"><ion-icon name="receipt"></ion-icon> Transactions</a>
+            </div>
+
+            <% if (child.contractExtensions && child.contractExtensions.length) { %>
+              <div class="pd-sub-heading" style="margin-top:10px;">Contract Offers</div>
+              <% child.contractExtensions.forEach(function(ext) {
+                const seasonLabel = String(ext.season || '');
+                const isCorps = seasonLabel.includes('corps');
+                const isAffiliate = seasonLabel.includes('affiliate');
+                const groupLabel = isCorps ? 'Drum & Bugle Corps' : (isAffiliate ? 'Affiliate' : 'Independent');
+              %>
+              <div class="pd-contract-card" style="margin-top:0;">
+                <div class="pd-contract-icon"><ion-icon name="document-text"></ion-icon></div>
+                <div class="pd-contract-body">
+                  <div class="pd-contract-title"><%= groupLabel %> - Season <%= CURRENTSEASON %></div>
+                  <div class="pd-contract-due">Awaiting signature</div>
+                </div>
+                <a href="/accept-contract/<%= ext.id %>"><button type="button">Review &amp; Sign</button></a>
+              </div>
+              <% }); %>
+            <% } %>
+          </div>
+          <% }); %>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- ══ SCHEDULE ═══════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-schedule">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Schedule</div>
+        <div class="pd-section-sub">View your children's rehearsal schedule. Visible when a linked child is in the allowed audience.</div>
+        <%- include("includes/schedule-panel") %>
+      </div>
+    </div>
+
+    <!-- ══ MY INFO ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-info">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">My Info</div>
+        <div class="pd-section-sub">Your personal details currently on file.</div>
+
+        <div class="pd-info-grid">
+          <div class="pd-info-card">
+            <div class="pd-info-label">Email</div>
+            <div class="pd-info-value" style="word-break:break-all;"><%= member.email %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Phone</div>
+            <div class="pd-info-value"><%= member.phone || '-' %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Birthday</div>
+            <div class="pd-info-value"><%= new Date(member.birthday).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'}) %></div>
+          </div>
+          <div class="pd-info-card" style="grid-column: span 2;">
+            <div class="pd-info-label">Address</div>
+            <div class="pd-info-value"><%= member.address || '-' %></div>
+          </div>
+          <div class="pd-info-card">
+            <div class="pd-info-label">Email Status</div>
+            <div class="pd-info-value">&#9989; Verified</div>
+          </div>
+        </div>
+
+        <div class="pd-sub-heading" style="margin-top:24px;">Actions</div>
+        <div class="pd-quick-actions">
+          <a href="/update-info" class="pd-action-btn"><ion-icon name="create"></ion-icon> Update Information</a>
+          <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ACTIONS ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-actions">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Actions</div>
+        <div class="pd-section-sub">Manage your account and linked children.</div>
+        <div class="pd-quick-actions">
+          <%- include("includes/parent-link-open-btn", { linkMode: 'parent_to_child' }) %>
+          <a href="/update-info" class="pd-action-btn"><ion-icon name="create"></ion-icon> Update My Information</a>
+          <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
+        </div>
+        <link rel="stylesheet" href="/css/merch.css">
+        <%- include("includes/merch-downloads", { digitalGrants }) %>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<%- include("includes/parent-link-widgets", { linkMode: 'parent_to_child' }) %>
+
+<footer><%- include("includes/footer") %></footer>
+
+<!-- Image viewer modal (for announcements) -->
+<div id="annImgModalOverlay" class="ann-modal-overlay" onclick="this.hidden=true" hidden>
+  <div class="ann-modal-box" onclick="event.stopPropagation()">
+    <button class="ann-modal-close" onclick="document.getElementById('annImgModalOverlay').hidden=true">&times;</button>
+    <img id="annImgModalImg" src="" alt="Announcement image">
+  </div>
+</div>
+
+<script src="/js/portal-nav.js"></script>
+<script>
+function annImgModal(src) {
+  document.getElementById('annImgModalImg').src = src;
+  document.getElementById('annImgModalOverlay').hidden = false;
+}
+</script>
 </body>
 </html>

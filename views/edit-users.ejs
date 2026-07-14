@@ -142,6 +142,18 @@
 
           <hr/>
 
+          <% if (thisUser.linkedParents && thisUser.linkedParents.length) { %>
+            <p style="text-align:center;margin:8px 0 0;font-size:0.9rem;">
+              <b>Linked parent<%= thisUser.linkedParents.length === 1 ? '' : 's' %>:</b>
+              <%= thisUser.linkedParents.map(function(p) { return p.firstname + ' ' + p.lastname; }).join(', ') %>
+            </p>
+          <% } else if (thisUser.linkedChildren && thisUser.linkedChildren.length) { %>
+            <p style="text-align:center;margin:8px 0 0;font-size:0.9rem;">
+              <b>Linked member<%= thisUser.linkedChildren.length === 1 ? '' : 's' %>:</b>
+              <%= thisUser.linkedChildren.map(function(c) { return c.firstname + ' ' + c.lastname; }).join(', ') %>
+            </p>
+          <% } %>
+
           <div style="text-align:center;">
             <button class="expand-button" data-target="<%= idx %>">More...</button>
           </div>
@@ -164,7 +176,7 @@
                   <% if (thisUser.phone) { %>
                     <span class="copy-phone" title="Click to copy"><%= thisUser.phone %></span>
                   <% } else { %>
-                    <span style="color:#888;">—</span>
+                    <span style="color:#888;"> - </span>
                   <% } %>
                 </p>
                 <p><b>Birthday: </b><%= new Date(thisUser.birthday).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) %></p>
@@ -197,6 +209,34 @@
               <div></div>
               <div></div>
             </div>
+
+            <% if (thisUser.linkedParents && thisUser.linkedParents.length) { %>
+            <div class="triple-to-single triple-to-single-mod">
+              <div style="width:100%;">
+                <p><b>Linked Parents / Guardians:</b></p>
+                <ul style="margin:4px 0 0 1.2em;padding:0;">
+                  <% thisUser.linkedParents.forEach(function(p) { %>
+                    <li><%= p.firstname %> <%= p.lastname %> - <%= p.email %></li>
+                  <% }); %>
+                </ul>
+              </div>
+            </div>
+            <% } else if (thisUser.linkedChildren && thisUser.linkedChildren.length) { %>
+            <div class="triple-to-single triple-to-single-mod">
+              <div style="width:100%;">
+                <p><b>Linked Members:</b></p>
+                <ul style="margin:4px 0 0 1.2em;padding:0;">
+                  <% thisUser.linkedChildren.forEach(function(c) { %>
+                    <li>
+                      <%= c.firstname %> <%= c.lastname %>
+                      <% if (c.section) { %> - <%= c.section %><% if (c.instrument) { %> / <%= c.instrument %><% } %><% } %>
+                      - <%= c.email %>
+                    </li>
+                  <% }); %>
+                </ul>
+              </div>
+            </div>
+            <% } %>
 
             <div class="triple-to-single triple-to-single-mod">
               <div>
@@ -245,14 +285,14 @@
                   <ul style="margin: 4px 0 0 1em; padding: 0;">
                     <% thisUser.contracts.forEach(function(c) { %>
                       <li>
-                        Season <%= c.season %> — <%= c.ensemble %>
+                        Season <%= c.season %> - <%= c.ensemble %>
                         <% if (c.signedContractPath) { %>
-                          —
+                          - 
                           <a href="/admin/contracts/<%= thisUser.id %>/<%= c.id %>" target="_blank" rel="noopener noreferrer">
                             View signed contract
                           </a>
                         <% } else { %>
-                          — (no file uploaded)
+                         - (no file uploaded)
                         <% } %>
                       </li>
                     <% }); %>
@@ -273,6 +313,14 @@
                 <a href="/view-emergency/<%= thisUser.id %>">Emergency Contacts</a>
                 <a href="/instruments/<%= thisUser.id %>">Instruments</a>
               </div>
+            </div>
+
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid #ddd;text-align:center;">
+              <% if (thisUser.id !== user.userid) { %>
+                <button type="button" class="delete-member-btn" data-user-id="<%= thisUser.id %>" data-user-name="<%= thisUser.firstname %> <%= thisUser.lastname %>" style="background:#fdeaea;border:1px solid #e57373;color:#b02020;padding:8px 16px;cursor:pointer;font-weight:600;">Delete Member</button>
+              <% } else { %>
+                <span style="color:#888;font-size:0.9rem;">You cannot delete your own account from this page.</span>
+              <% } %>
             </div>
           </div>
         </div>
@@ -363,6 +411,30 @@
         navigator.clipboard.writeText(el.textContent || '').then(
           () => showToast('Phone copied to clipboard'),
           () => showToast('Unable to copy')
+        );
+      });
+    });
+
+    // Delete member (double confirmation)
+    document.querySelectorAll('.delete-member-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-user-id');
+        const name = btn.getAttribute('data-user-name') || 'this member';
+        if (!id) return;
+        bgConfirm(
+          'Delete ' + name + '? This permanently removes their account and related records. This cannot be undone.',
+          function() {
+            bgConfirm(
+              'Final confirmation: permanently delete ' + name + '?',
+              function() {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/admin/delete-user/' + id;
+                document.body.appendChild(form);
+                form.submit();
+              }
+            );
+          }
         );
       });
     });

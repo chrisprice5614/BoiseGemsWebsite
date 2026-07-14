@@ -1,112 +1,130 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems</title>
-    <%- include("includes/head") %>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Form | Boise Gems</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/form-wizard.css">
 </head>
 <body>
-    <header>
-        <%- include("includes/header") %>
-    </header>
-    <main>
-        <br>
-        <h1 style="text-align: center;">Add Form</h1>
-        <br>
+<header><%- include("includes/header") %></header>
+<main class="form-wizard">
+  <h1 style="text-align:center;margin:12px 0 0;">Create a form</h1>
+  <p style="text-align:center;color:#6b5585;margin:8px 0 0;">We'll go one step at a time. You can go back anytime.</p>
 
-        <div style="padding: 8px;">
-            <form action="/add-form/" method="POST" enctype="multipart/form-data">
-                <label for="title">Title</label>
-                <input type="text" name="title" required>
-                <br><br>
+  <div class="form-wizard__progress" aria-hidden="true">
+    <span class="form-wizard__dot is-active"></span>
+    <span class="form-wizard__dot"></span>
+    <span class="form-wizard__dot"></span>
+    <span class="form-wizard__dot"></span>
+    <span class="form-wizard__dot"></span>
+  </div>
 
-                <label for="description">Description</label>
-                <input type="text" name="description" required>
-                <br><br>
+  <form id="addFormWizard" action="/add-form" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="fields_json" id="fieldsJson" value="[]">
 
-                <label for="document_path">Upload PDF</label>
-                <input type="file" name="document_path" accept="application/pdf">
-                <br><br>
+    <!-- Step 1: Name -->
+    <section class="form-wizard__step is-active" data-step="0">
+      <p class="form-wizard__kicker">Step 1 of 5</p>
+      <h2 class="form-wizard__title">What is the name of this form?</h2>
+      <p class="form-wizard__help">Use a clear name people will recognize, like “Medical Release 2027”.</p>
+      <label for="title" class="sr-only">Form name</label>
+      <input type="text" id="title" name="title" placeholder="Type the form name here" autocomplete="off" required>
+      <div class="form-wizard__actions">
+        <button type="button" class="button" data-next>Next</button>
+      </div>
+    </section>
 
-                <div style="align-items: center;">
-                    <label for="upload">Require user to upload form?</label>
-                    <input type="checkbox" name="upload">
-                </div>
-                <br>
+    <!-- Step 2: Description -->
+    <section class="form-wizard__step" data-step="1">
+      <p class="form-wizard__kicker">Step 2 of 5</p>
+      <h2 class="form-wizard__title">Write a short description</h2>
+      <p class="form-wizard__help">One or two sentences explaining what this form is for.</p>
+      <label for="description" class="sr-only">Description</label>
+      <textarea id="description" name="description" placeholder="Example: Everyone on Corps must sign this before tour." required></textarea>
+      <div class="form-wizard__actions">
+        <button type="button" class="form-wizard__secondary" data-back>Back</button>
+        <button type="button" class="button" data-next>Next</button>
+      </div>
+    </section>
 
-                <!-- NEW: Audience / Contracted controls -->
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:center;">
-                    <div>
-                        <label for="ensemble_type">Audience</label>
-                        <select name="ensemble_type" id="ensemble_type">
-                            <option value="all" selected>All members</option>
-                            <option value="corps">Corps (contracted)</option>
-                            <option value="independent">Independent (contracted)</option>
-                            <option value="affiliate">Affiliate (contracted)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="contracted">Contracted only?</label>
-                        <input type="checkbox" name="contracted" id="contracted">
-                        <small style="display:block; opacity:.8;">
-                            If you pick “Corps”, “Independent”, or “Affiliate”, this will auto-enable.
-                        </small>
-                    </div>
-                </div>
-                <br>
-
-                <label for="due_date">Due Date</label>
-                <input type="date" name="due_date" required>
-                <br><br>
-
-                <label for="expire_date">Expiration Date</label>
-                <input type="date" name="expire_date" required>
-                <br><br>
-
-                <label for="content">Form content (optional)</label>
-                <textarea name="content" placeholder="Enter form data here"></textarea>
-                <br><br>
-                <label for="role_scope">Form type</label>
-                <select name="role_scope" id="role_scope">
-                    <option value="member" selected>Performer / Member</option>
-                    <option value="staff">Staff</option>
-                    <option value="admin">Admin</option>
-                </select>
-                <small style="display:block; opacity:.8;">
-                    Performers do not need to upload staff/admin forms.
-                </small>
-                <br><br>
-
-                <div style="text-align: center;">
-                    <button>Add</button>
-                </div>
-            </form>
+    <!-- Step 3: PDF + fields -->
+    <section class="form-wizard__step" data-step="2">
+      <p class="form-wizard__kicker">Step 3 of 5</p>
+      <h2 class="form-wizard__title">Upload the PDF and place fill-in boxes</h2>
+      <p class="form-wizard__help">
+        1) Choose the PDF.<br>
+        2) Use the floating buttons (Text, Signature, Date, Initials).<br>
+        3) Click on the page where that answer should go.<br>
+        Drag a box to move it. Grab any edge to resize. Right-click a box to delete it.
+      </p>
+      <label for="wizardPdf"><strong>Choose PDF</strong></label>
+      <input type="file" id="wizardPdf" name="document_path" accept="application/pdf" required>
+      <br><br>
+      <div class="fw-pdf-shell">
+        <div class="fw-pdf-layout">
+          <div class="fw-pdf-pages" id="wizardPdfPages">
+            <p style="text-align:center;padding:40px 12px;color:#6b5585;margin:0;">Your PDF will show up here after you choose a file.</p>
+          </div>
+          <aside class="fw-tools fw-tools--float" id="wizardTools">
+            <p class="fw-tools__hint">Choose a field type</p>
+            <button type="button" data-field-type="text">Text</button>
+            <button type="button" data-field-type="signature">Signature</button>
+            <button type="button" data-field-type="date">Date</button>
+            <button type="button" data-field-type="initials">Initials</button>
+            <button type="button" class="fw-tools__save" data-next>Next</button>
+          </aside>
         </div>
-    </main>
-    <footer>
-        <%- include("includes/footer") %>
-    </footer>
+      </div>
+      <div class="fw-field-list" id="wizardFieldList"></div>
+      <div class="form-wizard__actions">
+        <button type="button" class="form-wizard__secondary" data-back>Back</button>
+        <button type="button" class="button" data-next>Next</button>
+      </div>
+    </section>
 
-    <script>
-      // Keep contracted checkbox in sync with ensemble_type rule:
-      // - corps/independent => contracted MUST be true (forced + disabled)
-      // - all => contracted can be toggled freely
-      (function(){
-        const sel = document.getElementById('ensemble_type');
-        const chk = document.getElementById('contracted');
-        function sync() {
-          const v = (sel.value || '').toLowerCase();
-                    if (v === 'corps' || v === 'independent' || v === 'affiliate') {
-            chk.checked = true;
-            chk.disabled = true;
-          } else {
-            chk.disabled = false;
-            // leave whatever the admin set for "all"
-          }
-        }
-        sel.addEventListener('change', sync);
-        sync();
-      })();
-    </script>
+    <!-- Step 4: Audience -->
+    <section class="form-wizard__step" data-step="3">
+      <p class="form-wizard__kicker">Step 4 of 5</p>
+      <h2 class="form-wizard__title">Who needs to sign this?</h2>
+      <p class="form-wizard__help">Check every group that should see and sign this form. You can pick more than one.</p>
+      <div class="form-wizard__checks">
+        <label class="form-wizard__check"><input type="checkbox" name="audience_corps" value="1"> Corps</label>
+        <label class="form-wizard__check"><input type="checkbox" name="audience_independent" value="1"> Independent</label>
+        <label class="form-wizard__check"><input type="checkbox" name="audience_affiliate" value="1"> Affiliate</label>
+        <label class="form-wizard__check"><input type="checkbox" name="audience_staff" value="1"> Staff</label>
+      </div>
+      <div class="form-wizard__actions">
+        <button type="button" class="form-wizard__secondary" data-back>Back</button>
+        <button type="button" class="button" data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step 5: Dates + notify -->
+    <section class="form-wizard__step" data-step="4">
+      <p class="form-wizard__kicker">Step 5 of 5</p>
+      <h2 class="form-wizard__title">When is it due, and when does it expire?</h2>
+      <p class="form-wizard__help">Due date is when people should finish it. Expiration date is when it stops showing up.</p>
+      <label for="due_date"><strong>Due date</strong></label>
+      <input type="date" id="due_date" name="due_date" required>
+      <br><br>
+      <label for="expire_date"><strong>Expiration date</strong></label>
+      <input type="date" id="expire_date" name="expire_date" required>
+      <br><br>
+      <label class="form-wizard__check">
+        <input type="checkbox" name="notify" value="1" checked>
+        Email members and parents now to tell them they need to sign
+      </label>
+      <p class="fw-error" id="wizardError" hidden></p>
+      <div class="form-wizard__actions">
+        <button type="button" class="form-wizard__secondary" data-back>Back</button>
+        <button type="submit" class="button">Save form</button>
+      </div>
+    </section>
+  </form>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script type="module" src="/js/form-wizard.js"></script>
 </body>
 </html>

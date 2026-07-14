@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Season Roster | Boise Gems</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/files-drive.css">
+  <style>
+    .roster-admin { max-width: 1200px; margin: 0 auto; padding: 20px 16px 64px; }
+    .roster-admin__head { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; margin-bottom: 24px; }
+    .roster-admin__season-tabs { display: flex; flex-wrap: wrap; gap: 10px; }
+    .roster-admin__season-tab {
+      padding: 10px 18px; border: 2px solid #d8c8ec; background: #fff; font-weight: 800;
+      color: var(--secondary-color); text-decoration: none !important; --bevel: 8px; clip-path: var(--bevel-clip);
+    }
+    .roster-admin__season-tab.is-active { background: var(--secondary-color); color: #fff; border-color: var(--secondary-color); }
+    .roster-admin__board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .roster-admin__col { background: #fff; border: 1px solid #e8ddf5; padding: 16px; --bevel: 12px; clip-path: var(--bevel-clip); }
+    .roster-admin__col h2 { margin: 0 0 12px; font-size: 1rem; color: var(--secondary-color); text-transform: uppercase; letter-spacing: 0.04em; }
+    .roster-admin__entry { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid #f0eaf8; }
+    .roster-admin__entry:last-child { border-bottom: none; }
+    .roster-admin__photo { width: 40px; height: 40px; object-fit: cover; --bevel: 6px; clip-path: var(--bevel-clip); background: #eee; }
+    .roster-admin__entry-name { font-weight: 800; font-size: 0.9rem; margin-bottom: 6px; }
+    .roster-admin__entry form { display: grid; gap: 6px; }
+    .roster-admin__entry input, .roster-admin__entry select { font-size: 0.85rem; padding: 6px 8px; width: 100%; box-sizing: border-box; }
+    .roster-admin__add { margin-top: 14px; padding-top: 14px; border-top: 1px dashed #d8c8ec; }
+    .roster-admin__add select, .roster-admin__add input { width: 100%; margin-bottom: 8px; box-sizing: border-box; }
+    .roster-admin__empty { font-size: 0.88rem; color: #8a6fad; font-style: italic; margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main class="roster-admin">
+  <a href="<%= backUrl %>" style="display:inline-block;margin-bottom:12px;">&larr; Back</a>
+  <div class="roster-admin__head">
+    <div>
+      <h1 style="margin:0 0 6px;color:var(--secondary-color);">Season roster</h1>
+      <p style="margin:0;color:#6b5585;">Assign members to caption, guard, brass, or percussion with positions for the show page.</p>
+    </div>
+    <div class="roster-admin__season-tabs">
+      <% seasons.forEach(function(s) { %>
+      <a href="/admin/season-roster?season=<%= s.key %>" class="roster-admin__season-tab<%= s.key === activeSeason.key ? ' is-active' : '' %>"><%= s.label %></a>
+      <% }) %>
+    </div>
+  </div>
+
+  <% if (locals.flashMessage) { %>
+  <div class="files-drive-flash"><%= flashMessage %></div>
+  <% } %>
+
+  <div class="roster-admin__board">
+    <% sections.forEach(function(sec) {
+      var entries = rosterBySection[sec.key] || [];
+      var eligible = eligibleBySection[sec.key] || [];
+    %>
+    <section class="roster-admin__col">
+      <h2><%= sec.label %></h2>
+      <% if (!entries.length) { %>
+      <p class="roster-admin__empty">No members assigned yet.</p>
+      <% } %>
+      <% entries.forEach(function(m) { %>
+      <div class="roster-admin__entry">
+        <img class="roster-admin__photo" src="<%= m.img ? m.img : '/img/ui/gem.png' %>" alt="">
+        <div>
+          <div class="roster-admin__entry-name"><%= m.name %></div>
+          <form method="POST" action="/admin/season-roster/<%= m.id %>/update">
+            <input type="hidden" name="season" value="<%= activeSeason.key %>">
+            <input type="text" name="position" value="<%= m.position %>" placeholder="Position" required>
+            <select name="section">
+              <% sections.forEach(function(opt) { %>
+              <option value="<%= opt.key %>"<%= opt.key === sec.key ? ' selected' : '' %>><%= opt.label %></option>
+              <% }) %>
+            </select>
+            <button type="submit" class="button button--small">Save</button>
+          </form>
+          <form method="POST" action="/admin/season-roster/<%= m.id %>/delete" style="margin-top:6px;" onsubmit="return confirm('Remove this member from the roster?');">
+            <input type="hidden" name="season" value="<%= activeSeason.key %>">
+            <button type="submit" class="merch-text-btn" style="padding:0;">Remove</button>
+          </form>
+        </div>
+      </div>
+      <% }) %>
+
+      <div class="roster-admin__add">
+        <form method="POST" action="/admin/season-roster/add">
+          <input type="hidden" name="season" value="<%= activeSeason.key %>">
+          <input type="hidden" name="section" value="<%= sec.key %>">
+          <select name="user_id" required>
+            <option value="">Add member...</option>
+            <% eligible.forEach(function(u) { %>
+            <option value="<%= u.id %>"><%= u.label %></option>
+            <% }) %>
+          </select>
+          <input type="text" name="position" placeholder="Position (e.g. Trumpet 1, Snare, Flag)" required>
+          <button type="submit">Add to <%= sec.label %></button>
+        </form>
+      </div>
+    </section>
+    <% }) %>
+  </div>
+</main>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

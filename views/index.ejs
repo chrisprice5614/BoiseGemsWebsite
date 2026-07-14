@@ -5,83 +5,70 @@
     <title>Boise Gems | Home</title>
     <%- include("includes/head") %>
 </head>
-<body>
+<body class="home-page">
     <header>
         <%- include("includes/header") %>
     </header>
-    <div style="background-image: url('img/photos/boise-gems-11.jpg'); background-size: cover; background-position: center;">
-        <div style="align-items: center; min-height: 380px;" class="double-to-single">
-            <div style="text-align: right; padding: 16px; text-align: center;">
-                <img src="/img/ui/text-logo.png" alt="Boise Gems text logo" style="width: 80%; filter: drop-shadow(2px 2px 8px rgba(0,0,0,0.6));">
+    <section class="home-hero">
+        <div class="home-hero__bg" aria-hidden="true"></div>
+        <div class="home-hero__media">
+            <video class="home-hero__video" src="/vid/promo.mp4" muted playsinline loop preload="auto"></video>
+        </div>
+    </section>
+
+    <section class="home-intro">
+        <div class="home-intro__inner">
+            <div class="home-intro__text">
+                <p>Founded in 2022 to bring the marching arts back to the region, the Gems are a growing performing arts organization built on hard work, creativity, and performer-focused design. We're a team of students, educators, and designers who believe that every season should push us further in skill, in confidence, and in connection. Our shows are built to challenge and inspire, and our culture puts performers first. Whether you're from across the country or in Southern Idaho, there's a place for you here.</p>
+                <p style="text-indent: 6px;">Esto Perpetua.</p>
             </div>
-            <div class="hidden-mobile">
-                
+            <div class="home-intro__gem hidden-mobile">
+                <img src="/img/ui/gem.png" alt="Gems drum and bugle corps logo.">
             </div>
         </div>
-    </div>
-    <div style="background-color: var(--light-quarter);">
-        <div style="padding: clamp(12px, 2vw, 32px);">
-            <div class="intro-blurb" style="align-items: center;">
-                <div style="padding: 64px 32px; font-size: clamp(1rem, 5vw, 1.5rem);">
-                    <p>Founded in 2022 to bring the marching arts back to the region, the Gems are a growing performing arts organization built on hard work, creativity, and performer-focused design. We’re a team of students, educators, and designers who believe that every season should push us further in skill, in confidence, and in connection. Our shows are built to challenge and inspire, and our culture puts performers first. Whether you're from across the country or in Southern Idaho, there's a place for you here. <br><br><b>Esto Perpetua.</b></p>
-                </div>
-                <div class="hidden-mobile">
-                    <img src="/img/ui/gem.png" alt="Gems drum and bugle corps logo." class="hidden-mobile">
-                </div>
+    </section>
+    <section class="home-audition crystal-bg" id="home-audition">
+        <div class="home-audition__content">
+            <div class="home-audition__heading-wrap">
+                <h2 class="home-audition__heading">JOIN THE 2027 SEASON</h2>
+            </div>
+            <div class="audition-cards">
+                <article class="audition-card audition-card--left">
+                    <div class="audition-card__media">
+                        <img src="/img/photos/boise-gems-15.jpg" alt="Boise Gems Drum &amp; Bugle Corps performing">
+                    </div>
+                    <div class="audition-card__body">
+                        <h3 class="audition-card__title">Join the Drum &amp; Bugle Corps</h3>
+                        <p class="audition-card__text">Audition for our competitive drum &amp; bugle corps.</p>
+                        <a href="/join-corps" class="button audition-card__btn">Audition Info</a>
+                    </div>
+                </article>
+                <article class="audition-card audition-card--right">
+                    <div class="audition-card__media">
+                        <img src="/img/photos/boise-gems-24.jpg" alt="Boise Gems Independent performing">
+                    </div>
+                    <div class="audition-card__body">
+                        <h3 class="audition-card__title">Join Boise Gems Independent</h3>
+                        <p class="audition-card__text">Audition for Boise Gems Independent.</p>
+                        <a href="/join-independent" class="button audition-card__btn">Audition Info</a>
+                    </div>
+                </article>
             </div>
         </div>
-    </div>
-    <div style="text-align: center;">
-        <div class="purple-storm">
-            <div style="padding: 64px 0;">
-                <h2 style="color: var(--light-half); font-weight: 700; font-size: clamp(2rem, 5vw, 5rem); text-shadow: 2px 2px 6px rgba(0,0,0,0.6);">JOIN THE 2026 SEASON</h2>
-            </div>
-            <div class="duple-to-single">
-                <div>
-                    <h3 style="color: var(--light-half); font-weight: 700; font-size: clamp(2rem, 5vw, 3rem); text-shadow: 2px 2px 6px rgba(0,0,0,0.6);">Join the Drum and Bugle Corps</h3>
-                    <br>
-                    <div class="image-wrapper">
-                        <img src="/img/photos/boise-gems-15.jpg" alt="Phot of the Boise Gems Drum & Bugle Corps" style="max-height: 348px; object-fit: cover;">
+    </section>
+        <div class="home-support-wrap" id="home-support">
+            <section class="home-support">
+                <div class="home-support__inner">
+                    <div class="home-support__text">
+                        <h2 class="home-support__heading">Support Our Ensembles</h2>
+                        <p class="home-support__body">We're always looking for help and support. If you would like to donate, volunteer, or serve in any other way, we're more than accepting of your help! Donations and volunteers keep our ensembles running smoothly. There are many ways you can help out our organization! Keeping our ensembles well fed, transported, and equipped with instruments, uniforms, flags, etc, is expensive. We try our best to keep tuition costs low. Your donations can help with that!</p>
+                        <a href="/donate" class="button home-support__btn">Show your support!</a>
                     </div>
-                    <div style="padding: 48px 0;">
-                        <a href="/join-corps" class="round-button">Audition Info</a>
-                    </div>
-                     <br>
                 </div>
-                <div>
-                    <h3 style="color: var(--light-half); font-weight: 700; font-size: clamp(2rem, 5vw, 3rem); text-shadow: 2px 2px 6px rgba(0,0,0,0.6);">Join Boise Gems Independent</h3>
-                    <br>
-                    <div class="image-wrapper">
-                        <img src="/img/photos/boise-gems-24.jpg" alt="Phot of the Boise Gems Independent" style="max-height: 348px; object-fit: cover;">
-                    </div>
-                    <div style="padding: 48px 0;">
-                        <a href="/join-independent" class="round-button">Audition Info</a>
-                    </div>
-                     <br>
-                </div>
-                <br>
-                <br>
-            </div>
+            </section>
+            <img class="home-support__img" src="/img/action/pointing.png" alt="" aria-hidden="true">
         </div>
-        <div style="padding: 64px 0; background-color: var(--light-quarter);">
-            <div class="duple-to-single">
-                <div>
-                    <h2 style="color: var(--dark-half); font-weight: 700; font-size: clamp(2rem, 5vw, 3rem);">Support Our Ensembles</h2>
-                    <br>
-                    <p style="padding: 16px 32px; text-align: left; font-size: clamp(1rem, 5vw, 1.4rem);">We're always looking for help and support. If you would like to donate, volunteer, or serve in any other way, we're more than accepting of your help! Donations and volunteers keep our ensembles running smoothly. There are many ways you can help out our organization! Keeping our ensembles well fed, transported, and equipped with instruments, uniforms, flags, etc, is expensive. We try our best to keep tuition costs low. Your donations can help with that!</p>
-                    <br>
-                    <br>
-                    <a href="/donate" class="round-button">Show your support!</a>
-                    <br>
-                </div>
-                <div>
-                    <div class="image-wrapper">
-                        <img src="/img/photos/boise-gems-26.jpg" alt="Phot of the Boise Gems Independent">
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="purple-storm-2" style="padding: 8px;">
+        <div class="purple-storm-2">
         <% 
             // Helpers
             const parseEventDate = (s) => {
@@ -92,7 +79,7 @@
 
             const now = new Date();
 
-            // Normalize -> filter upcoming -> sort -> take 3
+            // Normalize -> filter upcoming -> sort -> take the 5 most upcoming
             const normalized = (events || [])
             .map(ev => ({ ev, start: parseEventDate(ev.datetime) }))
             .filter(x => x.start); // drop invalid dates
@@ -100,82 +87,224 @@
             const upcoming = normalized
             .filter(x => x.start >= now)
             .sort((a,b) => a.start - b.start)
-            .slice(0,3)
+            .slice(0,5)
             .map(x => x.ev);
 
-            // Fallback to earliest 3 if no upcoming
+            // Fallback to earliest 5 if no upcoming
             const toShow = upcoming.length ? upcoming
-            : normalized.sort((a,b) => a.start - b.start).slice(0,3).map(x => x.ev);
+            : normalized.sort((a,b) => a.start - b.start).slice(0,5).map(x => x.ev);
+
+            // DAY, MM/DD/YY  ->  "Monday, 10/31/26"
+            const fmtEventDate = (dt) => {
+                const d = new Date(dt);
+                return d.toLocaleDateString('en-US', { weekday: 'long' }) + ', ' +
+                       d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+            };
+            const fmtEventTime = (dt) => new Date(dt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            const fmtEventCost = (c) => Number(c).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+            const featured = toShow[0];
+            const rest = toShow.slice(1);
         %>
 
-        <div class="triple-to-single">
-            <% toShow.forEach(event => { %>
-            <div>
-                <div class="event-card" style="cursor: pointer;" onclick="window.location='/event/<%= event.slug %>'">
-                <div style="text-align: center;">
-                    <img src="/img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
-                </div>
-                <div>
-                    <h2 style="text-align: left;"><%= event.title %></h2>
-                    <small style="text-align: left;">
-                    <%= event.type %>
-                    <% if (event.cost) { %>
-                        <span style="color: var(--dark-half)">|</span>
-                        <span style="color: rgb(15, 190, 41)">
-                        <%= Number(event.cost).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) %>
-                        </span>
-                    <% } %>
-                    </small>
-                    <br><br>
-                    <p><%= new Date(event.datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %></p>
-                    <p><%= new Date(event.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) %></p>
-                    <small><%= event.location %></small>
-                </div>
-                </div>
-            </div>
-            <% }) %>
-        </div>
+        <% if (toShow.length) { %>
+        <div class="home-events">
+            <h2 class="home-events__heading">Upcoming Events</h2>
 
-        <% if (!toShow.length) { %>
-            <p>No events to display.</p>
+            <% if (featured) { %>
+            <a class="ev-feature" href="/event/<%= featured.slug %>">
+                <div class="ev-feature__media">
+                    <img src="/img/publicupload/<%= featured.image %>" alt="Cover for boise gems event, <%= featured.title %>">
+                </div>
+                <div class="ev-feature__body">
+                    <span class="ev-badge">Next Up</span>
+                    <h3 class="ev-title"><%= featured.title %></h3>
+                    <p class="ev-meta">
+                        <span class="ev-type"><%= featured.type %></span>
+                        <% if (featured.cost) { %><span class="ev-sep">|</span><span class="ev-cost"><%= fmtEventCost(featured.cost) %></span><% } %>
+                    </p>
+                    <p class="ev-date"><%= fmtEventDate(featured.datetime) %></p>
+                    <p class="ev-time"><%= fmtEventTime(featured.datetime) %></p>
+                    <p class="ev-loc"><%= featured.location %></p>
+                </div>
+            </a>
+            <% } %>
+
+            <% if (rest.length) { %>
+            <div class="ev-grid">
+                <% rest.forEach(event => { %>
+                <a class="ev-item" href="/event/<%= event.slug %>">
+                    <div class="ev-item__media">
+                        <img src="/img/publicupload/<%= event.image %>" alt="Cover for boise gems event, <%= event.title %>">
+                    </div>
+                    <div class="ev-item__body">
+                        <h3 class="ev-title"><%= event.title %></h3>
+                        <p class="ev-meta">
+                            <span class="ev-type"><%= event.type %></span>
+                            <% if (event.cost) { %><span class="ev-sep">|</span><span class="ev-cost"><%= fmtEventCost(event.cost) %></span><% } %>
+                        </p>
+                        <p class="ev-date"><%= fmtEventDate(event.datetime) %></p>
+                        <p class="ev-time"><%= fmtEventTime(event.datetime) %></p>
+                        <p class="ev-loc"><%= event.location %></p>
+                    </div>
+                </a>
+                <% }) %>
+            </div>
+            <% } %>
+        </div>
+        <% } else { %>
+            <p style="text-align:center; padding: 48px 0;">No events to display.</p>
         <% } %>
+
+        <section class="home-instagram">
+            <div class="home-instagram__inner">
+                <h2 class="home-instagram__heading">On Instagram</h2>
+                <% if (instagramPosts && instagramPosts.length) { %>
+                <div class="home-instagram__grid">
+                    <% instagramPosts.forEach((post) => { %>
+                    <a class="ig-tile" href="<%= post.permalink %>" target="_blank" rel="noopener noreferrer" aria-label="View Instagram post">
+                        <img class="ig-tile__img" src="<%= post.mediaType === 'VIDEO' ? post.thumbnailUrl : post.mediaUrl %>" alt="" loading="lazy">
+                        <% if (post.mediaType === 'VIDEO') { %>
+                        <span class="ig-tile__badge" aria-hidden="true"><ion-icon name="play"></ion-icon></span>
+                        <% } %>
+                    </a>
+                    <% }) %>
+                </div>
+                <% } else { %>
+                <p class="home-instagram__empty">Follow <a href="https://www.instagram.com/boisegems/" target="_blank" rel="noopener">@boisegems</a> on Instagram for photos, videos, and show-day updates.</p>
+                <% } %>
+                <p class="home-instagram__cta">
+                    <a href="https://www.instagram.com/boisegems/" class="button" target="_blank" rel="noopener">Follow @boisegems</a>
+                </p>
+            </div>
+        </section>
         </div>
 
           <% if (news && news.length) { %>
-            <br>
-            <h2 style="text-align: center; color: var(--light-half); font-weight: 800; font-size: clamp(2rem, 5vw, 3rem);">
-                Latest News
-            </h2>
-            <br>
-
-            <div class="triple-to-single">
-                <% news.forEach(post => { %>
-                    <div>
-                        <div class="event-card" style="cursor: pointer;" onclick="window.location='/news/<%= post.slug %>'">
+            <section class="home-news">
+                <h2 class="home-news__heading">Latest News</h2>
+                <div class="home-news-masonry">
+                    <% news.forEach(post => { %>
+                        <a href="/news/<%= post.slug %>" class="hn-tile">
                             <% if (post.hero) { %>
-                                <div style="text-align: center;">
-                                    <img src="/img/publicupload/<%= post.hero %>" alt="News cover image for <%= post.title %>">
+                                <img class="hn-tile__img" src="/img/publicupload/<%= post.hero %>" alt="">
+                            <% } else { %>
+                                <div class="hn-tile__no-img">
+                                    <img src="/img/ui/gem.png" alt="">
                                 </div>
                             <% } %>
-                            <div>
-                                <h2 style="text-align: left;"><%= post.title %></h2>
-                                <small>
-                                    <%= new Date(post.created_at).toLocaleDateString("en-US", {
-                                        year: "numeric",
-                                        month: "long",
-                                        day: "numeric"
-                                    }) %>
-                                </small>
+                            <div class="hn-tile__body">
+                                <h3 class="hn-tile__title"><%= post.title %></h3>
+                                <time class="hn-tile__date" datetime="<%= new Date(post.created_at).toISOString() %>">
+                                    <%= new Date(post.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) %>
+                                </time>
                             </div>
-                        </div>
-                    </div>
-                <% }) %>
-            </div>
+                        </a>
+                    <% }) %>
+                </div>
+                <p class="home-news__more-wrap">
+                    <a href="/news" class="button home-news__more">View all news</a>
+                </p>
+            </section>
         <% } %>
 
-    </div>
     <footer>
         <%- include("includes/footer") %>
     </footer>
+    <script>
+        const heroVideo = document.querySelector('.home-hero__video');
+        if (heroVideo) {
+            const playHeroVideo = () => heroVideo.play().catch(() => {});
+            if (heroVideo.readyState >= 3) playHeroVideo();
+            else heroVideo.addEventListener('canplay', playHeroVideo, { once: true });
+        }
+
+        const introSection = document.querySelector('.home-intro');
+        if (introSection) {
+            // Deepen the purple background as the section scrolls up the page.
+            const startRGB = [157, 118, 187]; // #9d76bb (lighter purple)
+            const endRGB = [96, 67, 125];     // #60437D (brand purple, not too dark)
+            const lerp = (a, b, t) => Math.round(a + (b - a) * t);
+            let ticking = false;
+
+            const applyIntroShade = () => {
+                const rect = introSection.getBoundingClientRect();
+                const vh = window.innerHeight || document.documentElement.clientHeight;
+                const total = rect.height + vh;
+                let p = (vh - rect.top) / total;
+                p = Math.max(0, Math.min(1, p));
+                const r = lerp(startRGB[0], endRGB[0], p);
+                const g = lerp(startRGB[1], endRGB[1], p);
+                const b = lerp(startRGB[2], endRGB[2], p);
+                introSection.style.backgroundColor = 'rgb(' + r + ', ' + g + ', ' + b + ')';
+                ticking = false;
+            };
+
+            const onIntroScroll = () => {
+                if (!ticking) {
+                    ticking = true;
+                    requestAnimationFrame(applyIntroShade);
+                }
+            };
+
+            window.addEventListener('scroll', onIntroScroll, { passive: true });
+            window.addEventListener('resize', onIntroScroll, { passive: true });
+            applyIntroShade();
+
+            // Fade the text and gem up from the bottom when the section enters view.
+            const introObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-visible');
+                        introObserver.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.15 });
+            introObserver.observe(introSection);
+        }
+
+        // Pop the audition cards in from their respective edges on scroll.
+        // NOTE: the cards start translated fully off-screen, and IntersectionObserver
+        // accounts for transforms, so we observe the in-flow container instead of the
+        // cards themselves (otherwise they'd never be detected as intersecting).
+        const auditionCardsWrap = document.querySelector('.audition-cards');
+        if (auditionCardsWrap) {
+            const revealCards = () => {
+                auditionCardsWrap.querySelectorAll('.audition-card')
+                    .forEach((card) => card.classList.add('is-visible'));
+            };
+            const cardObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        revealCards();
+                        cardObserver.disconnect();
+                    }
+                });
+            }, { threshold: 0, rootMargin: '0px 0px -12% 0px' });
+            cardObserver.observe(auditionCardsWrap);
+        }
+
+        // Support/donation section: fade text up + pop the pointing image up from behind the next section.
+        const supportSection = document.querySelector('.home-support-wrap');
+        if (supportSection) {
+            const supportObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-visible');
+                        supportObserver.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.15 });
+            supportObserver.observe(supportSection);
+        }
+
+        // Belt-and-suspenders for the mobile clip-path first-paint bug: force a
+        // repaint of the angled/clipped sections once everything has loaded.
+        window.addEventListener('load', () => {
+            document.querySelectorAll('.home-intro, .home-support, .home-news').forEach((el) => {
+                void el.offsetHeight;
+            });
+        });
+    </script>
 </body>
 </html>

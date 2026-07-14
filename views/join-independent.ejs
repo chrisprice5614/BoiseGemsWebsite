@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Boise Gems Independent</title>
   <%- include("includes/head") %>
-  <meta name="description" content="Boise Gems Independent - auditions, season details, and how to join Boise Gems Independent.">
+  <% if (!testSite) { %>
+<meta name="description" content="Boise Gems Independent - auditions, season details, and how to join Boise Gems Independent.">
   <link rel="canonical" href="https://boisegems.org/join-independent">
   <meta property="og:title" content="Boise Gems Independent">
   <meta property="og:description" content="Independent ensemble info: auditions, season details, and how to join.">
+<% } %>
+
 </head>
 <body style="background: #eee">
   

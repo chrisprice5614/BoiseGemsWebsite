@@ -54,9 +54,9 @@
                   %>
                   <tr data-signer="<%= (ext.signerFirst + ' ' + ext.signerLast).toLowerCase() %>" data-signer-email="<%= (ext.signerEmail||'').toLowerCase() %>" data-child="<%= (ext.childFirst ? (ext.childFirst + ' ' + ext.childLast).toLowerCase() : '') %>" data-group="<%= groupLabel %>" data-due="<%= ext.due_date || 0 %>">
                     <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.signerFirst %> <%= ext.signerLast %><br/><small><%= ext.signerEmail %></small></td>
-                    <td style="border-bottom:1px solid #eee; padding:6px;"><% if (ext.childFirst) { %><%= ext.childFirst %> <%= ext.childLast %><% } else { %><em>—</em><% } %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><% if (ext.childFirst) { %><%= ext.childFirst %> <%= ext.childLast %><% } else { %>-<% } %></td>
                     <td style="border-bottom:1px solid #eee; padding:6px;"><%= groupLabel === 'corps' ? 'Corps' : (groupLabel === 'affiliate' ? 'Affiliate' : 'Independent') %></td>
-                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.due_date ? new Date(ext.due_date).toLocaleString() : '—' %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= ext.due_date ? new Date(ext.due_date).toLocaleString() : '-' %></td>
                     <td style="border-bottom:1px solid #eee; padding:6px;">
                       <% const memberId = ext.child_id || ext.user_id; %>
                       <form method="POST" action="/admin/contract-extension/<%= ext.id %>/delete" style="display:inline-block; margin-right:6px;">

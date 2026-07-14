@@ -1,0 +1,5 @@
+<a href="/store/cart" class="merch-float-cart" id="merchFloatCart" aria-label="View cart">
+  <ion-icon name="cart" class="merch-float-cart__icon"></ion-icon>
+  <span class="merch-float-cart__label">Cart</span>
+  <span class="merch-float-cart__badge" id="merchFloatCartBadge" <%= (typeof cartCount !== 'undefined' && cartCount > 0) ? '' : 'hidden' %>><%= typeof cartCount !== 'undefined' ? cartCount : 0 %></span>
+</a>

@@ -107,7 +107,7 @@
         if (dtStart && dtEnd) {
           const sameDay = dtStart.toDateString() === dtEnd.toDateString();
           return sameDay
-            ? `${fmtDate(dtStart)} · ${fmtTime(dtStart)}–${fmtTime(dtEnd)}`
+            ? `${fmtDate(dtStart)} · ${fmtTime(dtStart)}-${fmtTime(dtEnd)}`
             : `${fmtDate(dtStart)} · ${fmtTime(dtStart)} → ${fmtDate(dtEnd)} · ${fmtTime(dtEnd)}`;
         } else if (dtStart) {
           return `${fmtDate(dtStart)} · ${fmtTime(dtStart)}`;

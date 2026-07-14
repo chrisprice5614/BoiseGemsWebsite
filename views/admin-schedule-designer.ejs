@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedule Designer - Boise Gems</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main class="sch-designer-main">
+  <div class="sch-designer-top">
+    <div>
+      <a href="/admin/schedules" style="font-size:0.9rem;">← All Schedules</a>
+      <h1 style="margin:8px 0 0;">Schedule Designer</h1>
+    </div>
+    <div class="sch-designer-actions">
+      <button type="button" id="schSaveBtn">Save Schedule</button>
+      <% if (scheduleId) { %>
+      <button type="button" id="schDeleteBtn" style="background:#fdeaea;border-color:#e57373;color:#b02020;">Delete</button>
+      <% } %>
+    </div>
+  </div>
+
+  <div id="schDesignerFlash" class="sch-designer-flash" hidden></div>
+
+  <div class="sch-designer-stack">
+    <div class="form-panel sch-designer-meta">
+      <h2 class="pd-sub-heading" style="margin-top:0;">Day &amp; visibility</h2>
+      <label class="sch-field">
+        <span class="sch-field-label">Date</span>
+        <input type="date" id="schMetaDate" required>
+      </label>
+
+      <h3 class="pd-sub-heading">Who can see this schedule?</h3>
+      <p class="sch-designer-note">Staff and admins always see every schedule. Parents see it if any linked child qualifies.</p>
+      <label class="sch-aud-check"><input type="checkbox" id="schAudEveryone" name="aud_everyone" value="1" checked> Everyone</label>
+      <label class="sch-aud-check"><input type="checkbox" id="schAudCorps" name="aud_corps" value="1"> Contracted Corps</label>
+      <label class="sch-aud-check"><input type="checkbox" id="schAudIndependent" name="aud_independent" value="1"> Contracted Independent</label>
+    </div>
+
+    <div class="form-panel sch-designer-editor">
+      <div class="sch-designer-section-head">
+        <h2 class="pd-sub-heading" style="margin:0;">Times</h2>
+        <button type="button" id="schAddTime">+ Add Time</button>
+      </div>
+      <div id="schDesignerTimes"></div>
+    </div>
+  </div>
+
+  <div class="form-panel" style="margin-top:24px;">
+    <h2 class="pd-sub-heading" style="margin-top:0;">Preview</h2>
+    <div id="schPreview" class="sch-viewer"></div>
+  </div>
+</main>
+
+<div id="schCoordModal" class="sch-coord-modal" hidden>
+  <div class="sch-coord-modal__backdrop"></div>
+  <div class="sch-coord-modal__panel form-panel">
+    <h3 class="pd-sub-heading" style="margin-top:0;">Pick coordinates</h3>
+    <p style="font-size:0.88rem;color:#6b5585;margin:0 0 10px;">Pan the map and click to set the location pin.</p>
+    <div id="schCoordMap" class="sch-coord-map"></div>
+    <div id="schCoordLabel" class="sch-coord-readout"></div>
+    <div class="sch-coord-actions">
+      <button type="button" id="schCoordUse">Use this spot</button>
+      <button type="button" id="schCoordCancel" class="sch-btn-muted">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<footer><%- include("includes/footer") %></footer>
+<script>
+  window.SCH_DESIGNER_ID = <%= scheduleId ? scheduleId : 'null' %>;
+  window.SCH_INITIAL_DATE = <%= initialDate ? JSON.stringify(initialDate) : 'null' %>;
+</script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="/js/schedule-shared.js"></script>
+<script src="/js/schedule-designer.js"></script>
+</body>
+</html>

@@ -12,7 +12,8 @@
     <main>
         <br>
         <h1 style="text-align: center;">Send Email to <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
-        <form action="/send-message/<%= thisUser.id %>" method="POST">
+        <div class="form-panel">
+<form action="/send-message/<%= thisUser.id %>" method="POST">
             <label for="subject">Subject</label>
             <input type="text" name="subject" value="" placeholder="Email Subject" required/>
             <br>
@@ -25,6 +26,7 @@
                 <button>Send</button>
             </div>
         </form>
+</div>
     </main>
     <footer>
         <%- include("includes/footer") %>

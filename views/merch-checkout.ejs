@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout | Boise Gems Shop</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/merch.css">
+  <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body class="merch-page merch-checkout-page">
+<header><%- include("includes/header") %></header>
+<%- include("includes/merch-floating-cart", { cartCount }) %>
+
+<main class="merch-page-main">
+  <%- include("includes/merch-shop-hero") %>
+
+  <div class="merch-checkout-page-wrap">
+    <nav class="merch-breadcrumb" aria-label="Breadcrumb">
+      <a href="/store/cart">Cart</a>
+      <span class="merch-breadcrumb__sep" aria-hidden="true">/</span>
+      <span class="merch-breadcrumb__current">Checkout</span>
+    </nav>
+
+    <% if (locals.flash) { %><div class="merch-flash"><%= flash %></div><% } %>
+
+    <div class="merch-checkout-layout">
+      <div class="merch-checkout-form-col">
+        <form id="merchCheckoutForm" class="merch-checkout-form" novalidate>
+          <section class="merch-checkout-panel">
+            <h2 class="merch-checkout-panel__title">Contact</h2>
+            <div class="merch-checkout-field">
+              <label for="checkoutEmail">Email</label>
+              <input type="email" id="checkoutEmail" name="email" required value="<%= member ? member.email : '' %>" <%= member ? 'readonly' : '' %>>
+            </div>
+            <div class="merch-checkout-field">
+              <label for="checkoutName">Full name</label>
+              <input type="text" id="checkoutName" name="name" required value="<%= member ? (member.firstname + ' ' + member.lastname).trim() : '' %>">
+            </div>
+          </section>
+
+          <% if (hasPhysical) { %>
+          <section class="merch-checkout-panel" id="shippingFieldset">
+            <h2 class="merch-checkout-panel__title">Shipping address</h2>
+            <div class="merch-checkout-field">
+              <label for="shipLine1">Street address</label>
+              <input type="text" id="shipLine1" name="ship_line1" required autocomplete="address-line1" value="<%= shipParsed.line1 %>">
+            </div>
+            <div class="merch-checkout-field">
+              <label for="shipLine2">Apartment, suite, etc. <span class="merch-checkout-optional">(optional)</span></label>
+              <input type="text" id="shipLine2" name="ship_line2" autocomplete="address-line2" value="<%= shipParsed.line2 %>">
+            </div>
+            <div class="merch-checkout-field">
+              <label for="shipCity">City</label>
+              <input type="text" id="shipCity" name="ship_city" required autocomplete="address-level2" value="<%= shipParsed.city %>">
+            </div>
+            <div class="merch-checkout-row">
+              <div class="merch-checkout-field">
+                <label for="shipState">State</label>
+                <select id="shipState" name="ship_state" autocomplete="address-level1">
+                  <option value="">Select state</option>
+                  <% var usStates = [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','District of Columbia'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']];
+                  usStates.forEach(function(st) { %>
+                  <option value="<%= st[0] %>"<%= shipParsed.state === st[0] ? ' selected' : '' %>><%= st[1] %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="merch-checkout-field">
+                <label for="shipPostal">ZIP code</label>
+                <input type="text" id="shipPostal" name="ship_postal" required autocomplete="postal-code" inputmode="numeric" value="<%= shipParsed.postal %>">
+              </div>
+            </div>
+            <div class="merch-checkout-field">
+              <label for="shipCountry">Country</label>
+              <select id="shipCountry" name="ship_country" required autocomplete="country">
+                <option value="US"<%= shipParsed.country === 'US' ? ' selected' : '' %>>United States</option>
+                <option value="CA"<%= shipParsed.country === 'CA' ? ' selected' : '' %>>Canada</option>
+                <option value="MX"<%= shipParsed.country === 'MX' ? ' selected' : '' %>>Mexico</option>
+                <option value="GB"<%= shipParsed.country === 'GB' ? ' selected' : '' %>>United Kingdom</option>
+                <option value="AU"<%= shipParsed.country === 'AU' ? ' selected' : '' %>>Australia</option>
+                <option value="OTHER"<%= shipParsed.country === 'OTHER' ? ' selected' : '' %>>Other</option>
+              </select>
+            </div>
+          </section>
+          <% } %>
+
+          <section class="merch-checkout-panel">
+            <h2 class="merch-checkout-panel__title">Promo code</h2>
+            <div class="merch-promo-row">
+              <input type="text" id="promoCode" name="promo_code" placeholder="Enter code" autocomplete="off">
+              <button type="button" class="button" id="applyPromoBtn">Apply</button>
+            </div>
+            <p class="merch-promo-msg" id="promoMsg" hidden></p>
+          </section>
+
+          <section class="merch-checkout-panel merch-checkout-panel--payment">
+            <h2 class="merch-checkout-panel__title">Payment</h2>
+            <div id="paymentElement" class="merch-payment-element"></div>
+            <p class="merch-checkout-note" id="checkoutStatus">Loading secure payment form...</p>
+            <button type="submit" class="button merch-pay-btn" id="payBtn" disabled>Pay now</button>
+          </section>
+        </form>
+      </div>
+
+      <aside class="merch-summary merch-summary--checkout">
+        <h2 class="merch-summary__title">Order summary</h2>
+        <div class="merch-summary-items">
+          <% lines.forEach(function(line) { %>
+          <div class="merch-summary-row merch-summary-row--item">
+            <span><%= line.productName %><% if (line.colorName) { %> (<%= line.colorName %>)<% } %><% if (line.sizeLabel) { %>, <%= line.sizeLabel %><% } %> ×<%= line.qty %></span>
+            <span>$<%= ((line.unitPriceCents * line.qty) / 100).toFixed(2) %></span>
+          </div>
+          <% }) %>
+        </div>
+        <div class="merch-summary-row" id="sumSubtotal"><span>Subtotal</span><span>$<%= (totals.subtotalCents / 100).toFixed(2) %></span></div>
+        <div class="merch-summary-row" id="sumDiscount" style="<%= totals.discountCents ? '' : 'display:none;' %>"><span>Discount</span><span id="sumDiscountVal">-$<%= (totals.discountCents / 100).toFixed(2) %></span></div>
+        <div class="merch-summary-row" id="sumShipping" style="<%= hasPhysical ? '' : 'display:none;' %>"><span>Shipping</span><span id="sumShippingVal">$<%= (totals.shippingCents / 100).toFixed(2) %></span></div>
+        <% if (settings.taxPercent > 0) { %>
+        <div class="merch-summary-row" id="sumTax"><span>Tax (<%= settings.taxPercent %>%)</span><span id="sumTaxVal">$<%= (totals.taxCents / 100).toFixed(2) %></span></div>
+        <% } %>
+        <div class="merch-summary-row merch-summary-row--total" id="sumTotal"><span>Total</span><span id="sumTotalVal">$<%= (totals.totalCents / 100).toFixed(2) %></span></div>
+        <p class="merch-summary-foot">A confirmation email will be sent after payment. Tracking info follows when your order ships.</p>
+      </aside>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+<script>
+window.MERCH_CHECKOUT = {
+  publishableKey: <%- JSON.stringify(stripePublishableKey || '') %>,
+  hasPhysical: <%= hasPhysical ? 'true' : 'false' %>,
+  initialTotals: <%- JSON.stringify(totals) %>
+};
+</script>
+<script src="/js/merch-checkout.js"></script>
+</body>
+</html>

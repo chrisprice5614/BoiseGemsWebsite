@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Whistleblower — Boise Gems</title>
+  <title>Whistleblower - Boise Gems</title>
   <%- include("includes/head") %>
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <% if (!testSite) { %>
   <meta name="description" content="Anonymous whistleblower form for serious, emergency concerns at Boise Gems.">
   <link rel="canonical" href="https://boisegems.org/whistleblower">
+  <% } %>
+
 </head>
 <body>
 <header><%- include("includes/header") %></header>
@@ -26,7 +29,8 @@
     </p>
     <br>
 
-    <form action="/whistleblower" method="POST" novalidate>
+    <div class="form-panel">
+<form action="/whistleblower" method="POST" novalidate>
       <label for="content">Describe the situation (required)</label>
       <textarea name="content" id="content" placeholder="Share details, dates/times, locations, names/roles if known…" required></textarea>
       <br><br>
@@ -43,6 +47,7 @@
         <button type="submit">Submit Whistleblower Report</button>
       </div>
     </form>
+</div>
   </div>
 </main>
 

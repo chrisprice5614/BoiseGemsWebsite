@@ -1,120 +1,111 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Form | Boise Gems</title>
-    <%- include("includes/head") %>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit Form | Boise Gems</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/form-wizard.css">
 </head>
 <body>
-<header>
-    <%- include("includes/header") %>
-</header>
-<main>
+<header><%- include("includes/header") %></header>
+<main class="form-wizard">
+  <h1 style="text-align:center;">Edit form</h1>
+  <p style="text-align:center;color:#6b5585;">Update the details below. Drag boxes on the PDF to change where people fill in or sign.</p>
+
+  <form id="editFormWizard" action="/edit-form/<%= form.id %>" method="POST" enctype="multipart/form-data" class="form-wizard__step is-active" style="display:block;margin-top:20px;">
+    <input type="hidden" name="fields_json" id="fieldsJson" value="[]">
+
+    <label for="title"><strong>Form name</strong></label>
+    <input type="text" name="title" id="title" value="<%= form.title %>" required>
+    <br><br>
+
+    <label for="description"><strong>Description</strong></label>
+    <textarea name="description" id="description" required><%= form.description %></textarea>
     <br>
-    <h1 style="text-align: center;">Edit Form</h1>
-    <br>
 
-    <div style="padding: 8px;">
-        <form action="/edit-form/<%= form.id %>" method="POST" enctype="multipart/form-data">
-            <label for="title">Title</label>
-            <input type="text" name="title" value="<%= form.title %>" required>
-            <br><br>
+    <p><strong>Current PDF:</strong>
+      <% if (form.document_path) { %>
+        <a href="<%= form.document_path %>" target="_blank" rel="noopener">Open current PDF</a>
+      <% } else { %>
+        (none)
+      <% } %>
+    </p>
 
-            <label for="description">Description</label>
-            <input type="text" name="description" value="<%= form.description %>" required>
-            <br><br>
+    <label for="wizardPdf"><strong>Replace PDF (optional)</strong></label>
+    <input type="file" id="wizardPdf" name="document_path" accept="application/pdf">
+    <p style="color:#6b5585;font-size:0.95rem;">If you upload a new PDF, place the fill-in boxes again below.</p>
 
-            <p><b>Current PDF:</b>
-              <% if (form.document_path) { %>
-                <a href="<%= form.document_path %>" target="_blank">View current PDF</a>
-              <% } else { %>
-                (none)
-              <% } %>
-            </p>
-
-            <label for="document_path">Replace PDF (optional)</label>
-            <input type="file" name="document_path" accept="application/pdf">
-            <br><br>
-
-            <div style="align-items: center;">
-                <label for="upload">Require user to upload form?</label>
-                <input type="checkbox" name="upload" <%= form.upload ? "checked" : "" %> >
-            </div>
-            <br>
-
-            <!-- Audience / Contracted -->
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:center;">
-                <div>
-                    <label for="ensemble_type">Ensemble Audience</label>
-                    <select name="ensemble_type" id="ensemble_type">
-                        <option value="all" <%= (form.ensemble_type||"all")==="all" ? "selected" : "" %>>All members</option>
-                        <option value="corps" <%= (form.ensemble_type||"")=="corps" ? "selected" : "" %>>Corps (contracted)</option>
-                        <option value="independent" <%= (form.ensemble_type||"")=="independent" ? "selected" : "" %>>Independent (contracted)</option>
-                      <option value="affiliate" <%= (form.ensemble_type||"")=="affiliate" ? "selected" : "" %>>Affiliate (contracted)</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="contracted">Contracted only?</label>
-                    <input type="checkbox" name="contracted" id="contracted" <%= form.contracted ? "checked" : "" %> >
-                    <small style="display:block; opacity:.8;">
-                      If you pick “Corps”, “Independent”, or “Affiliate”, this will auto-enable.
-                    </small>
-                </div>
-            </div>
-            <br>
-
-            <!-- NEW: Role scope -->
-            <label for="role_scope">Form type</label>
-            <select name="role_scope" id="role_scope">
-                <option value="member" <%= (form.role_scope||"member")==="member" ? "selected" : "" %>>Performer / Member</option>
-                <option value="staff" <%= form.role_scope==="staff" ? "selected" : "" %>>Staff</option>
-                <option value="admin" <%= form.role_scope==="admin" ? "selected" : "" %>>Admin</option>
-            </select>
-            <small style="display:block; opacity:.8;">
-                Performers do not need to upload staff/admin forms.
-            </small>
-            <br><br>
-
-            <label for="due_date">Due Date</label>
-            <input type="date" name="due_date"
-                   value="<%= form.due_date ? new Date(form.due_date).toISOString().slice(0,10) : '' %>">
-            <br><br>
-
-            <label for="expire_date">Expiration Date</label>
-            <input type="date" name="expire_date"
-                   value="<%= form.expire_date ? new Date(form.expire_date).toISOString().slice(0,10) : '' %>">
-            <br><br>
-
-            <label for="content">Form content (optional)</label>
-            <textarea name="content" placeholder="Enter form data here"><%= form.content || "" %></textarea>
-            <br><br>
-
-            <div style="text-align: center;">
-                <button>Save Changes</button>
-            </div>
-        </form>
+    <div class="fw-pdf-shell">
+      <div class="fw-pdf-layout">
+        <div class="fw-pdf-pages" id="wizardPdfPages">
+          <p style="text-align:center;padding:24px;color:#6b5585;margin:0;">Loading…</p>
+        </div>
+        <aside class="fw-tools fw-tools--float" id="wizardTools">
+          <p class="fw-tools__hint">Choose a field type</p>
+          <button type="button" data-field-type="text">Text</button>
+          <button type="button" data-field-type="signature">Signature</button>
+          <button type="button" data-field-type="date">Date</button>
+          <button type="button" data-field-type="initials">Initials</button>
+          <button type="submit" class="fw-tools__save">Save changes</button>
+        </aside>
+      </div>
     </div>
-</main>
-<footer>
-    <%- include("includes/footer") %>
-</footer>
+    <div class="fw-field-list" id="wizardFieldList"></div>
+    <br>
 
+    <h2 style="font-size:1.2rem;">Who needs to sign?</h2>
+    <div class="form-wizard__checks">
+      <label class="form-wizard__check"><input type="checkbox" name="audience_corps" value="1" <%= form.audience_corps ? "checked" : "" %>> Corps</label>
+      <label class="form-wizard__check"><input type="checkbox" name="audience_independent" value="1" <%= form.audience_independent ? "checked" : "" %>> Independent</label>
+      <label class="form-wizard__check"><input type="checkbox" name="audience_affiliate" value="1" <%= form.audience_affiliate ? "checked" : "" %>> Affiliate</label>
+      <label class="form-wizard__check"><input type="checkbox" name="audience_staff" value="1" <%= form.audience_staff ? "checked" : "" %>> Staff</label>
+    </div>
+
+    <label for="due_date"><strong>Due date</strong></label>
+    <input type="date" name="due_date" id="due_date"
+           value="<%= form.due_date ? new Date(form.due_date).toISOString().slice(0,10) : '' %>">
+    <br><br>
+    <label for="expire_date"><strong>Expiration date</strong></label>
+    <input type="date" name="expire_date" id="expire_date"
+           value="<%= form.expire_date ? new Date(form.expire_date).toISOString().slice(0,10) : '' %>">
+    <br><br>
+
+    <div style="text-align:center;">
+      <button type="submit" class="button">Save changes</button>
+    </div>
+  </form>
+</main>
+<footer><%- include("includes/footer") %></footer>
 <script>
-  (function(){
-    const sel = document.getElementById('ensemble_type');
-    const chk = document.getElementById('contracted');
-    function sync() {
-      const v = (sel.value || '').toLowerCase();
-      if (v === 'corps' || v === 'independent' || v === 'affiliate') {
-        chk.checked = true;
-        chk.disabled = true;
-      } else {
-        chk.disabled = false;
-      }
+  window.__EDIT_FORM_BOOT__ = {
+    pdfUrl: <%- JSON.stringify(form.document_path || "") %>,
+    fields: <%- form.fields_json || "[]" %>
+  };
+</script>
+<script type="module" src="/js/form-wizard.js"></script>
+<script type="module">
+  const boot = window.__EDIT_FORM_BOOT__ || { pdfUrl: "", fields: [] };
+  function start() {
+    if (!window.FormWizardPlacer) {
+      setTimeout(start, 40);
+      return;
     }
-    sel.addEventListener('change', sync);
-    sync();
-  })();
+    const placer = window.FormWizardPlacer.createPlacer({
+      fileInput: document.getElementById("wizardPdf"),
+      pagesEl: document.getElementById("wizardPdfPages"),
+      toolsEl: document.getElementById("wizardTools"),
+      listEl: document.getElementById("wizardFieldList"),
+      fieldsInput: document.getElementById("fieldsJson"),
+      initialFields: Array.isArray(boot.fields) ? boot.fields : [],
+    });
+    if (boot.pdfUrl) placer.renderPdfFromUrl(boot.pdfUrl);
+    const form = document.getElementById("editFormWizard");
+    form.addEventListener("submit", function () {
+      document.getElementById("fieldsJson").value = JSON.stringify(placer.getFields());
+    });
+  }
+  start();
 </script>
 </body>
 </html>

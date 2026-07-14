@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Press Kit - Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+  <header><%- include("includes/header") %></header>
+
+  <main class="pk-main">
+    <div class="pk-hero">
+      <h1 class="pk-hero__title">Press Kit</h1>
+      <p class="pk-hero__lead">Media resources for Boise Gems Drum &amp; Bugle Corps and Boise Gems Independent.</p>
+    </div>
+
+    <div class="pk-info-grid">
+      <div class="pk-info-card">
+        <span class="pk-info-card__label">Location</span>
+        <p class="pk-info-card__value"><%= meta.location || 'Boise, Idaho' %></p>
+      </div>
+      <div class="pk-info-card">
+        <span class="pk-info-card__label">Founded</span>
+        <p class="pk-info-card__value"><%= meta.founded || '2022' %></p>
+      </div>
+    </div>
+
+    <% if (meta.description && meta.description.trim()) { %>
+    <section class="pk-section">
+      <h2 class="pk-section__heading">About</h2>
+      <div class="pk-about">
+        <p><%= meta.description %></p>
+      </div>
+    </section>
+    <% } %>
+
+    <section class="pk-section">
+      <h2 class="pk-section__heading">Logo Graphics</h2>
+      <p class="pk-section__note">Official logos and brand graphics for press and promotional use.</p>
+      <% if (logoImages && logoImages.length) { %>
+      <div class="pk-gallery">
+        <% logoImages.forEach((item) => { %>
+        <article class="pk-asset">
+          <div class="pk-asset__preview">
+            <% if (item.mime_type === 'application/pdf') { %>
+              <div class="pk-asset__file">
+                <ion-icon name="document-text"></ion-icon>
+                <span>PDF</span>
+              </div>
+            <% } else if (item.mime_type === 'image/svg+xml') { %>
+              <div class="pk-asset__file">
+                <ion-icon name="image"></ion-icon>
+                <span>SVG</span>
+              </div>
+            <% } else { %>
+              <img src="/img/press-kit/<%= item.filename %>" alt="<%= item.original_name %>" loading="lazy">
+            <% } %>
+          </div>
+          <div class="pk-asset__body">
+            <p class="pk-asset__name"><%= item.original_name %></p>
+            <a class="button pk-asset__btn" href="/img/press-kit/<%= item.filename %>" download="<%= item.original_name %>">Download</a>
+          </div>
+        </article>
+        <% }) %>
+      </div>
+      <% } else { %>
+      <p class="pk-empty">Logo graphics will be posted here soon.</p>
+      <% } %>
+    </section>
+
+    <section class="pk-section">
+      <h2 class="pk-section__heading">Action Shots</h2>
+      <p class="pk-section__note">Performance and rehearsal photography for editorial use.</p>
+      <% if (actionImages && actionImages.length) { %>
+      <div class="pk-gallery">
+        <% actionImages.forEach((item) => { %>
+        <article class="pk-asset">
+          <div class="pk-asset__preview">
+            <% if (item.mime_type === 'application/pdf') { %>
+              <div class="pk-asset__file">
+                <ion-icon name="document-text"></ion-icon>
+                <span>PDF</span>
+              </div>
+            <% } else { %>
+              <img src="/img/press-kit/<%= item.filename %>" alt="<%= item.original_name %>" loading="lazy">
+            <% } %>
+          </div>
+          <div class="pk-asset__body">
+            <p class="pk-asset__name"><%= item.original_name %></p>
+            <a class="button pk-asset__btn" href="/img/press-kit/<%= item.filename %>" download="<%= item.original_name %>">Download</a>
+          </div>
+        </article>
+        <% }) %>
+      </div>
+      <% } else { %>
+      <p class="pk-empty">Action shots will be posted here soon.</p>
+      <% } %>
+    </section>
+
+    <p class="pk-contact">
+      Media inquiries: <a href="/contact">contact us</a> or reach out on
+      <a href="https://www.instagram.com/boisegems/" target="_blank" rel="noopener">Instagram</a>.
+    </p>
+  </main>
+
+  <footer><%- include("includes/footer") %></footer>
+</body>
+</html>

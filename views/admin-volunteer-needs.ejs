@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Volunteer Needs – Admin</title>
+    <title>Volunteer Needs - Admin</title>
     <%- include("includes/head") %>
     <!-- styles moved to styles.css -->
 </head>
@@ -20,13 +20,15 @@
                 <div class="flash-box" style="margin-top: 16px;"><%= flashMessage %></div>
             <% } %>
 
-            <form action="/admin/volunteer-needs" method="POST" style="margin-top: 16px;">
+            <div class="form-panel">
+<form action="/admin/volunteer-needs" method="POST">
                 <label for="needs" style="margin-left: 0; display: block; margin-bottom: 6px; font-weight: 600;">Volunteer Needs Text</label>
                 <textarea id="needs" name="needs" rows="8" style="width: 100%; box-sizing: border-box; margin-left: 0;" placeholder="e.g. drivers, meal prep volunteers, prop crew..."><%= needs %></textarea>
                 <div style="margin-top: 12px;">
                     <button type="submit">Save</button>
                 </div>
             </form>
+</div>
 
             <hr style="margin: 32px 0;">
             <h2>Volunteer Form Submissions</h2>

@@ -1,0 +1,15 @@
+<% if (typeof digitalGrants !== 'undefined' && digitalGrants && digitalGrants.length) { %>
+<div class="pd-sub-heading" style="margin-top:20px;">Merch Downloads</div>
+<div class="merch-downloads-list">
+  <% digitalGrants.forEach(function(g) { %>
+  <div class="merch-download-item">
+    <div>
+      <strong><%= g.name %></strong>
+      <% if (g.forChildName) { %><div style="font-size:0.85rem;color:#6b5585;">For <%= g.forChildName %></div><% } %>
+      <% if (g.description) { %><div style="font-size:0.88rem;color:#666;margin-top:4px;"><%= g.description %></div><% } %>
+    </div>
+    <a href="/store/download/<%= g.id %>" class="button">Download</a>
+  </div>
+  <% }) %>
+</div>
+<% } %>

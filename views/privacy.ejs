@@ -5,8 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Privacy Policy | Boise Gems</title>
   <%- include("includes/head") %>
-  <meta name="description" content="How Boise Gems collects, stores, and protects your information on the website and member portals.">
+  <% if (!testSite) { %>
+<meta name="description" content="How Boise Gems collects, stores, and protects your information on the website and member portals.">
   <link rel="canonical" href="https://boisegems.org/privacy">
+<% } %>
+
 </head>
 <body class="about-page" style="background:#fafafa;">
 <header><%- include("includes/header") %></header>

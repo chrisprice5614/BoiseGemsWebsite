@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Boise Gems Independent — About</title>
+  <title>Boise Gems Independent - About</title>
   <%- include("includes/head") %>
-  <meta name="description" content="About Boise Gems Independent, indoor percussion, and staff.">
+  <% if (!testSite) { %>
+<meta name="description" content="About Boise Gems Independent, indoor percussion, and staff.">
   <link rel="canonical" href="https://boisegems.org/boise-gems-independent">
+<% } %>
+
 
   <!-- styles moved to styles.css -->
 </head>
@@ -29,35 +32,10 @@
   </div>
 </section>
 
-<section class="about-section">
+<section class="about-section about-section--staff">
   <div class="about-wrap">
     <h2>Staff</h2>
-
-    <% if (staffSections && staffSections.length) { %>
-      <% staffSections.forEach(section => { %>
-        <h3 class="staff-category"><%= section.title %></h3>
-        <div class="staff-block">
-          <div class="staff-grid">
-            <% section.staff.forEach(s => {
-              const imgUrl = s.image ? ("/img/publicupload/" + s.image) : "/img/ui/gem.png";
-              const href = s.slug ? ("/staff/" + s.slug) : ("/staff/" + s.id);
-            %>
-              <article class="staff-card card">
-                <a class="staff-link" href="<%= href %>" aria-label="<%= s.first %> <%= s.last %> — <%= s.position %>">
-                  <div class="staff-media" style="background-image:url('<%= imgUrl %>');"></div>
-                  <div class="staff-meta">
-                    <h4 class="staff-name"><%= s.first %> <%= s.last %></h4>
-                    <p class="staff-role"><%= s.position %></p>
-                  </div>
-                </a>
-              </article>
-            <% }); %>
-          </div>
-        </div>
-      <% }); %>
-    <% } else { %>
-      <p>No staff available right now.</p>
-    <% } %>
+    <%- include("includes/staff-gem-wall", { staffSections: staffSections }) %>
   </div>
 </section>
 

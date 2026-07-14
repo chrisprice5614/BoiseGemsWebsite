@@ -6,6 +6,7 @@
   <title>Boise Gems | Register</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" type="image/x-icon" href="/img/ui/favicon.ico" />
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
@@ -339,6 +340,10 @@
       display: block;
     }
 
+    .captcha-wrap { margin-bottom: 16px; }
+    .captcha-wrap .field-error { display: none; margin-top: 8px; }
+    .captcha-wrap.is-invalid .field-error { display: block; }
+
     /* ── Neutralise global form / label / input rules ── */
     #reg-form {
       background: none;
@@ -390,13 +395,13 @@
       <div class="progress-label" id="prog-label">Step 1 of …</div>
     </div>
 
-    <!-- Hidden real form — action is set by JS before submit -->
+    <!-- Hidden real form - action is set by JS before submit -->
     <form id="reg-form" action="/register-member" method="POST">
 
       <!-- Slider viewport -->
       <div class="step-viewport" id="step-viewport">
 
-        <!-- ═══ STEP 0 — Account type ═══ -->
+        <!-- ═══ STEP 0 - Account type ═══ -->
         <div class="step is-active" id="step-0">
           <p class="step-heading">
             Which are you?
@@ -421,7 +426,7 @@
           </div>
         </div>
 
-        <!-- ═══ STEP 0f — Fan sub-type ═══ -->
+        <!-- ═══ STEP 0f - Fan sub-type ═══ -->
         <div class="step is-hidden-right no-transition" id="step-0f">
           <p class="step-heading">
             Are you an individual or a business?
@@ -444,7 +449,7 @@
           </div>
         </div>
 
-        <!-- ═══ STEP 1 — Name ═══ -->
+        <!-- ═══ STEP 1 - Name ═══ -->
         <div class="step is-hidden-right no-transition" id="step-1">
           <p class="step-heading">What's your name?</p>
           <div class="two-col">
@@ -471,7 +476,7 @@
           </div>
         </div>
 
-        <!-- ═══ STEP 2 — Contact ═══ -->
+        <!-- ═══ STEP 2 - Contact ═══ -->
         <div class="step is-hidden-right no-transition" id="step-2">
           <p class="step-heading">
             How can we reach you?
@@ -493,7 +498,7 @@
           </div>
         </div>
 
-        <!-- ═══ STEP 3 — Address + Birthday ═══ -->
+        <!-- ═══ STEP 3 - Address + Birthday ═══ -->
         <div class="step is-hidden-right no-transition" id="step-3">
           <p class="step-heading">A little more info</p>
           <div class="field-group">
@@ -512,7 +517,7 @@
           </div>
         </div>
 
-        <!-- ═══ STEP 4m — Section + Instrument (member only) ═══ -->
+        <!-- ═══ STEP 4m - Section + Instrument (member only) ═══ -->
         <div class="step is-hidden-right no-transition" id="step-4m">
           <p class="step-heading">
             Your section &amp; role
@@ -539,7 +544,7 @@
           </div>
         </div>
 
-        <!-- ═══ STEP pw — Password ═══ -->
+        <!-- ═══ STEP pw - Password ═══ -->
         <div class="step is-hidden-right no-transition" id="step-pw">
           <p class="step-heading">
             Secure your account
@@ -554,6 +559,10 @@
             <label for="passwordRetype">Confirm Password</label>
             <input type="password" id="passwordRetype" name="passwordRetype" autocomplete="new-password" placeholder="••••••••" />
             <span class="field-error">Passwords must match</span>
+          </div>
+          <div class="captcha-wrap" id="captcha-wrap">
+            <div class="g-recaptcha" data-sitekey="<%= RECAPTCHA_SITE_KEY %>"></div>
+            <span class="field-error">Please complete the captcha</span>
           </div>
           <div class="nav-row">
             <button type="button" class="btn-back" onclick="goBack()">← Back</button>
@@ -747,7 +756,7 @@
             ok = false;
           }
         } catch (e) {
-          // Network error — allow through, server will catch it on submit
+          // Network error - allow through, server will catch it on submit
         }
         btn.disabled = false;
         btn.textContent = origText;
@@ -773,10 +782,19 @@
   function submitForm() {
     const pw  = document.getElementById('password');
     const pw2 = document.getElementById('passwordRetype');
+    const captchaWrap = document.getElementById('captcha-wrap');
     let ok = true;
 
     if (!setValid(pw,  pw.value.length >= 8)) ok = false;
     if (!setValid(pw2, pw.value === pw2.value && pw2.value.length > 0)) ok = false;
+
+    const captchaToken = (window.grecaptcha && grecaptcha.getResponse) ? grecaptcha.getResponse() : '';
+    if (!captchaToken) {
+      if (captchaWrap) captchaWrap.classList.add('is-invalid');
+      ok = false;
+    } else if (captchaWrap) {
+      captchaWrap.classList.remove('is-invalid');
+    }
 
     if (!ok) return;
     document.getElementById('reg-form').submit();

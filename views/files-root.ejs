@@ -5,37 +5,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Music & Files | Boise Gems</title>
   <%- include("includes/head") %>
+  <link rel="stylesheet" href="/css/files-drive.css">
 </head>
-<body>
-<header>
-  <%- include("includes/header") %>
-</header>
+<body class="files-drive-page">
+<header><%- include("includes/header") %></header>
 
-<main>
-  <div style="max-width: 960px; margin: 16px auto;">
-    <h1>Music & Files</h1>
-    <p>Select which ensemble’s files you’d like to view.</p>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 16px;">
-      <a href="/files/corps/2026" style="text-decoration: none;">
-        <div style="padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12);">
-          <h2 style="margin-top: 0;">Drum &amp; Bugle Corps</h2>
-          <p>2026 season folders for brass, drumline, front ensemble, and guard.</p>
-        </div>
-      </a>
-
-      <a href="/files/indoor/2026" style="text-decoration: none;">
-        <div style="padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12);">
-          <h2 style="margin-top: 0;">Boise Gems Independent</h2>
-          <p>2026 season folders for indoor drumline and front ensemble.</p>
-        </div>
-      </a>
+<main class="files-drive">
+  <div class="files-drive__top">
+    <div>
+      <h1 class="files-drive__title">Music &amp; Files</h1>
+      <p class="files-drive__subtitle">Season folders for charts, audio, and rehearsal materials.</p>
     </div>
   </div>
+
+  <div class="files-drive__grid" id="filesDriveItems">
+    <% if (showCorps) { %>
+    <a href="/files/corps/<%= filesYear %>" class="files-drive-item files-drive-card files-drive-card--ensemble">
+      <div class="files-drive-card__icon files-drive-card__icon--lg"><ion-icon name="folder"></ion-icon></div>
+      <p class="files-drive-card__name"><%= filesYear %> Corps</p>
+      <p class="files-drive-card__meta">Brass, percussion, guard, and more</p>
+    </a>
+    <% } %>
+    <% if (showIndependent) { %>
+    <a href="/files/indoor/<%= filesYear %>" class="files-drive-item files-drive-card files-drive-card--ensemble">
+      <div class="files-drive-card__icon files-drive-card__icon--lg"><ion-icon name="folder"></ion-icon></div>
+      <p class="files-drive-card__name"><%= filesYear %> Independent</p>
+      <p class="files-drive-card__meta">Indoor drumline and front ensemble</p>
+    </a>
+    <% } %>
+  </div>
+
+  <% if (!showCorps && !showIndependent) { %>
+  <div class="files-drive-empty">
+    <ion-icon name="folder-open-outline"></ion-icon>
+    <p>No file libraries are available for your account.</p>
+  </div>
+  <% } %>
 </main>
 
-<footer>
-  <%- include("includes/footer") %>
-</footer>
+<footer><%- include("includes/footer") %></footer>
 </body>
 </html>

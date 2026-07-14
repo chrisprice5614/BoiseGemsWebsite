@@ -1,0 +1,13 @@
+<% if (typeof linkRequests !== 'undefined' && linkRequests.length) { %>
+<div id="plRequestsSection" class="pl-requests-section">
+  <div class="pd-sub-heading">Link Requests</div>
+  <div class="pd-section-sub" style="margin-bottom:12px;">Review the requester's name and email before accepting.</div>
+  <div id="plRequestsList" class="pl-requests-list"></div>
+</div>
+<% } else { %>
+<div id="plRequestsSection" class="pl-requests-section" hidden>
+  <div class="pd-sub-heading">Link Requests</div>
+  <div class="pd-section-sub" style="margin-bottom:12px;">Review the requester's name and email before accepting.</div>
+  <div id="plRequestsList" class="pl-requests-list"></div>
+</div>
+<% } %>

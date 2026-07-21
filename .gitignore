@@ -1,3 +1,7 @@
 .env
 /node_modules
 /private
+firebase-key.json
+**/firebase-key.json
+*-firebase-adminsdk*.json
+serviceAccount*.json

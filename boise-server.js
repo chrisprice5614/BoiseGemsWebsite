@@ -400,35 +400,66 @@ function detectMessageMediaType(mime, originalName, buffer) {
 }
 
 let firebaseAdmin = null;
-try {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
-    const sa = JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, "utf8"));
-    firebaseAdmin = require("firebase-admin");
-    if (!firebaseAdmin.apps.length) {
-      firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(sa) });
+(function initFirebaseAdmin() {
+  const candidates = [
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+    path.join(__dirname, "private", "firebase-key.json"),
+    path.join(__dirname, "firebase-key.json"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const keyPath = path.isAbsolute(candidate) ? candidate : path.resolve(__dirname, candidate);
+      if (!fs.existsSync(keyPath)) continue;
+      const sa = JSON.parse(fs.readFileSync(keyPath, "utf8"));
+      firebaseAdmin = require("firebase-admin");
+      if (!firebaseAdmin.apps.length) {
+        firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(sa) });
+      }
+      console.log(`[Messaging] Firebase Admin ready (${sa.project_id || "ok"})`);
+      return;
+    } catch (e) {
+      console.warn("[Messaging] Firebase key load failed:", e.message);
     }
   }
-} catch (e) {
-  console.warn("[Messaging] Firebase not configured:", e.message);
-}
+  console.warn("[Messaging] Firebase not configured — set FIREBASE_SERVICE_ACCOUNT_PATH or place private/firebase-key.json");
+})();
 
 async function sendPushToUser(userId, title, body, data = {}) {
   if (!firebaseAdmin) return;
   const tokens = db.prepare("SELECT token FROM device_tokens WHERE user_id = ?").all(Number(userId));
   if (!tokens.length) return;
   const messaging = firebaseAdmin.messaging();
+  const type = String(data.type || "message");
+  const androidChannelId = type === "announcement" ? "announcements" : "messages";
+  const payloadData = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]));
   for (const row of tokens) {
     try {
       await messaging.send({
         token: row.token,
         notification: { title, body },
-        data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-        android: { priority: "high" },
-        apns: { payload: { aps: { sound: "default" } } },
+        data: payloadData,
+        android: {
+          priority: "high",
+          notification: {
+            channelId: androidChannelId,
+            sound: "default",
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1,
+            },
+          },
+        },
       });
     } catch (e) {
       if (e.code === "messaging/registration-token-not-registered") {
         db.prepare("DELETE FROM device_tokens WHERE token = ?").run(row.token);
+      } else {
+        console.warn("[Messaging] push send failed:", e.code || e.message);
       }
     }
   }
@@ -2968,7 +2999,9 @@ const coordinates = {
   'Denver, CO': [39.7392, -104.9903],
   'Kennewick, WA' : [46.202,-119.120],
   'Hillsboro, OR' : [45.522,-122.989],
-  'Seattle, WA' : [47.603,-122.330]
+  'Seattle, WA' : [47.603,-122.330],
+  'Moscow, ID' : [46.732, -117.000],
+  'Portland, OR' : [45.523, -122.676]
 };
 
 
@@ -5692,6 +5725,23 @@ app.get("/send-message/:id", mustBeAdmin, (req,res) => {
   return res.render("send-message", {thisUser})
 })
 
+app.get("/shows/2026-the-color-of-chaos", (req,res) => {
+  const events = [
+    { date: '2026-06-27', location: 'Moscow, ID' },
+    { date: '2026-06-29', location: 'Seattle, WA' },
+    { date: '2026-07-01', location: 'Portland, OR' },
+    { date: '2026-07-02', location: 'Boise, ID' },
+  ];
+
+  events.forEach(event => {
+    event.coords = coordinates[event.location];
+  });
+
+  const center = getGraphicCenter(events)
+
+  return res.render("show-2026", {events, center})
+})
+
 app.get("/shows/2025-the-animated", (req,res) => {
   const events = [
     { date: '2025-06-30', location: 'Kennewick, WA' },
@@ -7225,6 +7275,10 @@ app.post("/admin/announcements", mustBeAdmin, (req, res) => {
   const annId = result.lastInsertRowid;
   const insertImg = db.prepare("INSERT INTO announcement_images (announcement_id, filename, created_at) VALUES (?, ?, ?)");
   images.filter(f => typeof f === "string" && f.trim()).forEach(f => insertImg.run(annId, f.trim(), now));
+  const row = db.prepare("SELECT * FROM announcements WHERE id = ?").get(annId);
+  pushAnnouncementToAudience(row, plainText).catch((err) =>
+    console.error("[Admin] announcement push error:", err)
+  );
   req.session.flashMessage = "Announcement posted.";
   return res.redirect("/admin-portal");
 });

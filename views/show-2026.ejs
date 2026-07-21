@@ -1,0 +1,330 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems | The Color of Chaos</title>
+    <%- include("includes/head") %>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        .chaos-hero {
+            position: relative;
+            padding: 8% 10%;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .chaos-hero__back1,
+        .chaos-hero__back2 {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+        }
+        .chaos-hero__back1 {
+            background-image: url('/img/shows/2026/back1.png');
+        }
+        .chaos-hero__back2 {
+            background-image: url('/img/shows/2026/back2.png');
+            /* mask fades from transparent on the "back1 side" to opaque on the "back2 side" */
+            -webkit-mask-image: linear-gradient(135deg, transparent 0%, black 100%);
+            mask-image: linear-gradient(135deg, transparent 0%, black 100%);
+        }
+        .chaos-hero__content {
+            position: relative;
+            z-index: 1;
+            transition: transform 0.15s ease-out;
+            will-change: transform;
+        }
+        .chaos-quote {
+            border-left: 4px solid #cc0000;
+            padding: 12px 20px;
+            margin: 24px 0;
+            font-style: italic;
+            color: #888;
+        }
+        .chaos-location-banner {
+            text-align: center;
+            background-color: #1a0000;
+            border-left: 6px solid #cc0000;
+            border-radius: 12px;
+            box-shadow: 0px 3px 12px rgba(180,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 160px;
+            padding: 20px;
+            margin: 32px 0px;
+        }
+        .chaos-location-banner p,
+        .chaos-location-banner h2,
+        .chaos-location-banner span {
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div class="chaos-hero" id="chaos-hero">
+            <div class="chaos-hero__back1"></div>
+            <div class="chaos-hero__back2" id="chaos-back2"></div>
+            <div class="chaos-hero__content">
+                <img src="/img/shows/2026/wordmark.png" alt="The Color of Chaos wordmark" style="max-width: 720px; width: 100%; filter: invert(1);">
+            </div>
+        </div>
+
+        <div style="padding: 32px; font-size: large; max-width: 900px; margin: 0 auto;">
+
+            <div style="margin: 0px 16px; padding: 8px;">
+                <iframe src="https://www.youtube.com/embed/KLvr0P-92Ec" style="aspect-ratio: 16/9; width: 100%; border-radius: 16px; box-shadow: 0px 4px 12px rgba(0,0,0,0.4);"></iframe>
+            </div>
+
+            <br>
+
+            <div class="chaos-quote">
+                "A thimbleful of red is redder than a bucketful." - Henri Matisse
+            </div>
+
+            <p>Since the dawn of civilization, people have continuously found innovative ways to use colors as a means for artistic expression. RED is one of the most ancient and primal of these colors. Dating back to its use in cave art, the color RED has flourished in a multitude of artistic styles and expressions, from rage and dominance, to the divine and spiritual, to love and passion, and more. The color RED refuses to sit still.</p>
+            <br>
+            <p>Dancing on the facets of this captivating and dynamic color, the 2026 Gems present <strong>THE COLOR OF CHAOS</strong>.</p>
+            <br>
+            <p>At its core, this show is about RED - what it looks like, what it sounds like, and what it feels like. Along the way, we aim to explore the mediums and facets in which RED has flourished, from its part in war, usage in the divine, appearance in royalty, and manner of expression in the deepest and most spiritual of human emotions.</p>
+
+            <div class="chaos-quote">
+                "Of all the hues, reds have the most potency... Use them to punctuate white, burn into bronzes, or dynamite black." - Jack Lenor Larsen
+            </div>
+
+            <br>
+
+            <div class="carousel" data-delay="4000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-2.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-3.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-4.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-5.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+            </div>
+
+            <br>
+
+            <div class="fade-in">
+                <h1 style="text-align: center;">Music</h1>
+                <br>
+                <h2 style="text-align: center;"><b>The Eternal Conflict</b></h2>
+                <p style="text-align: center;"><i>Neal Acree &amp; Matt Uelmen</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Potent Hues</b></h2>
+                <p style="text-align: center;"><i>Cooper Phillips &amp; Rob Sullens</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Everything In Its Right Place</b></h2>
+                <p style="text-align: center;"><i>Radiohead</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>The Upside Down</b></h2>
+                <p style="text-align: center;"><i>Kyle Dixon &amp; Michael Stein</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Dimensions Collide</b></h2>
+                <p style="text-align: center;"><i>Cooper Phillips &amp; Rob Sullens</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Feelings Are A Thing Of The Past</b></h2>
+                <p style="text-align: center;"><i>Caroline Rose</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Skyfall</b></h2>
+                <p style="text-align: center;"><i>Adele</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>Transcendence</b></h2>
+                <p style="text-align: center;"><i>Cooper Phillips &amp; Rob Sullens</i></p>
+                <br>
+                <h2 style="text-align: center;"><b>The First I Love You</b></h2>
+                <p style="text-align: center;"><i>Kyle Dixon &amp; Michael Stein</i></p>
+            </div>
+
+            <br>
+            <br>
+
+            <div class="carousel" data-delay="4000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-6.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-7.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-8.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-9.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-10.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+            </div>
+
+            <br>
+            <br>
+            <h1 style="font-size: clamp(2rem, 5vw, 4rem); text-align: center; font-weight: 700; text-transform: uppercase;">Performances</h1>
+            <br>
+            <div id="map"></div>
+
+            <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+            <script>
+                const events = <%- JSON.stringify(events) %>;
+
+                const map = L.map('map').setView([<%- center[0] %>, <%- center[1] %>], 5);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                const latlngs = [];
+
+                events.forEach(event => {
+                    const marker = L.marker(event.coords).addTo(map);
+                    marker.bindPopup(`<b>${event.location}</b><br>${event.date}`);
+                    latlngs.push(event.coords);
+                });
+
+                L.polyline(latlngs, {
+                    color: '#cc0000',
+                    weight: 4,
+                    opacity: 0.8
+                }).addTo(map);
+            </script>
+
+            <br>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>June 27th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Moscow, ID</h2>
+                    <span><i>Unscored</i></span>
+                </div>
+            </div>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>June 29th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Seattle, WA</h2>
+                    <span>2nd Place &bull; 57.70</span>
+                </div>
+            </div>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>July 1st</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Portland, OR</h2>
+                    <span>2nd Place &bull; 58.95</span>
+                </div>
+            </div>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>July 2nd</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Boise, ID</h2>
+                    <span><i>Unscored</i></span>
+                </div>
+            </div>
+
+            <br>
+
+            <div class="carousel" data-delay="4000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-11.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-12.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-13.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-14.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/2026/bgi-2026-15.jpg" alt="Boise Gems 2026 Color of Chaos">
+                </div>
+            </div>
+
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+<script>
+    const back2El = document.getElementById('chaos-back2');
+    const logoContent = document.querySelector('.chaos-hero__content');
+
+    // --- Continuously rotating gradient at 0.5Hz (one full rotation every 2s) ---
+    const DEG_PER_MS = 360 / 4000;
+    let angle = 0;
+    let lastTime = null;
+
+    function setMaskAngle(a) {
+        const mask = `linear-gradient(${a}deg, transparent 0%, black 100%)`;
+        back2El.style.webkitMaskImage = mask;
+        back2El.style.maskImage = mask;
+    }
+
+    function tick(timestamp) {
+        if (lastTime !== null) {
+            angle = (angle + DEG_PER_MS * (timestamp - lastTime)) % 360;
+        }
+        lastTime = timestamp;
+        setMaskAngle(angle);
+        requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    // --- Logo parallax ---
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const MAX_SHIFT = 24; // px
+
+    if (!isMobile) {
+        document.addEventListener('mousemove', (e) => {
+            const hero = document.getElementById('chaos-hero');
+            const rect = hero.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const tx = ((e.clientX - cx) / (rect.width  / 2)) * MAX_SHIFT;
+            const ty = ((e.clientY - cy) / (rect.height / 2)) * MAX_SHIFT;
+            logoContent.style.transform = `translate(${tx}px, ${ty}px)`;
+        });
+    } else {
+        function listenOrientation() {
+            window.addEventListener('deviceorientation', (e) => {
+                const tx = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, ((e.gamma || 0) / 45) * MAX_SHIFT));
+                const ty = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, ((e.beta  || 0) / 45) * MAX_SHIFT));
+                logoContent.style.transform = `translate(${tx}px, ${ty}px)`;
+            });
+        }
+
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            document.addEventListener('touchstart', async () => {
+                try {
+                    const perm = await DeviceOrientationEvent.requestPermission();
+                    if (perm === 'granted') listenOrientation();
+                } catch(e) {}
+            }, { once: true });
+        } else {
+            listenOrientation();
+        }
+    }
+</script>
+</body>
+</html>

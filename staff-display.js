@@ -15,8 +15,8 @@ const STAFF_CATEGORY_SEED = [
   { name: "Color Guard", section_title: "Color Guard", pages: ["corps"], sort_order: 70 },
   { name: "Visual - Corps", section_title: "Visual", pages: ["corps"], sort_order: 80 },
   { name: "Visual - Independent", section_title: "Visual", pages: ["bgi"], sort_order: 81 },
-  { name: "Board", section_title: "Board", pages: ["history"], sort_order: 90 },
-  { name: "Advisory Board", section_title: "Advisory Board", pages: ["history"], sort_order: 100 },
+  { name: "Board", section_title: "Board", pages: ["history", "board"], sort_order: 90 },
+  { name: "Advisory Board", section_title: "Advisory Board", pages: ["history", "board"], sort_order: 100 },
 ];
 
 const OLD_CATEGORY_MAP = {
@@ -79,6 +79,17 @@ function initStaffDisplay(db) {
 
   db.prepare(`UPDATE staff_categories SET name = REPLACE(name, char(8212), '-')`).run();
   db.prepare(`UPDATE staff_categories SET name = REPLACE(name, char(8211), '-')`).run();
+
+  // Ensure Board / Advisory Board appear on the Board of Directors page
+  for (const name of ["Board", "Advisory Board"]) {
+    const row = db.prepare("SELECT id, pages FROM staff_categories WHERE name = ?").get(name);
+    if (!row) continue;
+    const pages = parsePages(row.pages);
+    if (!pages.includes("board")) {
+      pages.push("board");
+      db.prepare("UPDATE staff_categories SET pages = ? WHERE id = ?").run(JSON.stringify(pages), row.id);
+    }
+  }
 
   const catCount = db.prepare("SELECT COUNT(*) AS c FROM staff_categories").get().c;
   if (!catCount) {

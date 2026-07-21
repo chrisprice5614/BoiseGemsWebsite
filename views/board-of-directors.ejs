@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Board of Directors - Boise Gems</title>
+  <%- include("includes/head") %>
+  <% if (!testSite) { %>
+<meta name="description" content="Meet the Board of Directors for Boise Gems Performing Arts.">
+  <link rel="canonical" href="https://boisegems.org/board-of-directors">
+<% } %>
+
+</head>
+<body class="about-page history-page board-page">
+<header><%- include("includes/header") %></header>
+
+<section class="about-hero hero-history hero-board">
+  <div class="about-hero__content">
+    <div class="about-hero__card">
+      <h1 class="about-hero__title">Board of Directors</h1>
+      <p class="about-hero__text">
+        Governance and leadership for Boise Gems Performing Arts.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="history-story" aria-labelledby="board-story-title">
+  <div class="history-story__inner">
+    <h2 id="board-story-title" class="history-story__title history-reveal">Our Board</h2>
+    <div class="history-story__prose history-reveal history-reveal--delay"><%- boardHtml %></div>
+  </div>
+</section>
+
+<section class="about-section about-section--staff">
+  <div class="about-wrap">
+    <h2>Board Members</h2>
+    <%- include("includes/staff-gem-wall", { staffSections: staffSections }) %>
+  </div>
+</section>
+
+<footer><%- include("includes/footer") %></footer>
+<script src="/js/our-history-page.js" defer></script>
+</body>
+</html>

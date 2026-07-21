@@ -22,6 +22,7 @@ const scheduleSystem = require("./schedule-system");
 const staffDisplay = require("./staff-display");
 const joinCorpsContent = require("./join-corps-content");
 const ourHistoryContent = require("./our-history-content");
+const boardDirectorsContent = require("./board-directors-content");
 const seasonRosterSystem = require("./season-roster-system");
 const parentLinks = require("./parent-links");
 const merchSystem = require("./merch-system");
@@ -682,6 +683,16 @@ const createTables = db.transaction(() => {
       db.prepare("INSERT INTO tuitionFees (ensemble, amount) VALUES (?, ?)").run("affiliate", 55000);
     }
 
+    const corpsFeesRow = db.prepare("SELECT id FROM tuitionFees WHERE ensemble = ?").get("corps");
+    if (!corpsFeesRow) {
+      db.prepare("INSERT INTO tuitionFees (ensemble, amount) VALUES (?, ?)").run("corps", 55000);
+    }
+
+    const independentFeesRow = db.prepare("SELECT id FROM tuitionFees WHERE ensemble = ?").get("independent");
+    if (!independentFeesRow) {
+      db.prepare("INSERT INTO tuitionFees (ensemble, amount) VALUES (?, ?)").run("independent", 55000);
+    }
+
     db.prepare(
         `
         CREATE TABLE IF NOT EXISTS allergies (
@@ -1281,6 +1292,19 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
       ourHistoryContent.getDefaultOurHistoryHtml()
     );
   }
+  if (!ssCols.includes("board_directors_markdown")) {
+    db.prepare('ALTER TABLE site_settings ADD COLUMN board_directors_markdown TEXT NOT NULL DEFAULT ""').run();
+  }
+  if (!ssCols.includes("board_directors_body_html")) {
+    db.prepare('ALTER TABLE site_settings ADD COLUMN board_directors_body_html TEXT NOT NULL DEFAULT ""').run();
+  }
+  const boardRow = db.prepare("SELECT board_directors_markdown, board_directors_body_html FROM site_settings WHERE id = 1").get();
+  if (boardRow && !String(boardRow.board_directors_markdown || "").trim() && !String(boardRow.board_directors_body_html || "").trim()) {
+    db.prepare("UPDATE site_settings SET board_directors_markdown = ?, board_directors_body_html = ? WHERE id = 1").run(
+      boardDirectorsContent.getDefaultBoardMarkdown(),
+      boardDirectorsContent.getDefaultBoardHtml()
+    );
+  }
 
   // press_kit: singleton metadata for the public press kit page
   db.prepare(`
@@ -1474,6 +1498,7 @@ function getSiteSettings() {
   const row = db.prepare(`
     SELECT messaging_all_users, join_corps_markdown, join_corps_body_html,
            join_corps_topo_opacity, our_history_body_html,
+           board_directors_markdown, board_directors_body_html,
            merch_enabled, merch_tax_percent, merch_pass_stripe_fee,
            merch_shipping_domestic_cents, merch_shipping_intl_cents, merch_order_notify_emails,
            updated_at
@@ -1486,6 +1511,8 @@ function getSiteSettings() {
       join_corps_body_html: joinCorpsContent.getDefaultJoinCorpsHtml(),
       join_corps_topo_opacity: 0.12,
       our_history_body_html: ourHistoryContent.getDefaultOurHistoryHtml(),
+      board_directors_markdown: boardDirectorsContent.getDefaultBoardMarkdown(),
+      board_directors_body_html: boardDirectorsContent.getDefaultBoardHtml(),
       merch_enabled: 0,
       merch_tax_percent: 0,
       merch_pass_stripe_fee: 0,
@@ -7118,6 +7145,34 @@ app.get("/admin/join-corps", mustBeAdmin, (req, res) => {
   });
 });
 
+// GET /admin/board-of-directors - edit Board of Directors page (EasyMDE)
+app.get("/admin/board-of-directors", mustBeAdmin, (req, res) => {
+  const settings = getSiteSettings();
+  res.render("admin-board-of-directors", {
+    markdown: boardDirectorsContent.resolveBoardMarkdown(
+      settings.board_directors_markdown,
+      settings.board_directors_body_html
+    ),
+  });
+});
+
+// POST /admin/board-of-directors - save Board of Directors markdown + rendered HTML
+app.post("/admin/board-of-directors", mustBeAdmin, (req, res) => {
+  const markdown = boardDirectorsContent.stripEmDashes(String(req.body.markdown || "").trim());
+  if (!markdown) {
+    req.session.flashMessage = "Board of Directors content is required.";
+    return res.redirect("/admin/board-of-directors");
+  }
+  const bodyHtml = boardDirectorsContent.markdownToHtml(markdown);
+  db.prepare(`
+    UPDATE site_settings
+    SET board_directors_markdown = ?, board_directors_body_html = ?, updated_at = ?
+    WHERE id = 1
+  `).run(markdown, bodyHtml, Date.now());
+  req.session.flashMessage = "Board of Directors page updated.";
+  return res.redirect("/admin/board-of-directors");
+});
+
 // GET /admin/donors
 app.get("/admin/donors", mustBeAdmin, (req, res) => {
   const dlRow = db.prepare("SELECT names FROM donor_list WHERE id = 1").get();
@@ -8051,8 +8106,10 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
   }
 
   member.hasLinkedParent = parentLinks.childHasLinkedParent(db, req.user.userid);
+  const announcements = getAnnouncementsForUser(member);
   const linkRequests = parentLinks.getIncomingRequests(db, req.user.userid);
   const linkedParents = parentLinks.getParentsForChild(db, req.user.userid);
+  const digitalGrants = merchSystem.getDigitalGrantsForUser(db, req.user.userid);
   return res.render("member-portal", {
     member,
     contracts,
@@ -8061,6 +8118,7 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
     announcements,
     linkRequests,
     linkedParents,
+    digitalGrants,
     previewMode: true
   });
 })
@@ -9796,6 +9854,18 @@ app.get("/our-history-about", (req, res) => {
   });
 });
 
+app.get("/board-of-directors", (req, res) => {
+  const staffSections = staffDisplay.getStaffSectionsForPage(db, "board");
+  const settings = getSiteSettings();
+  res.render("board-of-directors", {
+    staffSections,
+    boardHtml: boardDirectorsContent.renderBoardBody(
+      settings.board_directors_body_html,
+      settings.board_directors_markdown
+    ),
+  });
+});
+
 app.get("/boise-gems-corps-about", (req, res) => {
   const staffSections = staffDisplay.getStaffSectionsForPage(db, "corps");
   res.render("boise-gems-corps-about", { staffSections });
@@ -9858,8 +9928,8 @@ app.get("/staff/:slug", (req, res) => {
   });
 });
 
-// GET /whistleblower
-app.get("/whistleblower", mustBeLoggedIn, (req, res) => {
+// GET /whistleblower (public — anyone can access, including logged-out users)
+app.get("/whistleblower", (req, res) => {
   return res.render("whistleblower");
 });
 
@@ -11340,7 +11410,14 @@ app.get("/api/mobile/dashboard", mobileAuth, (req, res) => {
       };
     }
 
-    return res.json({ ok: true, upcomingEvents, latestNews, memberData, parentData, staffData, directorData, adminData });
+    // ── Announcements (audience-filtered) ───────────────────────────────────
+    let announcements = [];
+    try {
+      const member = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+      if (member) announcements = getAnnouncementsForUser(member).map(serializeAnnouncement);
+    } catch (_) {}
+
+    return res.json({ ok: true, upcomingEvents, latestNews, announcements, memberData, parentData, staffData, directorData, adminData });
   } catch (e) {
     console.error("mobile dashboard error", e);
     return res.status(500).json({ ok: false, message: "Server error loading dashboard" });
@@ -11434,6 +11511,431 @@ app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// ── Mobile parity APIs (announcements, payments, contracts, parent-link) ─────
+
+const crypto = require("crypto");
+const mobileBridgeTokens = new Map(); // token -> { userId, redirect, exp }
+
+function serializeAnnouncement(a) {
+  return {
+    id: a.id,
+    bodyMd: a.body_md || "",
+    bodyHtml: a.body_html || "",
+    authorName: `${a.author_first || ""} ${a.author_last || ""}`.trim(),
+    authorImg: a.author_img || null,
+    audParents: a.aud_parents ? 1 : 0,
+    audFans: a.aud_fans ? 1 : 0,
+    audCorps: a.aud_corps ? 1 : 0,
+    audIndependent: a.aud_independent ? 1 : 0,
+    audUncontracted: a.aud_uncontracted ? 1 : 0,
+    createdAt: a.created_at,
+    updatedAt: a.updated_at,
+    images: (a.images || []).map((img) => ({
+      id: img.id,
+      filename: img.filename,
+      url: `/img/publicupload/${img.filename}`,
+    })),
+  };
+}
+
+function userMatchesAnnouncementAudience(u, a) {
+  if (!u) return false;
+  if (u.admin || u.staff) return true;
+  if (a.aud_parents && u.parent) return true;
+  if (a.aud_fans && u.fan) return true;
+  if (a.aud_corps && u.contractedCorps) return true;
+  if (a.aud_independent && u.contractedIndependent) return true;
+  const isMember = !u.parent && !u.fan;
+  const isUncontracted = isMember && !u.contractedCorps && !u.contractedIndependent && !u.contractedAffiliate;
+  if (a.aud_uncontracted && isUncontracted) return true;
+  return false;
+}
+
+async function pushAnnouncementToAudience(announcementRow, plainPreview) {
+  const users = db.prepare(`
+    SELECT id, admin, staff, parent, fan, contractedCorps, contractedIndependent, contractedAffiliate
+    FROM users
+  `).all();
+  const title = "New Announcement";
+  const body = (plainPreview || "Boise Gems posted an announcement").slice(0, 140);
+  for (const u of users) {
+    if (!userMatchesAnnouncementAudience(u, announcementRow)) continue;
+    await sendPushToUser(u.id, title, body, {
+      type: "announcement",
+      announcementId: String(announcementRow.id),
+    });
+  }
+}
+
+function loadUserRowForMobile(req) {
+  return db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+}
+
+// GET /api/mobile/announcements
+app.get("/api/mobile/announcements", mobileAuth, (req, res) => {
+  try {
+    const user = loadUserRowForMobile(req);
+    if (!user) return res.status(401).json({ ok: false, message: "User not found" });
+    const rows = getAnnouncementsForUser(user);
+    return res.json({ ok: true, announcements: rows.map(serializeAnnouncement) });
+  } catch (e) {
+    console.error("[Mobile API] announcements error:", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/admin/announcements
+app.post("/api/mobile/admin/announcements", mobileAuth, async (req, res) => {
+  try {
+    if (!req.admin) return res.status(403).json({ ok: false, message: "Admin only" });
+    const bodyHtml = String(req.body.bodyHtml || req.body.body_html || "").trim();
+    const plainText = bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+      || String(req.body.bodyMd || req.body.body_md || req.body.body || "").trim();
+    if (!plainText) return res.status(400).json({ ok: false, message: "Announcement text is required" });
+    const bodyMd = String(req.body.bodyMd || req.body.body_md || "").trim() || plainText;
+    const html = bodyHtml || `<p>${plainText.replace(/</g, "&lt;")}</p>`;
+    const images = Array.isArray(req.body.images) ? req.body.images : [];
+    const now = Date.now();
+    const result = db.prepare(`
+      INSERT INTO announcements
+        (author_id, body_md, body_html, aud_parents, aud_fans, aud_corps, aud_independent, aud_uncontracted, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      req.user.userid,
+      bodyMd, html,
+      req.body.audParents || req.body.aud_parents ? 1 : 0,
+      req.body.audFans || req.body.aud_fans ? 1 : 0,
+      req.body.audCorps || req.body.aud_corps ? 1 : 0,
+      req.body.audIndependent || req.body.aud_independent ? 1 : 0,
+      req.body.audUncontracted || req.body.aud_uncontracted ? 1 : 0,
+      now, now
+    );
+    const annId = result.lastInsertRowid;
+    const insertImg = db.prepare(
+      "INSERT INTO announcement_images (announcement_id, filename, created_at) VALUES (?, ?, ?)"
+    );
+    images.filter((f) => typeof f === "string" && f.trim()).forEach((f) => insertImg.run(annId, f.trim(), now));
+
+    const row = db.prepare("SELECT * FROM announcements WHERE id = ?").get(annId);
+    pushAnnouncementToAudience(row, plainText).catch((err) =>
+      console.error("[Mobile API] announcement push error:", err)
+    );
+
+    const full = attachAnnouncementImages([{
+      ...row,
+      author_first: req.user.firstname,
+      author_last: req.user.lastname,
+      author_img: null,
+    }])[0];
+    return res.json({ ok: true, announcement: serializeAnnouncement(full) });
+  } catch (e) {
+    console.error("[Mobile API] create announcement error:", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/admin/announcements/upload-image
+app.post(
+  "/api/mobile/admin/announcements/upload-image",
+  mobileAuth,
+  imageUpload.single("image"),
+  processImageJpg,
+  (req, res) => {
+    if (!req.admin) return res.status(403).json({ ok: false, message: "Admin only" });
+    if (!req.savedFilename) return res.status(400).json({ ok: false, message: "Upload failed" });
+    return res.json({
+      ok: true,
+      filename: req.savedFilename,
+      url: `/img/publicupload/${req.savedFilename}`,
+    });
+  }
+);
+
+// POST /api/mobile/payments/checkout
+app.post("/api/mobile/payments/checkout", mobileAuth, async (req, res) => {
+  try {
+    const user = loadUserRowForMobile(req);
+    if (!user) return res.status(401).json({ ok: false, message: "User not found" });
+    if (user.parent) return res.status(403).json({ ok: false, message: "Parents should pay on behalf of a child" });
+
+    const amountDollars = Number(req.body.amountDollars ?? req.body.payment);
+    if (!Number.isFinite(amountDollars) || amountDollars < 1) {
+      return res.status(400).json({ ok: false, message: "Invalid payment amount" });
+    }
+    const tuitionAmount = Math.round(amountDollars * 100);
+    const processingFee = Math.round(tuitionAmount * 0.06);
+    const totalCharge = tuitionAmount + processingFee;
+
+    const result = db.prepare(
+      "INSERT INTO potential_payment (user_id, amount, processing_fee, created_at) VALUES (?, ?, ?, ?)"
+    ).run(user.id, tuitionAmount, processingFee, Date.now());
+    const potentialPaymentId = result.lastInsertRowid;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: "Payment for tuition/fees for The Boise Gems Drum & Bugle Corps.",
+          },
+          unit_amount: totalCharge,
+        },
+        quantity: 1,
+      }],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/make-payment/success/${potentialPaymentId}`,
+      cancel_url: `${process.env.BASEURL}/make-payment`,
+    });
+    return res.json({ ok: true, url: session.url, potentialPaymentId });
+  } catch (e) {
+    console.error("[Mobile API] payment checkout error:", e);
+    return res.status(500).json({ ok: false, message: "Failed to create checkout session" });
+  }
+});
+
+// POST /api/mobile/donate/checkout
+app.post("/api/mobile/donate/checkout", mobileAuth, async (req, res) => {
+  try {
+    const user = loadUserRowForMobile(req);
+    const donorEmail = String(req.body.email || user?.email || "").trim();
+    const donorName = String(
+      req.body.name || `${user?.firstname || ""} ${user?.lastname || ""}`.trim()
+    ).trim();
+    const donorMsg = req.body.message ? String(req.body.message).trim() : "";
+    const amountDollars = Number(req.body.amountDollars ?? req.body.payment);
+    if (!donorEmail || !donorName || !Number.isFinite(amountDollars)) {
+      return res.status(400).json({ ok: false, message: "Missing required donation fields" });
+    }
+    const amountCents = Math.round(amountDollars * 100);
+    if (amountCents < 50) return res.status(400).json({ ok: false, message: "Invalid donation amount" });
+    const processingFee = Math.round(amountCents * 0.06);
+    const totalCharge = amountCents + processingFee;
+
+    const result = db.prepare(`
+      INSERT INTO potential_donation
+        (email, name, message, amount, processing_fee, total_charge, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(donorEmail, donorName, donorMsg, amountCents, processingFee, totalCharge, Date.now());
+    const potentialId = result.lastInsertRowid;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: "Donation to The Boise Gems Drum & Bugle Corps",
+            description: donorMsg || `Donation by ${donorName}`,
+          },
+          unit_amount: totalCharge,
+        },
+        quantity: 1,
+      }],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
+      cancel_url: `${process.env.BASEURL}/donate`,
+    });
+    db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?").run(session.id, potentialId);
+    return res.json({ ok: true, url: session.url, potentialId });
+  } catch (e) {
+    console.error("[Mobile API] donate checkout error:", e);
+    return res.status(500).json({ ok: false, message: "Failed to create donation checkout" });
+  }
+});
+
+// POST /api/mobile/parent/child/:id/checkout
+app.post("/api/mobile/parent/child/:id/checkout", mobileAuth, async (req, res) => {
+  try {
+    if (!req.parent) return res.status(403).json({ ok: false, message: "Parents only" });
+    const childId = Number(req.params.id);
+    const child = getChildForParent(req.user.userid, childId);
+    if (!child) return res.status(403).json({ ok: false, message: "Forbidden" });
+
+    const amountDollars = Number(req.body.amountDollars ?? req.body.payment);
+    if (!Number.isFinite(amountDollars) || amountDollars < 1) {
+      return res.status(400).json({ ok: false, message: "Invalid payment amount" });
+    }
+    const tuitionAmount = Math.round(amountDollars * 100);
+    const processingFee = Math.round(tuitionAmount * 0.06);
+    const totalCharge = tuitionAmount + processingFee;
+
+    const result = db.prepare(
+      "INSERT INTO potential_payment (child_id, parent_id, amount, processing_fee, created_at) VALUES (?, ?, ?, ?, ?)"
+    ).run(child.id, req.user.userid, tuitionAmount, processingFee, Date.now());
+    const potentialPaymentId = result.lastInsertRowid;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `Payment for ${child.firstname} ${child.lastname} — Boise Gems`,
+          },
+          unit_amount: totalCharge,
+        },
+        quantity: 1,
+      }],
+      mode: "payment",
+      success_url: `${process.env.BASEURL}/pay-behalf/success/${potentialPaymentId}`,
+      cancel_url: `${process.env.BASEURL}/pay-behalf/${child.id}`,
+    });
+    return res.json({ ok: true, url: session.url, potentialPaymentId });
+  } catch (e) {
+    console.error("[Mobile API] parent checkout error:", e);
+    return res.status(500).json({ ok: false, message: "Failed to create checkout session" });
+  }
+});
+
+// GET /api/mobile/contracts
+app.get("/api/mobile/contracts", mobileAuth, (req, res) => {
+  try {
+    const uid = Number(req.user.userid);
+    const rows = db.prepare(`
+      SELECT id, season, user_id, child_id, bypass_fee, created_at, field_values_json, signature
+      FROM contractExtension
+      WHERE user_id = ? OR child_id = ?
+      ORDER BY id DESC
+    `).all(uid, uid);
+    const contracts = rows
+      .filter((c) => canUserAccessContract(c, uid))
+      .map((c) => ({
+        id: c.id,
+        season: c.season,
+        userId: c.user_id,
+        childId: c.child_id,
+        bypassFee: !!c.bypass_fee,
+        createdAt: c.created_at,
+        signed: !!(c.signature && String(c.signature).trim()),
+        signUrl: `/sign-contract/${c.id}`,
+      }));
+    return res.json({ ok: true, contracts });
+  } catch (e) {
+    console.error("[Mobile API] contracts error:", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/webview-session
+app.post("/api/mobile/webview-session", mobileAuth, (req, res) => {
+  try {
+    const redirect = String(req.body.redirect || "/").trim() || "/";
+    if (!redirect.startsWith("/")) {
+      return res.status(400).json({ ok: false, message: "redirect must be a relative path" });
+    }
+    const token = crypto.randomBytes(24).toString("hex");
+    mobileBridgeTokens.set(token, {
+      userId: Number(req.user.userid),
+      redirect,
+      exp: Date.now() + 2 * 60 * 1000,
+    });
+    return res.json({
+      ok: true,
+      url: `/mobile-bridge?token=${encodeURIComponent(token)}`,
+      expiresInMs: 120000,
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// GET /mobile-bridge?token=... — sets web cookie then redirects into site pages
+app.get("/mobile-bridge", (req, res) => {
+  try {
+    const token = String(req.query.token || "");
+    const entry = mobileBridgeTokens.get(token);
+    mobileBridgeTokens.delete(token);
+    if (!entry || entry.exp < Date.now()) {
+      return res.status(401).send("This sign-in link expired. Please try again from the app.");
+    }
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(entry.userId);
+    if (!user) return res.status(401).send("User not found");
+    const ourTokenValue = jwt.sign(
+      {
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8,
+        userid: user.id,
+        firstname: user.firstname,
+        lastname: user.lastname,
+        email: user.email,
+        admin: user.admin,
+        staff: user.staff,
+        parent: user.parent,
+        fan: user.fan || 0,
+        director: user.director || 0,
+        volunteer: user.volunteer || 0,
+      },
+      process.env.JWTSECRET
+    );
+    res.cookie("bgcookie", ourTokenValue, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 8,
+    });
+    return res.redirect(entry.redirect);
+  } catch (e) {
+    console.error("[mobile-bridge] error:", e);
+    return res.status(500).send("Bridge error");
+  }
+});
+
+// Parent-link mobile wrappers
+app.post("/api/mobile/parent-link/request", mobileAuth, (req, res) => {
+  try {
+    const result = parentLinks.createLinkRequest(db, req.user, req.body.email);
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (e) {
+    console.error("[Mobile API] parent-link request:", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+app.get("/api/mobile/parent-link/requests/incoming", mobileAuth, (req, res) => {
+  try {
+    return res.json({ ok: true, requests: parentLinks.getIncomingRequests(db, req.user.userid) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+app.get("/api/mobile/parent-link/requests/outgoing", mobileAuth, (req, res) => {
+  try {
+    return res.json({ ok: true, requests: parentLinks.getOutgoingRequests(db, req.user.userid) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+app.post("/api/mobile/parent-link/requests/:id/accept", mobileAuth, (req, res) => {
+  try {
+    const result = parentLinks.acceptLinkRequest(db, Number(req.params.id), req.user.userid);
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+app.post("/api/mobile/parent-link/requests/:id/decline", mobileAuth, (req, res) => {
+  try {
+    const result = parentLinks.declineLinkRequest(db, Number(req.params.id), req.user.userid);
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+app.get("/api/mobile/parent-link/linked", mobileAuth, (req, res) => {
+  try {
+    const uid = req.user.userid;
+    const children = parentLinks.getChildrenForParent(db, uid).map(serializeUser);
+    const parents = parentLinks.getParentsForChild(db, uid).map(serializeUser);
+    return res.json({ ok: true, children, parents });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
   }
 });
 
@@ -11870,9 +12372,24 @@ app.get("/api/mobile/messages/conversations/:id/messages", mobileMsgAuth, (req, 
       ok: true,
       messages: rows.map(m => serializeMessage(m, uid)),
       hasMore: rows.length >= limit,
+      typing: viewAs ? [] : typingNames(convId, uid),
     });
   } catch (e) {
     console.error("[Mobile API] messages list error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/messages/conversations/:id/typing
+app.post("/api/mobile/messages/conversations/:id/typing", mobileMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    if (req.body && req.body.stop) clearTyping(convId, uid);
+    else markTyping(convId, uid);
+    return res.json({ ok: true });
+  } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });
   }
 });

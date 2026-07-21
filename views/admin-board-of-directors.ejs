@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Board of Directors Page - Admin</title>
+  <%- include("includes/head") %>
+  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css"/>
+  <style>
+    .bd-wrap { margin: 0; padding: 12px 12px 48px; max-width: 960px; margin-inline: auto; }
+    .bd-card {
+      background-color: var(--light-half);
+      border: #777 solid 2px;
+      border-radius: 8px;
+      box-shadow: 0px 3px 6px rgba(0,0,0,0.6), inset 0px 3px 8px rgba(255,255,255,1), inset 0px -3px 4px rgba(0,0,0,0.3);
+      padding: 24px 20px;
+      margin-top: 16px;
+    }
+    .bd-card h1 { color: var(--dark-full); margin: 0 0 8px; }
+    .bd-card .bd-lead { margin: 0 0 20px; color: #6b5585; line-height: 1.5; }
+    .bd-card form { background: transparent; border: none; box-shadow: none; margin: 0; padding: 0; }
+    .bd-imgbar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+    .bd-imgbar-btn {
+      padding: 6px 14px;
+      background-color: var(--primary-color);
+      border-radius: 0; color: var(--light-half); border: none;
+      text-transform: uppercase; font-weight: 600; font-size: .8rem; cursor: pointer;
+      transition: all 80ms ease-in;
+      box-shadow: 0px 3px 6px rgba(0,0,0,0.6), inset 0px 3px 3px rgba(255,255,255,0.2), inset 0px -3px 3px rgba(0,0,0,0.05);
+      text-shadow: 0px 1px 3px rgba(0,0,0,0.6);
+    }
+    .bd-imgbar-btn:hover { background-color: var(--secondary-color); }
+    #bd-img-spinner { display: none; font-size: .82rem; color: var(--dark-quarter); font-style: italic; }
+    .EasyMDEContainer .editor-toolbar {
+      background: var(--light-full);
+      border-color: #bbb;
+    }
+    .EasyMDEContainer .editor-toolbar button {
+      color: var(--dark-half) !important;
+      background: var(--light-quarter);
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .EasyMDEContainer .editor-toolbar button:hover,
+    .EasyMDEContainer .editor-toolbar button.active {
+      background: var(--primary-color) !important;
+      color: var(--light-full) !important;
+      border-color: var(--secondary-color);
+    }
+    .EasyMDEContainer .editor-toolbar i.separator { border-color: #bbb; }
+    .EasyMDEContainer .CodeMirror {
+      background: var(--light-full);
+      color: var(--dark-full);
+      border-color: #bbb;
+      min-height: 360px;
+      font-size: .95rem;
+    }
+    .EasyMDEContainer .editor-preview,
+    .EasyMDEContainer .editor-preview-side {
+      background: var(--light-half);
+      color: var(--dark-full);
+      border-color: #bbb;
+    }
+    .EasyMDEContainer .editor-preview img,
+    .EasyMDEContainer .editor-preview-side img { max-width: 100%; border-radius: 4px; }
+    .bd-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px; }
+    .bd-actions a { color: var(--secondary-color); font-weight: 600; }
+    .gal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.6); z-index: 1000;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .gal-backdrop.open { display: flex; }
+    .gal-modal {
+      background: var(--light-full); border: #777 solid 2px; border-radius: 8px;
+      box-shadow: 0px 6px 20px rgba(0,0,0,0.6);
+      width: 100%; max-width: 780px; max-height: 88vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .gal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; border-bottom: 1px solid #ccc; font-weight: 700;
+    }
+    .gal-close {
+      background: none; border: none; font-size: 1.25rem; cursor: pointer; color: var(--dark-half);
+    }
+    .gal-search { padding: 10px 16px; border-bottom: 1px solid #eee; }
+    .gal-search input { width: 100%; }
+    .gal-body { overflow: auto; padding: 12px; }
+    .gal-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px;
+    }
+    .gal-item {
+      cursor: pointer; border: 2px solid transparent; border-radius: 6px; overflow: hidden;
+      background: #eee; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    }
+    .gal-item:hover { border-color: var(--primary-color); }
+    .gal-item img { width: 100%; height: 100%; object-fit: cover; }
+    .gal-loading { margin: 24px; text-align: center; color: #777; }
+  </style>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main class="bd-wrap">
+  <a href="/admin-portal?section=content" class="staff-admin-back" style="display:inline-block;margin-bottom:12px;">← Admin Portal</a>
+  <div class="bd-card">
+    <h1>Board of Directors Page</h1>
+    <p class="bd-lead">
+      Edit the intro content on <a href="/board-of-directors" target="_blank" rel="noopener">/board-of-directors</a>.
+      Board member cards are managed under <a href="/staff-admin">Staff</a> (Board and Advisory Board categories).
+      Write in Markdown with the full toolbar, preview, and side-by-side view.
+    </p>
+
+    <form id="bd-form" method="POST" action="/admin/board-of-directors">
+      <input type="hidden" name="markdown" id="bd-markdown-hidden" value="">
+
+      <div class="bd-imgbar">
+        <button type="button" class="bd-imgbar-btn" onclick="triggerBdImgUpload()" title="Upload a new image and insert it">
+          ↑ Upload Image
+        </button>
+        <button type="button" class="bd-imgbar-btn" onclick="openBdGallery()" title="Pick from already-uploaded images">
+          ⊞ Insert Existing
+        </button>
+        <span id="bd-img-spinner">Uploading…</span>
+      </div>
+      <input type="file" id="bd-img-input" accept="image/*" style="display:none" onchange="handleBdImgUpload(this)"/>
+
+      <textarea id="bd-md-editor"><%= markdown %></textarea>
+
+      <div class="bd-actions">
+        <button type="submit">Save Page</button>
+        <a href="/board-of-directors" target="_blank" rel="noopener">Open live page</a>
+      </div>
+    </form>
+  </div>
+</main>
+
+<div class="gal-backdrop" id="bd-gallery" onclick="if(event.target===this)closeBdGallery()">
+  <div class="gal-modal" role="dialog" aria-label="Image gallery">
+    <div class="gal-header">
+      <span>Select an image</span>
+      <button type="button" class="gal-close" onclick="closeBdGallery()">&#x2715;</button>
+    </div>
+    <div class="gal-search">
+      <input type="text" id="bd-gal-search" placeholder="Search by filename…" oninput="filterBdGallery(this.value)"/>
+    </div>
+    <div class="gal-body">
+      <div class="gal-grid" id="bd-gal-grid">
+        <p class="gal-loading">Loading images…</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer><%- include("includes/footer") %></footer>
+
+<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+<script>
+const bdMde = new EasyMDE({
+  element: document.getElementById('bd-md-editor'),
+  autofocus: false,
+  spellChecker: false,
+  placeholder: 'Write Board of Directors content in Markdown…',
+  status: ['lines', 'words'],
+  toolbar: [
+    'bold', 'italic', 'strikethrough', '|',
+    'heading-1', 'heading-2', 'heading-3', '|',
+    'unordered-list', 'ordered-list', 'quote', '|',
+    'link', 'table', 'horizontal-rule', '|',
+    'preview', 'side-by-side', 'fullscreen', 'guide'
+  ]
+});
+
+document.getElementById('bd-form').addEventListener('submit', function (e) {
+  const md = (bdMde.value() || '').trim();
+  if (!md) {
+    e.preventDefault();
+    if (window.bgAlert) bgAlert('Please add some content for the Board of Directors page.');
+    else alert('Please add some content for the Board of Directors page.');
+    return;
+  }
+  document.getElementById('bd-markdown-hidden').value = md;
+});
+
+function triggerBdImgUpload() {
+  document.getElementById('bd-img-input').value = '';
+  document.getElementById('bd-img-input').click();
+}
+
+async function handleBdImgUpload(input) {
+  if (!input.files.length) return;
+  const spinner = document.getElementById('bd-img-spinner');
+  spinner.style.display = 'inline';
+  const fd = new FormData();
+  fd.append('image', input.files[0]);
+  try {
+    const resp = await fetch('/news/upload-image', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.url) {
+      insertBdMarkdown('![' + (input.files[0].name.replace(/\.[^.]+$/, '') || 'image') + '](' + data.url + ')');
+      bdAllImages = [];
+    } else {
+      alert('Upload failed: ' + (data.error || 'unknown'));
+    }
+  } catch (err) {
+    alert('Upload error: ' + err.message);
+  } finally {
+    spinner.style.display = 'none';
+  }
+}
+
+function insertBdMarkdown(text) {
+  const cm = bdMde.codemirror;
+  const doc = cm.getDoc();
+  const cursor = doc.getCursor();
+  const line = doc.getLine(cursor.line) || '';
+  doc.replaceRange((line.trim() ? '\n' : '') + text + '\n', cursor);
+  cm.focus();
+}
+
+let bdAllImages = [];
+
+async function openBdGallery() {
+  document.getElementById('bd-gallery').classList.add('open');
+  if (!bdAllImages.length) {
+    try {
+      const resp = await fetch('/news/images');
+      bdAllImages = await resp.json();
+    } catch (err) {
+      document.getElementById('bd-gal-grid').innerHTML = '<p class="gal-loading">Failed to load images.</p>';
+      return;
+    }
+  }
+  renderBdGallery(bdAllImages);
+}
+
+function closeBdGallery() {
+  document.getElementById('bd-gallery').classList.remove('open');
+}
+
+function filterBdGallery(q) {
+  const needle = String(q || '').toLowerCase().trim();
+  renderBdGallery(bdAllImages.filter(function (img) {
+    return !needle || String(img.name || img.url || '').toLowerCase().includes(needle);
+  }));
+}
+
+function renderBdGallery(images) {
+  const grid = document.getElementById('bd-gal-grid');
+  if (!images.length) {
+    grid.innerHTML = '<p class="gal-loading">No images found.</p>';
+    return;
+  }
+  grid.innerHTML = images.map(function (img) {
+    const url = img.url || ('/img/publicupload/' + img.name);
+    const name = img.name || url.split('/').pop();
+    return '<button type="button" class="gal-item" data-url="' + url.replace(/"/g, '&quot;') + '" data-name="' + String(name).replace(/"/g, '&quot;') + '">' +
+      '<img src="' + url.replace(/"/g, '&quot;') + '" alt="' + String(name).replace(/"/g, '&quot;') + '"/>' +
+      '</button>';
+  }).join('');
+  grid.querySelectorAll('.gal-item').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const url = btn.getAttribute('data-url');
+      const name = (btn.getAttribute('data-name') || 'image').replace(/\.[^.]+$/, '');
+      insertBdMarkdown('![' + name + '](' + url + ')');
+      closeBdGallery();
+    });
+  });
+}
+</script>
+</body>
+</html>

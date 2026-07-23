@@ -1,0 +1,523 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boise Gems Independent | Dreams of Freedom</title>
+    <%- include("includes/head") %>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body.dof-page {
+            background: #000 !important;
+        }
+        body.dof-page main {
+            background: transparent !important;
+            position: relative;
+            z-index: 1;
+        }
+        .dof-bg {
+            position: fixed;
+            inset: 0;
+            z-index: -3;
+            background-image: url('/img/shows/independent/2026/brick.jpg');
+            background-position: center;
+            background-repeat: no-repeat;
+            pointer-events: none;
+        }
+        @media (orientation: portrait) {
+            .dof-bg {
+                background-size: auto 100%;
+            }
+        }
+        @media (orientation: landscape) {
+            .dof-bg {
+                background-size: 100% auto;
+            }
+        }
+        .dof-chains {
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .dof-chain {
+            position: absolute;
+            left: 50%;
+            width: 300vw;
+            height: 22px;
+            margin-left: -150vw;
+            background-image: url('/img/shows/independent/2026/redChain.png');
+            background-repeat: repeat-x;
+            background-position: 0 50%;
+            background-size: auto 100%;
+            transform-origin: center center;
+            will-change: transform;
+        }
+        .dof-chain:nth-child(1) { top: 12%; }
+        .dof-chain:nth-child(2) { top: 38%; height: 18px; }
+        .dof-chain:nth-child(3) { top: 62%; height: 26px; }
+        .dof-chain:nth-child(4) { top: 84%; height: 20px; }
+        @property --dof-v-inner {
+            syntax: '<percentage>';
+            inherits: false;
+            initial-value: 38%;
+        }
+        @property --dof-v-mid {
+            syntax: '<percentage>';
+            inherits: false;
+            initial-value: 72%;
+        }
+        .dof-vignette {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            --dof-v-inner: 38%;
+            --dof-v-mid: 72%;
+            background: radial-gradient(
+                ellipse at center,
+                transparent var(--dof-v-inner),
+                rgba(0,0,0,0.55) var(--dof-v-mid),
+                rgba(0,0,0,0.85) 100%
+            );
+            animation: dof-vignette-flicker 5.5s ease-in-out infinite;
+        }
+        .dof-bottom-fade {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 100%);
+        }
+        @keyframes dof-vignette-flicker {
+            0%, 100% {
+                --dof-v-inner: 38%;
+                --dof-v-mid: 72%;
+            }
+            25% {
+                --dof-v-inner: 39.5%;
+                --dof-v-mid: 73%;
+            }
+            55% {
+                --dof-v-inner: 36.5%;
+                --dof-v-mid: 71%;
+            }
+            80% {
+                --dof-v-inner: 39%;
+                --dof-v-mid: 72.5%;
+            }
+        }
+        .dof-hero {
+            position: relative;
+            padding: 8% 10%;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 360px;
+        }
+        .dof-hero img {
+            max-width: min(720px, 90vw);
+            width: 100%;
+            height: auto;
+        }
+        .dof-content {
+            padding: 32px;
+            font-size: large;
+            max-width: 900px;
+            margin: 0 auto;
+            color: #f0f0f0;
+        }
+        .dof-content h1 {
+            color: #fff;
+        }
+        .chaos-location-banner {
+            text-align: center;
+            background-color: #1a0000;
+            border-left: 6px solid #cc0000;
+            border-radius: 12px;
+            box-shadow: 0px 3px 12px rgba(180,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 160px;
+            padding: 20px;
+            margin: 32px 0px;
+        }
+        .chaos-location-banner p,
+        .chaos-location-banner h2,
+        .chaos-location-banner span {
+            color: #ffffff;
+        }
+        body.dof-intro-active {
+            overflow: hidden;
+        }
+        .dof-intro {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 1;
+            transition: none;
+        }
+        .dof-intro.is-fading {
+            transition: opacity 0.5s linear;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .dof-intro.is-fading .dof-eye {
+            transition: transform 0.5s ease-out;
+            transform: scale(2.4);
+        }
+        .dof-eye {
+            width: 100vw;
+            height: 38vw;
+            max-height: 70vh;
+            position: relative;
+            transform: scale(1);
+            transform-origin: center center;
+        }
+        .dof-eye-open {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            transform: scaleY(0);
+            transform-origin: center center;
+            transition: none;
+        }
+        .dof-eye-white {
+            width: 100%;
+            height: 100%;
+            background: #fff;
+            /* lemon / almond: pointed left & right */
+            clip-path: ellipse(50% 48% at 50% 50%);
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden;
+        }
+        .dof-eye-pupil {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 7vw;
+            height: 26vw;
+            max-width: 56px;
+            max-height: 72%;
+            min-width: 18px;
+            background: #cc0000;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: none;
+        }
+        .dof-eye.is-blinking .dof-eye-open {
+            transform: scaleY(0) !important;
+        }
+    </style>
+</head>
+<body class="dof-page dof-intro-active">
+    <div class="dof-intro" id="dof-intro" aria-hidden="true">
+        <div class="dof-eye" id="dof-eye">
+            <div class="dof-eye-open" id="dof-eye-open">
+                <div class="dof-eye-white">
+                    <div class="dof-eye-pupil" id="dof-eye-pupil"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dof-bg" aria-hidden="true"></div>
+    <div class="dof-chains" aria-hidden="true">
+        <div class="dof-chain" data-angle="-22" data-period="5.5" data-amp="36" data-phase="0.4"></div>
+        <div class="dof-chain" data-angle="14" data-period="8.2" data-amp="48" data-phase="1.7"></div>
+        <div class="dof-chain" data-angle="-7" data-period="10.5" data-amp="28" data-phase="3.1"></div>
+        <div class="dof-chain" data-angle="31" data-period="12" data-amp="42" data-phase="5.0"></div>
+    </div>
+    <div class="dof-vignette" aria-hidden="true"></div>
+    <div class="dof-bottom-fade" aria-hidden="true"></div>
+    <header>
+        <%- include("includes/header") %>
+    </header>
+    <main>
+        <div class="dof-hero">
+            <img src="/img/shows/independent/2026/2026independentlogo.png" alt="Dreams of Freedom">
+        </div>
+
+        <div class="dof-content">
+
+            <div style="margin: 0px 16px; padding: 8px;">
+                <iframe src="https://www.youtube.com/embed/Sk_4W6MQku4" style="aspect-ratio: 16/9; width: 100%; border-radius: 16px; box-shadow: 0px 4px 12px rgba(0,0,0,0.4);"></iframe>
+            </div>
+
+            <br>
+
+            <p>In a world where everything is watched, controlled, and restricted, even love becomes an act of defiance.</p>
+            <br>
+            <p>Inspired by the dystopian world of 1984, <strong>Dreams of Freedom</strong> follows Winston and Julia as they fight to hold onto something real under the pressure of a totalitarian state. Through themes of surveillance, rebellion, and forbidden connection, this production explores what it means to search for freedom in a world designed to take it away.</p>
+
+            <br>
+
+            <div class="carousel" data-delay="4000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-2-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-3-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-4-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-5-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+            </div>
+
+            <br>
+            <br>
+            <h1 style="font-size: clamp(2rem, 5vw, 4rem); text-align: center; font-weight: 700; text-transform: uppercase;">Performances</h1>
+            <br>
+            <div id="map"></div>
+
+            <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+            <script>
+                const events = <%- JSON.stringify(events) %>;
+
+                const map = L.map('map').setView([<%- center[0] %>, <%- center[1] %>], 5);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                const latlngs = [];
+
+                events.forEach(event => {
+                    const marker = L.marker(event.coords).addTo(map);
+                    marker.bindPopup(`<b>${event.location}</b><br>${event.date}`);
+                    latlngs.push(event.coords);
+                });
+
+                L.polyline(latlngs, {
+                    color: '#cc0000',
+                    weight: 4,
+                    opacity: 0.8
+                }).addTo(map);
+            </script>
+
+            <br>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>March 6th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Salt Lake City, UT</h2>
+                    <span>Prelims 76.5 &bull; Finals 79.4 &bull; 3rd Place</span>
+                </div>
+            </div>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>April 10th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Meridian, ID</h2>
+                    <span><i>Unscored</i></span>
+                </div>
+            </div>
+
+            <div class="chaos-location-banner">
+                <div>
+                    <p>April 17th</p>
+                    <h2 style="font-size: xx-large; font-weight: 600;">Dayton, OH</h2>
+                    <span>WGI World Championships</span><br>
+                    <span>Prelims 86.2 &bull; Finals 85.67 &bull; 12th Place</span>
+                </div>
+            </div>
+
+            <br>
+
+            <div class="carousel" data-delay="4000" style="aspect-ratio: 4/3;">
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-6-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-7-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-8-2.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+                <div class="esto-pic">
+                    <img src="/img/shows/independent/2026/bgi-2026-16.jpg" alt="Boise Gems Independent 2026 Dreams of Freedom">
+                </div>
+            </div>
+
+            <br>
+        </div>
+    </main>
+    <footer>
+        <%- include("includes/footer") %>
+    </footer>
+<script>
+    (function () {
+        const chains = Array.from(document.querySelectorAll('.dof-chain')).map((el) => ({
+            el,
+            angle: parseFloat(el.dataset.angle),
+            period: parseFloat(el.dataset.period),
+            amp: parseFloat(el.dataset.amp),
+            phase: parseFloat(el.dataset.phase),
+        }));
+
+        function tickChains(now) {
+            const t = now / 1000;
+            for (const c of chains) {
+                const x = Math.sin((t * Math.PI * 2) / c.period + c.phase) * c.amp;
+                c.el.style.transform = `rotate(${c.angle}deg) translateX(${x}px)`;
+            }
+            requestAnimationFrame(tickChains);
+        }
+        requestAnimationFrame(tickChains);
+    })();
+
+    (function () {
+        const intro = document.getElementById('dof-intro');
+        const eye = document.getElementById('dof-eye');
+        const eyeOpen = document.getElementById('dof-eye-open');
+        const pupil = document.getElementById('dof-eye-pupil');
+        if (!intro || !eye || !eyeOpen || !pupil) return;
+
+        let skipped = false;
+        let fading = false;
+        let openAmount = 0;
+        let blinkTimer = null;
+        const timeouts = [];
+
+        function later(fn, ms) {
+            const id = setTimeout(() => {
+                if (skipped && fn !== startFade) return;
+                fn();
+            }, ms);
+            timeouts.push(id);
+            return id;
+        }
+
+        function clearAllTimeouts() {
+            timeouts.forEach(clearTimeout);
+            timeouts.length = 0;
+        }
+
+        function setPupil(xPercent) {
+            // xPercent: 0 = left, 50 = center, 100 = right (within eye)
+            const clamped = Math.max(12, Math.min(88, xPercent));
+            pupil.style.left = clamped + '%';
+            pupil.style.transform = 'translate(-50%, -50%)';
+        }
+
+        function setOpen(amount) {
+            openAmount = amount;
+            if (!eye.classList.contains('is-blinking')) {
+                eyeOpen.style.transform = `scaleY(${amount})`;
+            }
+        }
+
+        function blinkOnce() {
+            if (fading || skipped || openAmount < 0.4) return;
+            eyeOpen.style.transition = 'transform 0.07s linear';
+            eye.classList.add('is-blinking');
+            eyeOpen.style.transform = 'scaleY(0)';
+            setTimeout(() => {
+                if (fading || skipped) return;
+                eye.classList.remove('is-blinking');
+                eyeOpen.style.transform = `scaleY(${openAmount})`;
+                setTimeout(() => {
+                    eyeOpen.style.transition = 'none';
+                }, 80);
+            }, 160);
+        }
+
+        function scheduleBlink() {
+            if (fading || skipped) return;
+            blinkTimer = setTimeout(() => {
+                blinkOnce();
+                scheduleBlink();
+            }, 400 + Math.random() * 1400);
+        }
+
+        function startFade() {
+            if (fading) return;
+            fading = true;
+            skipped = true;
+            clearAllTimeouts();
+            if (blinkTimer) clearTimeout(blinkTimer);
+            eye.classList.remove('is-blinking');
+            eyeOpen.style.transition = 'none';
+            setOpen(1);
+            // force reflow so transition applies
+            void intro.offsetWidth;
+            intro.classList.add('is-fading');
+            setTimeout(() => {
+                intro.remove();
+                document.body.classList.remove('dof-intro-active');
+            }, 520);
+        }
+
+        function animateOpen(durationMs) {
+            eyeOpen.style.transition = 'none';
+            const start = performance.now();
+            function frame(now) {
+                if (skipped) return;
+                const p = Math.min(1, (now - start) / durationMs);
+                setOpen(p);
+                if (p < 1) requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+        }
+
+        function runSequence() {
+            setPupil(50);
+            setOpen(0);
+            scheduleBlink();
+
+            // 0.5s open
+            animateOpen(500);
+
+            // after open: center 1s
+            later(() => setPupil(50), 500);
+
+            // move left 0.05s at t=1.5s
+            later(() => {
+                pupil.style.transition = 'left 0.05s linear';
+                setPupil(18);
+            }, 1500);
+
+            // stay left 0.5s, then move right 0.05s at t=2.05s
+            later(() => {
+                pupil.style.transition = 'left 0.05s linear';
+                setPupil(82);
+            }, 2050);
+
+            // stay right 0.5s, then center 0.05s at t=2.6s
+            later(() => {
+                pupil.style.transition = 'left 0.05s linear';
+                setPupil(50);
+            }, 2600);
+
+            // stay center 0.5s, then fade at t=3.15s
+            later(startFade, 3150);
+        }
+
+        intro.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (fading) return;
+            skipped = true;
+            clearAllTimeouts();
+            if (blinkTimer) clearTimeout(blinkTimer);
+            pupil.style.transition = 'none';
+            setPupil(50);
+            setOpen(1);
+            startFade();
+        });
+
+        runSequence();
+    })();
+</script>
+</body>
+</html>

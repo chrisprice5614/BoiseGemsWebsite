@@ -3001,7 +3001,9 @@ const coordinates = {
   'Hillsboro, OR' : [45.522,-122.989],
   'Seattle, WA' : [47.603,-122.330],
   'Moscow, ID' : [46.732, -117.000],
-  'Portland, OR' : [45.523, -122.676]
+  'Portland, OR' : [45.523, -122.676],
+  'Meridian, ID' : [43.612, -116.391],
+  'Dayton, OH' : [39.759, -84.192]
 };
 
 
@@ -5728,7 +5730,8 @@ app.get("/send-message/:id", mustBeAdmin, (req,res) => {
 app.get("/shows/2026-the-color-of-chaos", (req,res) => {
   const events = [
     { date: '2026-06-27', location: 'Moscow, ID' },
-    { date: '2026-06-29', location: 'Seattle, WA' },
+    { date: '2026-06-29', location: 'Kennewick, WA' },
+    { date: '2026-06-30', location: 'Seattle, WA' },
     { date: '2026-07-01', location: 'Portland, OR' },
     { date: '2026-07-02', location: 'Boise, ID' },
   ];
@@ -5740,6 +5743,22 @@ app.get("/shows/2026-the-color-of-chaos", (req,res) => {
   const center = getGraphicCenter(events)
 
   return res.render("show-2026", {events, center})
+})
+
+app.get("/shows/2026-dreams-of-freedom", (req,res) => {
+  const events = [
+    { date: '2026-03-06', location: 'Salt Lake City, UT' },
+    { date: '2026-04-10', location: 'Meridian, ID' },
+    { date: '2026-04-17', location: 'Dayton, OH' },
+  ];
+
+  events.forEach(event => {
+    event.coords = coordinates[event.location];
+  });
+
+  const center = getGraphicCenter(events)
+
+  return res.render("show-independent-2026", {events, center})
 })
 
 app.get("/shows/2025-the-animated", (req,res) => {

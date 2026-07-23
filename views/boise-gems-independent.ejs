@@ -32,12 +32,48 @@
   </div>
 </section>
 
+<section class="about-section">
+  <div class="about-wrap">
+    <h2>Shows</h2>
+  </div>
+</section>
+
+<a href="/shows/2026-dreams-of-freedom" class="no-decor">
+  <div class="video-wrapper" style="background-color: #0a0000;">
+    <video playsinline autoplay muted loop style="filter: brightness(0.7);">
+      <source src="/vid/independent-2026.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+
+    <div class="video-header" style="position: relative; z-index: 301;">
+      <h1 style="color: #fff; font-size: 3rem; text-decoration: none;">2026</h1>
+      <img src="/img/shows/independent/2026/2026independentlogo.png" alt="Dreams of Freedom logo" style="max-width: 420px; width: 80%;">
+    </div>
+  </div>
+</a>
+
 <section class="about-section about-section--staff">
   <div class="about-wrap">
     <h2>Staff</h2>
     <%- include("includes/staff-gem-wall", { staffSections: staffSections }) %>
   </div>
 </section>
+
+<script>
+  const videos = document.querySelectorAll('.video-wrapper video')
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+
+  if (isMobile) {
+    videos.forEach(v => { v.play(), v.style.filter = "brightness(1)" })
+  } else {
+    videos.forEach(v => {
+      v.pause()
+      const parent = v.parentElement
+      parent.addEventListener('mouseenter', () => { v.play(), v.style.filter = "brightness(1)" })
+      parent.addEventListener('mouseleave', () => { v.pause(), v.style.filter = "brightness(0.7)" })
+    })
+  }
+</script>
 
 <footer><%- include("includes/footer") %></footer>
 </body>

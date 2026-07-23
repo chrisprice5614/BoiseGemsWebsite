@@ -1228,6 +1228,8 @@ a .video-header{
 .carousel {
     position: relative;
     width: 100%;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .carousel .esto-pic{
@@ -1608,8 +1610,27 @@ a.round-button:hover{
   text-decoration: none;
 }
 
+.lower-images {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  /* Override inline 1fr 1fr 1fr 1fr so tracks can shrink below image intrinsic size */
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+.lower-images > div {
+  min-width: 0;
+  max-width: 100%;
+}
 .lower-images img{
     filter: saturate(0%) brightness(100000%) brightness(50%);
+    max-width: 100% !important;
+    height: auto;
+}
+
+@media screen and (max-width: 700px) {
+  .lower-images {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
 }
 
 .event-card{
@@ -2994,9 +3015,32 @@ a[href="/view-materials"] > button:hover::before {
 }
 
 /* =========================================================
-   Map pages (show-2023, show-2024, show-2025, tour-map)
+   Map pages (show-2023, show-2024, show-2025, show-2026, tour-map)
+   Leaflet tiles/panes are huge absolutely-positioned layers; without
+   clipping them to the map box they expand the page width on mobile.
    ========================================================= */
-#map { height: 50vh; width: 100%; }
+#map {
+  height: 50vh;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+  contain: paint;
+}
+#map .leaflet-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+#map .leaflet-pane,
+#map .leaflet-map-pane,
+#map .leaflet-tile-pane,
+#map .leaflet-overlay-pane {
+  max-width: none; /* panes are intentionally large; clipped by .leaflet-container */
+}
 
 /* =========================================================
    Show 2024 — Ghost Stallion smoke effect

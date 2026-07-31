@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boise Gems | Change Account Type</title>
+    <title>Boise Gems | Change Membership</title>
     <%- include("includes/head") %>
 </head>
 <body>
@@ -10,11 +10,11 @@
         <%- include("includes/header") %>
     </header>
     <main>
-        <h1 style="text-align: center;">Change Account Type</h1>
+        <h1 style="text-align: center;">Change Membership</h1>
         <br>
         <div style="padding: 12px;">
             <br>
-            <% if(errors.length) { %>
+            <% if(typeof errors !== "undefined" && errors.length) { %>
                 <% errors.forEach(error => { %>
                     <div class="error">
                         <%= error %>
@@ -23,26 +23,35 @@
             <% } %>
             <div class="form-panel">
 <form action="/change-membership/<%= thisUser.id %>" method="POST">
-                <label for="typeCorps">Enter new CORPS membership for <%= thisUser.firstname %></label>
-                <select name="typeCorps" value="" required>
-                    <option value="auditionee">Auditionee</option>
+                <label for="typeCorps">CORPS membership for <%= thisUser.firstname %></label>
+                <select name="typeCorps" id="typeCorps" required>
+                    <option value="auditionee">Not corps contracted (auditionee)</option>
                     <option value="contracted" <% if(thisUser.contractedCorps) { %> selected="selected" <% } %>>Contracted</option>
                 </select>
+                <label for="corps_ends_at">Corps contract ends</label>
+                <input type="date" name="corps_ends_at" id="corps_ends_at"
+                  value="<%= thisUser.corps_contract_ends_at ? new Date(thisUser.corps_contract_ends_at).toISOString().slice(0,10) : '' %>">
                 <br>
                 <br>
-                <label for="typeIndependent">Enter new INDEPENDENT membership for <%= thisUser.firstname %></label>
-                <select name="typeIndependent" value="" required>
-                    <option value="auditionee">Auditionee</option>
+                <label for="typeIndependent">INDEPENDENT membership for <%= thisUser.firstname %></label>
+                <select name="typeIndependent" id="typeIndependent" required>
+                    <option value="auditionee">Not independent contracted (auditionee)</option>
                     <option value="contracted" <% if(thisUser.contractedIndependent) { %> selected="selected" <% } %>>Contracted</option>
                 </select>
+                <label for="independent_ends_at">Independent contract ends</label>
+                <input type="date" name="independent_ends_at" id="independent_ends_at"
+                  value="<%= thisUser.independent_contract_ends_at ? new Date(thisUser.independent_contract_ends_at).toISOString().slice(0,10) : '' %>">
                 <br>
                 <br>
-                <label for="typeAffiliate">Enter new AFFILIATE membership for <%= thisUser.firstname %></label>
-                <select name="typeAffiliate" value="" required>
-                    <option value="auditionee">Auditionee</option>
+                <label for="typeAffiliate">AFFILIATE membership for <%= thisUser.firstname %></label>
+                <select name="typeAffiliate" id="typeAffiliate" required>
+                    <option value="auditionee">Not affiliate contracted (auditionee)</option>
                     <option value="contracted" <% if(thisUser.contractedAffiliate) { %> selected="selected" <% } %>>Contracted</option>
                 </select>
-                <br>
+                <label for="affiliate_ends_at">Affiliate contract ends</label>
+                <input type="date" name="affiliate_ends_at" id="affiliate_ends_at"
+                  value="<%= thisUser.affiliate_contract_ends_at ? new Date(thisUser.affiliate_contract_ends_at).toISOString().slice(0,10) : '' %>">
+                <p style="color:#666;font-size:0.9rem;">Leave end dates blank to use the org season end date. Set membership to “Not … contracted” to clear that contract immediately.</p>
                 <br>
                 <div style="text-align: center;">
                     <button>Change</button>

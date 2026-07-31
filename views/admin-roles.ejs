@@ -1,0 +1,82 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roles - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    body.roles-admin-page { background: #ebe7f0; }
+    body.roles-admin-page main { max-width: none; width: 100%; margin: 0; padding: 0; background: transparent; box-shadow: none; }
+    .ra-hero { background: linear-gradient(135deg, #4a3263 0%, #60437D 48%, #7a5a9a 100%); color: #fff; padding: 28px 32px 32px; }
+    .ra-hero a { color: rgba(255,255,255,0.85); text-decoration: none; }
+    .ra-hero h1 { margin: 10px 0 6px; color: #fff; font-size: 1.85rem; }
+    .ra-wrap { width: min(1100px, calc(100% - 48px)); margin: -18px auto 48px; }
+    .ra-panel { background: #fff; border: 1px solid rgba(96,67,125,0.12); border-radius: 14px; padding: 22px 24px; box-shadow: 0 8px 24px rgba(40,24,60,0.06); }
+    .ra-flash { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #e8e0f0; vertical-align: top; color: #1a1228 !important; }
+    th {
+      background: #f3eef8 !important;
+      color: #2a1840 !important;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    tbody tr:nth-child(even) td { background: #faf8fc !important; }
+    tbody tr:nth-child(odd) td { background: #fff !important; }
+    td strong { color: #1a1228; }
+    .badge { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: #ebe4f3; color: #4a3263; font-weight: 600; }
+    .badge-corps { background: #e3f2fd; color: #1565c0; }
+    .badge-ind { background: #e8f5e9; color: #2e7d32; }
+    .ra-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    a { color: #60437D; font-weight: 600; }
+  </style>
+</head>
+<body class="roles-admin-page">
+<header><%- include("includes/header") %></header>
+<main>
+  <div class="ra-hero">
+    <a href="/admin-portal#system">&larr; System</a>
+    <h1>Roles &amp; permissions</h1>
+    <p style="margin:0;opacity:0.85;">Staff and administrator roles. Custom roles can be added anytime.</p>
+  </div>
+  <div class="ra-wrap">
+    <% if (flashMessage) { %><div class="ra-flash"><%= flashMessage %></div><% delete flashMessage; %><% } %>
+    <div class="ra-actions">
+      <a class="button" href="/admin/roles/new" style="display:inline-block;padding:10px 16px;background:#60437D;color:#fff;border-radius:8px;text-decoration:none;">Create custom role</a>
+    </div>
+    <div class="ra-panel">
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Permissions</th>
+            <th>Assignments</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% roles.forEach(function(r) { %>
+            <tr>
+              <td>
+                <strong><%= r.name %></strong>
+                <% if (r.is_system) { %> <span class="badge">system</span><% } %>
+                <% if (r.requires_mfa) { %> <span class="badge">MFA</span><% } %>
+                <% if (/corps/i.test(r.slug || r.name || "")) { %> <span class="badge badge-corps">Corps</span><% } %>
+                <% if (/independent/i.test(r.slug || r.name || "")) { %> <span class="badge badge-ind">Independent</span><% } %>
+                <% if (r.description) { %><div style="color:#555;font-size:0.9rem;margin-top:4px;"><%= r.description %></div><% } %>
+              </td>
+              <td><%= r.permission_count %></td>
+              <td><%= r.assignment_count %></td>
+              <td><a href="/admin/roles/<%= r.id %>">Edit</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

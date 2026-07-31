@@ -1,12 +1,15 @@
 /**
- * Season roster placements (2026 Corps, 2026 Independent).
- * Sections: caption, guard, brass, percussion.
+ * Season roster placements (shared season year for Corps + Independent).
  */
 
-const ROSTER_SEASONS = [
-  { key: "2026-corps", year: 2026, ensemble: "corps", label: "2026 Corps" },
-  { key: "2026-independent", year: 2026, ensemble: "independent", label: "2026 Independent" },
-];
+function getRosterSeasons(year) {
+  const y = Number(year);
+  const seasonYear = Number.isFinite(y) && y > 0 ? y : new Date().getFullYear();
+  return [
+    { key: `${seasonYear}-corps`, year: seasonYear, ensemble: "corps", label: `${seasonYear} Corps` },
+    { key: `${seasonYear}-independent`, year: seasonYear, ensemble: "independent", label: `${seasonYear} Independent` },
+  ];
+}
 
 const ROSTER_SECTIONS = [
   { key: "caption", label: "Caption" },
@@ -38,8 +41,13 @@ function initSeasonRosters(db) {
   `).run();
 }
 
-function getSeasonByKey(key) {
-  return ROSTER_SEASONS.find((s) => s.key === key) || ROSTER_SEASONS[0];
+function getSeasonByKey(key, yearHint) {
+  const fromKey = parseInt(String(key || ""), 10);
+  const year = Number.isFinite(fromKey) && fromKey > 0
+    ? fromKey
+    : (Number(yearHint) || new Date().getFullYear());
+  const seasons = getRosterSeasons(year);
+  return seasons.find((s) => s.key === key) || seasons[0];
 }
 
 function normalizeSection(section) {
@@ -102,7 +110,7 @@ function listRosterForFolder(db, year, scope, folderSectionName) {
     JOIN users u ON u.id = r.user_id
     WHERE r.season_year = ? AND r.ensemble = ? AND r.section = ?
     ORDER BY r.sort_order, u.lastname, u.firstname
-  `).all(Number(year) || 2026, ensemble, rosterSection);
+  `).all(Number(year) || new Date().getFullYear(), ensemble, rosterSection);
 
   return rows.map((r) => ({
     id: r.user_id,
@@ -119,40 +127,40 @@ function listRosterForFolder(db, year, scope, folderSectionName) {
 function listEligibleMembers(db, seasonKey, excludeUserIds) {
   const season = getSeasonByKey(seasonKey);
   const exclude = new Set((excludeUserIds || []).map(Number));
-  let contractClause = "u.contractedCorps = 1";
-  if (season.ensemble === "independent") contractClause = "u.contractedIndependent = 1";
-
   const rows = db.prepare(`
-    SELECT u.id, u.firstname, u.lastname, u.email
-    FROM users u
-    WHERE (u.parent IS NULL OR u.parent = 0)
-      AND (u.admin IS NULL OR u.admin = 0)
-      AND (u.fan IS NULL OR u.fan = 0)
-      AND ${contractClause}
-    ORDER BY u.lastname, u.firstname
+    SELECT id, firstname, lastname, img, contractedCorps, contractedIndependent, contractedAffiliate, section, instrument
+    FROM users
+    WHERE (parent IS NULL OR parent = 0)
+      AND (fan IS NULL OR fan = 0)
+      AND (admin IS NULL OR admin = 0)
+      AND (staff IS NULL OR staff = 0)
+    ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
   `).all();
 
   return rows
-    .filter((r) => !exclude.has(r.id))
-    .map((r) => ({
-      id: r.id,
-      label: `${r.firstname} ${r.lastname}`.trim(),
-      email: r.email,
+    .filter((u) => !exclude.has(u.id))
+    .filter((u) => {
+      if (season.ensemble === "corps") return !!(u.contractedCorps || u.contractedAffiliate);
+      return !!u.contractedIndependent;
+    })
+    .map((u) => ({
+      id: u.id,
+      name: `${u.firstname} ${u.lastname}`.trim(),
+      img: u.img,
+      section: u.section,
+      instrument: u.instrument,
     }));
 }
 
-function addRosterEntry(db, seasonKey, section, userId, positionLabel) {
+function addRosterEntry(db, seasonKey, { userId, section, positionLabel }) {
   const season = getSeasonByKey(seasonKey);
-  const sec = normalizeSection(section);
-  if (!sec) throw new Error("Invalid section.");
   const uid = Number(userId);
-  if (!uid) throw new Error("Select a member.");
+  const sec = normalizeSection(section);
   const position = String(positionLabel || "").trim();
-  if (!position) throw new Error("Position is required (e.g. Trumpet 1, Snare, Flag).");
-
+  if (!uid || !sec) throw new Error("User and section are required.");
+  if (!position) throw new Error("Position is required.");
   const maxSort = db.prepare(`
-    SELECT COALESCE(MAX(sort_order), -1) AS m
-    FROM season_rosters
+    SELECT MAX(sort_order) AS m FROM season_rosters
     WHERE season_year = ? AND ensemble = ? AND section = ?
   `).get(season.year, season.ensemble);
   const now = Date.now();
@@ -179,7 +187,7 @@ function deleteRosterEntry(db, id) {
 }
 
 module.exports = {
-  ROSTER_SEASONS,
+  getRosterSeasons,
   ROSTER_SECTIONS,
   initSeasonRosters,
   getSeasonByKey,

@@ -49,7 +49,7 @@
   }
 
   function blankTime() {
-    return { time: '08:00', title: '', entries: [blankEntry()] };
+    return { time: '08:00', end_time: '', title: '', entries: [blankEntry()] };
   }
 
   function syncMetaFromForm() {
@@ -118,8 +118,12 @@
     return '<div class="sch-des-time sch-des-time-panel" data-ti="' + ti + '">' +
       '<div class="sch-des-time-head">' +
         '<div class="sch-field sch-field--time">' +
-          '<span class="sch-field-label">Time</span>' +
+          '<span class="sch-field-label">Start</span>' +
           '<input type="time" class="sch-des-time-input" data-ti="' + ti + '" value="' + esc(time.time) + '">' +
+        '</div>' +
+        '<div class="sch-field sch-field--time">' +
+          '<span class="sch-field-label">End <span style="font-weight:400;color:#888;">(optional)</span></span>' +
+          '<input type="time" class="sch-des-end-time-input" data-ti="' + ti + '" value="' + esc(time.end_time || '') + '">' +
         '</div>' +
         '<div class="sch-field sch-field--grow">' +
           '<span class="sch-field-label">Title</span>' +
@@ -165,6 +169,9 @@
   function bindDesignerEvents() {
     document.querySelectorAll('.sch-des-time-input').forEach(function(inp) {
       bindField(inp, function(node) { state.times[+node.dataset.ti].time = node.value; });
+    });
+    document.querySelectorAll('.sch-des-end-time-input').forEach(function(inp) {
+      bindField(inp, function(node) { state.times[+node.dataset.ti].end_time = node.value; });
     });
     document.querySelectorAll('.sch-des-time-title').forEach(function(inp) {
       bindField(inp, function(node) { state.times[+node.dataset.ti].title = node.value; });
@@ -291,6 +298,7 @@
     p.times = (p.times || []).map(function(t) {
       return {
         time: t.time,
+        end_time: t.end_time || '',
         title: t.title,
         entries: (t.entries || []).map(function(e) {
           return {
@@ -393,7 +401,9 @@
     state.aud_everyone = sch.aud_everyone != null ? sch.aud_everyone : 1;
     state.aud_corps = sch.aud_corps || 0;
     state.aud_independent = sch.aud_independent || 0;
-    state.times = sch.times || [];
+    state.times = (sch.times || []).map(function(t) {
+      return Object.assign({}, t, { end_time: t.end_time || '' });
+    });
     syncMetaToForm();
     renderDesigner();
   }

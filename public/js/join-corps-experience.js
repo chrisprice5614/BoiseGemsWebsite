@@ -17,7 +17,7 @@
 
   var GRID_ALPHA = 0.03;
 
-  /* Brand palette — scroll cycles purple → red → green → purple → red */
+  /* Brand palette - scroll cycles purple → red → green → purple → red */
   var PALETTE = [
     { r: 96, g: 67, b: 125 },
     { r: 193, g: 39, b: 45 },

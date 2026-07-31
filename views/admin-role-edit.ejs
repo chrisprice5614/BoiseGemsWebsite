@@ -1,0 +1,81 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= role ? "Edit role" : "New role" %> - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    body.roles-admin-page { background: #ebe7f0; }
+    body.roles-admin-page main { max-width: none; width: 100%; margin: 0; padding: 0; background: transparent; box-shadow: none; }
+    .ra-hero { background: linear-gradient(135deg, #4a3263 0%, #60437D 48%, #7a5a9a 100%); color: #fff; padding: 28px 32px 32px; }
+    .ra-hero a { color: rgba(255,255,255,0.85); text-decoration: none; }
+    .ra-hero h1 { margin: 10px 0 6px; color: #fff; font-size: 1.85rem; }
+    .ra-wrap { width: min(900px, calc(100% - 48px)); margin: -18px auto 48px; }
+    .ra-panel { background: #fff; border: 1px solid rgba(96,67,125,0.12); border-radius: 14px; padding: 22px 24px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(40,24,60,0.06); }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; }
+    input[type="text"], textarea { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+    .perm-group { margin: 16px 0; }
+    .perm-group h3 { margin: 0 0 8px; font-size: 1rem; color: #60437D; }
+    .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+    .perm-item { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; margin: 0; }
+    .error { margin-bottom: 10px; }
+  </style>
+</head>
+<body class="roles-admin-page">
+<header><%- include("includes/header") %></header>
+<main>
+  <div class="ra-hero">
+    <a href="/admin/roles">&larr; Roles</a>
+    <h1><%= role ? role.name : "Create custom role" %></h1>
+  </div>
+  <div class="ra-wrap">
+    <% if (errors && errors.length) { errors.forEach(function(e) { %><div class="error"><%= e %></div><% }) } %>
+    <form method="POST" action="<%= role ? '/admin/roles/' + role.id : '/admin/roles/new' %>">
+      <div class="ra-panel">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="<%= role ? role.name : '' %>" required>
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="2"><%= role ? (role.description || '') : '' %></textarea>
+        <label class="perm-item" style="margin-top:14px;">
+          <input type="checkbox" name="requires_mfa" value="1" <%= (role && role.requires_mfa) ? 'checked' : '' %>>
+          Require email MFA for users with this role
+        </label>
+      </div>
+      <div class="ra-panel">
+        <h2 style="margin-top:0;">Permissions</h2>
+        <%
+          const groups = {};
+          (permissionKeys || []).forEach(function(p) {
+            if (!groups[p.group]) groups[p.group] = [];
+            groups[p.group].push(p);
+          });
+          const selected = new Set(permissions || []);
+        %>
+        <% Object.keys(groups).forEach(function(g) { %>
+          <div class="perm-group">
+            <h3><%= g %></h3>
+            <div class="perm-grid">
+              <% groups[g].forEach(function(p) { %>
+                <label class="perm-item">
+                  <input type="checkbox" name="permissions" value="<%= p.key %>" <%= selected.has(p.key) ? 'checked' : '' %>>
+                  <%= p.label %>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <button type="submit">Save role</button>
+        <% if (role && !role.is_system) { %>
+          <button type="submit" formaction="/admin/roles/<%= role.id %>/delete" formmethod="POST"
+            onclick="return confirm('Delete this custom role?');"
+            style="background:#a33;border-color:#a33;">Delete role</button>
+        <% } %>
+      </div>
+    </form>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

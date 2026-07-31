@@ -1,0 +1,59 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sessions - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    body.roles-admin-page { background: #ebe7f0; }
+    body.roles-admin-page main { max-width: none; width: 100%; margin: 0; padding: 0; background: transparent; box-shadow: none; }
+    .ra-hero { background: linear-gradient(135deg, #4a3263 0%, #60437D 48%, #7a5a9a 100%); color: #fff; padding: 28px 32px 32px; }
+    .ra-hero a { color: rgba(255,255,255,0.85); text-decoration: none; }
+    .ra-hero h1 { margin: 10px 0 6px; color: #fff; font-size: 1.85rem; }
+    .ra-wrap { width: min(1000px, calc(100% - 48px)); margin: -18px auto 48px; }
+    .ra-panel { background: #fff; border: 1px solid rgba(96,67,125,0.12); border-radius: 14px; padding: 22px 24px; box-shadow: 0 8px 24px rgba(40,24,60,0.06); }
+    .ra-flash { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; color: #1a1228 !important; }
+    th { background: #f3eef8 !important; color: #2a1840 !important; font-weight: 700; }
+    tbody tr:nth-child(even) td { background: #faf8fc !important; }
+    tbody tr:nth-child(odd) td { background: #fff !important; }
+  </style>
+</head>
+<body class="roles-admin-page">
+<header><%- include("includes/header") %></header>
+<main>
+  <div class="ra-hero">
+    <a href="/edit-users">&larr; Edit users</a>
+    <h1>Sessions - <%= thisUser.firstname %> <%= thisUser.lastname %></h1>
+  </div>
+  <div class="ra-wrap">
+    <% if (flashMessage) { %><div class="ra-flash"><%= flashMessage %></div><% } %>
+    <form method="POST" action="/admin/sessions/<%= thisUser.id %>/revoke-all" style="margin-bottom:16px;"
+      onsubmit="return confirm('Sign this user out of all devices?');">
+      <button type="submit">Sign out all devices</button>
+    </form>
+    <div class="ra-panel">
+      <table>
+        <thead>
+          <tr><th>Created</th><th>Last seen</th><th>Status</th><th>IP</th><th>User agent</th></tr>
+        </thead>
+        <tbody>
+          <% if (!sessions.length) { %><tr><td colspan="5">No recorded sessions.</td></tr><% } %>
+          <% sessions.forEach(function(s) { %>
+            <tr>
+              <td><%= new Date(s.created_at).toLocaleString() %></td>
+              <td><%= new Date(s.last_seen_at).toLocaleString() %></td>
+              <td><%= s.revoked_at ? "Revoked" : "Active" %></td>
+              <td><%= s.ip || "-" %></td>
+              <td style="max-width:280px;word-break:break-word;color:#666;"><%= s.user_agent || "" %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

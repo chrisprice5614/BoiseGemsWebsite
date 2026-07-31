@@ -1,7 +1,12 @@
 .env
 /node_modules
 /private
+/db-backups
 firebase-key.json
 **/firebase-key.json
 *-firebase-adminsdk*.json
 serviceAccount*.json
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

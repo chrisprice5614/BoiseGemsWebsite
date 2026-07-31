@@ -223,6 +223,7 @@
           <a href="/admin/pending-contracts" class="pd-action-btn"><ion-icon name="time"></ion-icon> Pending Contracts</a>
           <a href="/admin/contract-extensions" class="pd-action-btn"><ion-icon name="add-circle"></ion-icon> Contract Extensions</a>
           <a href="/admin/contracted-members" class="pd-action-btn"><ion-icon name="checkmark-circle"></ion-icon> Contracted Members</a>
+          <a href="/admin/contract-history" class="pd-action-btn"><ion-icon name="archive"></ion-icon> Contract History</a>
           <a href="/admin/expired-contracts" class="pd-action-btn"><ion-icon name="alert-circle"></ion-icon> Expired Contracts</a>
           <a href="/admin/callbacks" class="pd-action-btn"><ion-icon name="call"></ion-icon> Extend Callback</a>
           <a href="/contracts-admin/export-contracts.csv" class="pd-action-btn"><ion-icon name="download"></ion-icon> Export Contracts CSV</a>
@@ -414,8 +415,16 @@
     <div class="pd-section" id="pd-sec-system">
       <div class="pd-section-inner">
         <div class="pd-section-heading">System</div>
-        <div class="pd-section-sub">Website tools and issue reporting.</div>
+        <div class="pd-section-sub">Monitoring, roles, security, backups, and website tools.</div>
         <div class="pd-quick-actions">
+          <a href="/admin/monitoring" class="pd-action-btn pd-action-btn--primary"><ion-icon name="pulse"></ion-icon> System Monitoring</a>
+          <a href="/admin/monitoring#logs" class="pd-action-btn"><ion-icon name="document-text"></ion-icon> Error Logs</a>
+          <a href="/admin/monitoring#backups" class="pd-action-btn"><ion-icon name="server"></ion-icon> Database Backups</a>
+          <a href="/admin/monitoring#health" class="pd-action-btn"><ion-icon name="heart"></ion-icon> Website Health</a>
+          <a href="/admin/season" class="pd-action-btn"><ion-icon name="calendar"></ion-icon> Season Settings</a>
+          <a href="/admin/roles" class="pd-action-btn"><ion-icon name="shield-checkmark"></ion-icon> Roles &amp; Permissions</a>
+          <a href="/admin/audit-log" class="pd-action-btn"><ion-icon name="list"></ion-icon> Audit Log</a>
+          <a href="/admin/login-history" class="pd-action-btn"><ion-icon name="log-in"></ion-icon> Login History</a>
           <a href="/support/issue" class="pd-action-btn"><ion-icon name="bug"></ion-icon> Submit Website Issue</a>
           <% if (user && user.email && (user.email.toLowerCase() === "austinmoldenhauer@gmail.com" || user.email.toLowerCase() === "chris@chrispricemusic.net")) { %>
           <a href="/admin/chris-payment" class="pd-action-btn" style="background:#fff3cd;border:1px solid #ffc107;color:#5a4000;"><ion-icon name="card"></ion-icon> Chris Payment</a>

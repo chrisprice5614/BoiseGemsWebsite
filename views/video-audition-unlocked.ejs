@@ -1,0 +1,44 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Audition Unlocked</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <div style="padding: 8px; max-width: 560px; margin: 0 auto;">
+    <br>
+    <h1 style="text-align: center;">
+      <% if (unlocked) { %>Video Audition Unlocked<% } else { %>Not Unlocked Yet<% } %>
+    </h1>
+    <p style="text-align: center; color: #555;">
+      <%= program.label %> &middot; <%= seasonYear %>
+    </p>
+    <br>
+    <div class="form-panel" style="text-align: center;">
+      <% if (unlocked && url) { %>
+        <p>Your Omnipply link is ready for the <%= seasonYear %> season.</p>
+        <p style="margin: 20px 0;">
+          <a class="button" href="<%= url %>" target="_blank" rel="noopener">Open Omnipply Video Audition</a>
+        </p>
+      <% } else if (unlocked) { %>
+        <p>
+          Your <%= program.shortLabel %> audition is unlocked for <%= seasonYear %>.
+          Update your section in your profile if the submission link does not appear, or contact staff.
+        </p>
+      <% } else { %>
+        <p>This program is not unlocked for <%= seasonYear %> yet.</p>
+        <p style="margin-top: 16px;">
+          <a class="button" href="/video-audition/pay?program=<%= program.key %>">Pay application fee</a>
+        </p>
+      <% } %>
+      <p style="margin-top: 20px;"><a href="/member-portal">Back to member portal</a></p>
+    </div>
+    <br>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

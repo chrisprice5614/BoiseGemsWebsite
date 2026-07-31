@@ -35,7 +35,7 @@
     return Math.round((r() * 2 - 1) * mag);
   }
 
-  /** Push quad corners outward from centroid — still 4 points, fills clip seams. */
+  /** Push quad corners outward from centroid - still 4 points, fills clip seams. */
   function expandPolygon(points, amount) {
     if (!amount) return points;
     var cx = 0;

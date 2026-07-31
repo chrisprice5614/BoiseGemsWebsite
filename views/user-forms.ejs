@@ -53,7 +53,7 @@
                                     <li>
                                       <%= entry.name || entry.signature || "Signer" %>
                                       <% if (entry.role) { %>(<%= entry.role %>)<% } %>
-                                      — <%= entry.at ? new Date(entry.at).toLocaleString() : "" %>
+                                      - <%= entry.at ? new Date(entry.at).toLocaleString() : "" %>
                                     </li>
                                   <% }) %>
                                 </ul>
@@ -63,7 +63,7 @@
                             <div style="margin-top:14px; padding:10px; border:1px solid #e2b4b4; background:#fff7f7; border-radius:8px;">
                               <b style="color:#9b1c1c;">Missing fields (<%= summary.missing.length %>)</b>
                               <% if (!summary.missing.length) { %>
-                                <p style="margin:6px 0 0; color:#2f6b3a;">None — every placed field has a value.</p>
+                                <p style="margin:6px 0 0; color:#2f6b3a;">None - every placed field has a value.</p>
                               <% } else { %>
                                 <ul style="margin:6px 0 0; padding-left:18px; color:#9b1c1c;">
                                   <% summary.missing.forEach(function(m) { %>

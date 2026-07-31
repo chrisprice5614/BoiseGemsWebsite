@@ -3,6 +3,13 @@ const jwt = require("jsonwebtoken")//npm install jsonwebtoken dotenv
 
 /** When true: noindex SEO, test-site modal, TEST SERVER email banner. Missing/any other value => false. */
 const TEST_SITE = String(process.env.test_site || "").trim().toLowerCase() === "true";
+const AUTH_COOKIE = {
+  httpOnly: true,
+  // Secure cookies are not stored by browsers on plain http://localhost.
+  secure: !TEST_SITE,
+  sameSite: "lax",
+  maxAge: 1000 * 60 * 60 * 24,
+};
 const bcrypt = require("bcrypt") //npm install bcrypt
 const cookieParser = require("cookie-parser")//npm install cookie-parser
 const express = require("express")//npm install express
@@ -26,7 +33,12 @@ const boardDirectorsContent = require("./board-directors-content");
 const seasonRosterSystem = require("./season-roster-system");
 const parentLinks = require("./parent-links");
 const merchSystem = require("./merch-system");
+const opsSystem = require("./ops-system");
+const rolesSystem = require("./roles-system");
+const videoAuditionSystem = require("./video-audition-system");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
+
+opsSystem.initOps(db);
 
 // When true, we will attempt to automatically send Chris's 3% share
 // to his connected Stripe account using Stripe Connect. When false,
@@ -57,10 +69,15 @@ function sendChrisStripeTransfer(chrisCutCents, source) {
       description: `3% share from ${source || "transaction"}`,
     })
     .then(() => {
-      // Transfer created successfully â€“ nothing else to do here.
+      // Transfer created successfully - nothing else to do here.
     })
     .catch((err) => {
       console.error("Failed to create Chris 3% transfer:", err);
+      opsSystem.logFailedPayment(db, {
+        message: `Failed Chris 3% Stripe transfer (${source || "transaction"})`,
+        detail: err,
+        statusCode: 502,
+      });
     });
 }
 const { verify } = require("crypto")
@@ -105,7 +122,7 @@ function ensureActiveContractExtension(req, res, next) {
   const ageMs = Date.now() - createdAt;
 
   if (!createdAt || ageMs > CONTRACT_EXTENSION_TTL_MS) {
-    // Extension expired â†’ delete it and tell the user
+    // Extension expired -> delete it and tell the user
     db.prepare("DELETE FROM contractExtension WHERE id = ?").run(id);
     req.session.flashMessage = "This contract extension has expired. Please contact staff to request a new contract.";
     return res.redirect("/member-portal");
@@ -422,7 +439,7 @@ let firebaseAdmin = null;
       console.warn("[Messaging] Firebase key load failed:", e.message);
     }
   }
-  console.warn("[Messaging] Firebase not configured — set FIREBASE_SERVICE_ACCOUNT_PATH or place private/firebase-key.json");
+  console.warn("[Messaging] Firebase not configured - set FIREBASE_SERVICE_ACCOUNT_PATH or place private/firebase-key.json");
 })();
 
 async function sendPushToUser(userId, title, body, data = {}) {
@@ -477,6 +494,10 @@ async function sendEmail(to, subject, html, attachments = []) {
 
   if (!mailgunApiKey || !mailgunDomain) {
     console.error("Mailgun env missing: MAILGUN_API_KEY or MAILGUN_DOMAIN");
+    opsSystem.logFailedEmail(db, {
+      message: `Email not sent (Mailgun env missing): ${subject}`,
+      detail: `To: ${to}`,
+    });
     return;
   }
 
@@ -488,7 +509,7 @@ async function sendEmail(to, subject, html, attachments = []) {
               <div style="background:#111;color:#f5c400;text-align:center;padding:18px 12px;font-family:Arial,Helvetica,sans-serif;">
                 <div style="font-size:36px;line-height:1.1;font-weight:900;letter-spacing:0.08em;">TEST SERVER</div>
                 <div style="font-size:14px;margin-top:8px;color:#fff;letter-spacing:0.02em;">
-                  This message was sent from the Boise Gems test server — not production.
+                  This message was sent from the Boise Gems test server - not production.
                 </div>
               </div>
               <div style="background:repeating-linear-gradient(135deg,#111 0,#111 12px,#f5c400 12px,#f5c400 24px);height:14px;width:100%;"></div>
@@ -606,6 +627,14 @@ async function sendEmail(to, subject, html, attachments = []) {
     });
   } catch (err) {
     console.error("Mailgun send error:", err?.response?.data || err);
+    opsSystem.logFailedEmail(db, {
+      message: `Failed to send email: ${subject}`,
+      detail: {
+        to,
+        response: err?.response?.data || null,
+        error: err && (err.stack || err.message) ? String(err.stack || err.message) : String(err),
+      },
+    });
   }
 }
 
@@ -1238,7 +1267,7 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
     ).run();
   }
 
-  // NEW: child_id for â€œcontract for child, signed by parentâ€
+  // NEW: child_id for "contract for child, signed by parent"
   if (!contractExtCols.includes("child_id")) {
     db.prepare(
       "ALTER TABLE contractExtension ADD COLUMN child_id INTEGER"
@@ -1532,6 +1561,7 @@ function getSiteSettings() {
            board_directors_markdown, board_directors_body_html,
            merch_enabled, merch_tax_percent, merch_pass_stripe_fee,
            merch_shipping_domestic_cents, merch_shipping_intl_cents, merch_order_notify_emails,
+           current_season, season_end_date,
            updated_at
     FROM site_settings WHERE id = 1
   `).get();
@@ -1550,10 +1580,44 @@ function getSiteSettings() {
       merch_shipping_domestic_cents: 899,
       merch_shipping_intl_cents: 1499,
       merch_order_notify_emails: "info@fermataworks.com",
+      current_season: rolesSystem.DEFAULT_SEASON,
+      season_end_date: rolesSystem.DEFAULT_SEASON_END,
       updated_at: 0,
     }
   );
 }
+
+function getCurrentSeasonYear() {
+  return rolesSystem.getCurrentSeason(db);
+}
+
+function markUserContracted(memberId, ensemble, owedAdd = null) {
+  const ends = rolesSystem.getDefaultContractEndsAt(db);
+  if (ensemble === "corps") {
+    if (owedAdd != null) {
+      db.prepare("UPDATE users SET contractedCorps = 1, corps_contract_ends_at = ?, owed = COALESCE(owed,0) + ? WHERE id = ?")
+        .run(ends, owedAdd, memberId);
+    } else {
+      db.prepare("UPDATE users SET contractedCorps = 1, corps_contract_ends_at = ? WHERE id = ?").run(ends, memberId);
+    }
+  } else if (ensemble === "affiliate") {
+    if (owedAdd != null) {
+      db.prepare("UPDATE users SET contractedAffiliate = 1, affiliate_contract_ends_at = ?, owed = COALESCE(owed,0) + ? WHERE id = ?")
+        .run(ends, owedAdd, memberId);
+    } else {
+      db.prepare("UPDATE users SET contractedAffiliate = 1, affiliate_contract_ends_at = ? WHERE id = ?").run(ends, memberId);
+    }
+  } else {
+    if (owedAdd != null) {
+      db.prepare("UPDATE users SET contractedIndependent = 1, independent_contract_ends_at = ?, owed = COALESCE(owed,0) + ? WHERE id = ?")
+        .run(ends, owedAdd, memberId);
+    } else {
+      db.prepare("UPDATE users SET contractedIndependent = 1, independent_contract_ends_at = ? WHERE id = ?").run(ends, memberId);
+    }
+  }
+  return ends;
+}
+
 
 /** Dashboard stats for admin portal + mobile admin API. Amounts in cents. */
 function getAdminStats() {
@@ -2108,6 +2172,7 @@ scheduleSystem.initSchedulesV2(db);
 staffDisplay.initStaffDisplay(db);
 parentLinks.initParentLinks(db);
 merchSystem.initMerch(db);
+videoAuditionSystem.initVideoAudition(db);
 
 // ── Messaging tables (NEW - not altering any existing table) ─────────────────
 function initMessagingTables(db) {
@@ -2176,6 +2241,9 @@ function initMessagingTables(db) {
   `).run();
 }
 initMessagingTables(db);
+rolesSystem.initRoles(db);
+opsSystem.startOpsRuntime(db);
+rolesSystem.startRolesRuntime(db);
 // ─────────────────────────────────────────────────────────────────────────────
 
 const app = express()
@@ -2236,6 +2304,10 @@ function toCents(n) {
 }
 
 async function verifyRecaptchaToken(token, req) {
+  // Test/e2e servers skip Google captcha so Playwright can create real accounts.
+  if (TEST_SITE || String(process.env.E2E_BYPASS_CAPTCHA || "").toLowerCase() === "true") {
+    return { ok: true };
+  }
   if (!token) {
     return { ok: false, message: "Captcha failed. Please try again." };
   }
@@ -2261,6 +2333,10 @@ function mustBeAdmin(req, res, next){
     if(req.admin) {
         return next()
     }
+    // Allow users with admin_portal permission via roles (even if legacy admin flag is off)
+    if (req.user && rolesSystem.hasPermission(db, req.user.userid, "admin_portal")) {
+        return next();
+    }
     else
     {
         return res.redirect("/")
@@ -2270,6 +2346,12 @@ function mustBeAdmin(req, res, next){
 function mustBeStaff(req, res, next){
     if((req.admin) || (req.staff)) {
         return next()
+    }
+    if (req.user && (
+      rolesSystem.hasPermission(db, req.user.userid, "staff_portal") ||
+      rolesSystem.hasPermission(db, req.user.userid, "admin_portal")
+    )) {
+      return next();
     }
     else
     {
@@ -2314,8 +2396,16 @@ function mustBeLoggedInAny(req, res, next) {
 function mustBeStaffOrAdmin(req, res, next) {
   if (!req.user) return res.redirect("/");
   if (req.admin || req.staff) return next();
+  if (
+    rolesSystem.hasPermission(db, req.user.userid, "staff_portal") ||
+    rolesSystem.hasPermission(db, req.user.userid, "admin_portal")
+  ) {
+    return next();
+  }
   return res.redirect("/");
 }
+
+const requirePermission = rolesSystem.requirePermissionFactory(db);
 
 function mustBeContractedForFiles(req, res, next) {
   if (!req.user) return res.redirect("/");
@@ -2850,11 +2940,9 @@ function getGraphicCenter(events) {
 
 }
 
-const CURRENTSEASON = 2026;
-
 app.use(function (req, res, next) {
 
-  res.locals.CURRENTSEASON = CURRENTSEASON;
+  res.locals.CURRENTSEASON = getCurrentSeasonYear();
   res.locals.testSite = TEST_SITE;
 
   if (TEST_SITE) {
@@ -2872,7 +2960,21 @@ app.use(function (req, res, next) {
     try {
         const decoded = jwt.verify(req.cookies.bgcookie, process.env.JWTSECRET)
         req.user = decoded
-        
+
+        // Session revocation / deactivation checks
+        const liveUser = db.prepare("SELECT deactivated_at, admin, staff, parent, fan FROM users WHERE id = ?").get(decoded.userid);
+        if (!liveUser || liveUser.deactivated_at) {
+          throw new Error("deactivated");
+        }
+        if (decoded.sid && !rolesSystem.isSessionActive(db, decoded.sid, decoded.userid)) {
+          throw new Error("session_revoked");
+        }
+        // Legacy tokens without sid: allow until they re-login, but refresh admin/staff from DB
+        req.user.admin = liveUser.admin;
+        req.user.staff = liveUser.staff;
+        req.user.parent = liveUser.parent;
+        req.user.fan = liveUser.fan || 0;
+
         req.admin = req.user.admin
         req.parent = req.user.parent
         req.staff = req.user.staff
@@ -2883,6 +2985,9 @@ app.use(function (req, res, next) {
         req.admin = false;
         req.parent = false
         req.fan = false
+        if (err && (err.message === "deactivated" || err.message === "session_revoked")) {
+          res.clearCookie("bgcookie");
+        }
     }
 
     res.locals.user = req.user;
@@ -2896,11 +3001,18 @@ app.use(function (req, res, next) {
     res.locals.stripePublishableKey = merchSystem.getStripePublishableKey();
     res.locals.siteSettings = getSiteSettings();
     res.locals.messagingAllowed = req.user ? canUseMessaging(req.user) : false;
+    res.locals.messagingCaps = req.user
+      ? rolesSystem.getMessagingCapabilities(db, req.user.userid)
+      : null;
+
     res.locals.merchEnabled = Number(getSiteSettings().merch_enabled) === 1;
     res.locals.merchCartCount = merchSystem.cartCount(req);
 
     next()
 })
+
+// Log HTTP 5xx (and other non-4xx server errors) with timestamp + user name when logged in
+app.use(opsSystem.httpErrorLoggingMiddleware(db));
 
 /* ── Instagram feed (Graph API) ───────────────────────────────
    Requires a Meta app + Instagram Business/Creator account linked
@@ -3031,8 +3143,7 @@ app.post("/register-parent", async (req, res) => {
 
   placeholders = { firstname, lastname, phone, email, address, birthday };
 
-  if (password.length < 8)
-    errors.push("Your password must be at least 8 characters long");
+  errors.push(...rolesSystem.validateStrongPassword(password));
 
   //Checking if email already exists
   const checkEmailstatement = db.prepare("SELECT * FROM users WHERE email = ?");
@@ -3049,7 +3160,7 @@ app.post("/register-parent", async (req, res) => {
   const salt = bcrypt.genSaltSync(10);
   password = bcrypt.hashSync(password, salt);
 
-  // âœ… Instantly verified = 1, no emailsecret/userVerify row
+  // âœ... Instantly verified = 1, no emailsecret/userVerify row
   const addParent = db.prepare(
     "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, parent, section, created_at) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
   );
@@ -3068,7 +3179,7 @@ app.post("/register-parent", async (req, res) => {
   );
   const parentId = newParent.lastInsertRowid;
 
-  // âœ… Auto-login just like /login
+  // âœ... Auto-login just like /login
   const ourTokenValue = jwt.sign(
     {
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
@@ -3083,14 +3194,9 @@ app.post("/register-parent", async (req, res) => {
     process.env.JWTSECRET
   );
 
-  res.cookie("bgcookie", ourTokenValue, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24,
-  });
+  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
 
-  // âœ… Welcome email instead of verify email
+  // âœ... Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
@@ -3133,12 +3239,7 @@ app.get("/verify/:id", (req,res) => {
   // log the user in by giving them a cookie
   const ourTokenValue = jwt.sign({exp: Math.floor(Date.now() / 1000) + (60*60*24*3), userid: userInQuestion.id, firstname: userInQuestion.firstname, lastname: userInQuestion.lastname, email: userInQuestion.email, admin: userInQuestion.admin, staff: userInQuestion.staff, parent: userInQuestion.parent}, process.env.JWTSECRET) //Creating a token for logging in
   
-  res.cookie("bgcookie",ourTokenValue, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 1000 * 60 * 60 * 24
-  }) //name, string to remember,
+  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE) //name, string to remember,
 
   req.session.flashMessage = "Account verified!"
   return res.redirect("/")
@@ -3180,8 +3281,7 @@ app.post("/register-member", async (req, res) => {
     instrument,
   };
 
-  if (password.length < 8)
-    errors.push("Your password must be at least 8 characters long");
+  errors.push(...rolesSystem.validateStrongPassword(password));
 
   //Checking if email already exists
   const checkEmailstatement = db.prepare("SELECT * FROM users WHERE email = ?");
@@ -3203,7 +3303,7 @@ app.post("/register-member", async (req, res) => {
     .hashSync(firstname + Date.now().toString(), salt)
     .replace(/[^a-zA-Z0-9]/g, "");
 
-  // âœ… Instantly verified = 1, no userVerify insert
+  // âœ... Instantly verified = 1, no userVerify insert
   const addMember = db.prepare(
     "INSERT INTO users (firstname, lastname, password, address, birthday, email, phone, verified, emailsecret, section, instrument, created_at) VALUES (? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ? , ?)"
   );
@@ -3229,7 +3329,7 @@ app.post("/register-member", async (req, res) => {
   );
   addPermissions.run(newMemberId);
 
-  // âœ… Auto-login
+  // âœ... Auto-login
   const ourTokenValue = jwt.sign(
     {
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
@@ -3244,14 +3344,9 @@ app.post("/register-member", async (req, res) => {
     process.env.JWTSECRET
   );
 
-  res.cookie("bgcookie", ourTokenValue, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24,
-  });
+  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
 
-  // âœ… Welcome email instead of verify email
+  // âœ... Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
@@ -3268,6 +3363,11 @@ app.post("/register-member", async (req, res) => {
 });
 
 // ── Register Fan ──
+app.get("/register-fan", (req, res) => {
+  if (req.user) return res.redirect("/");
+  return res.redirect("/register");
+});
+
 app.post("/register-fan", async (req, res) => {
   if (req.user) return res.redirect("/");
 
@@ -3290,7 +3390,7 @@ app.post("/register-fan", async (req, res) => {
   if (!["individual", "corporate"].includes(fanType)) fanType = "individual";
   if (fanType === "corporate" && !businessName) errors.push("Business name is required for corporate accounts");
 
-  if (password.length < 8) errors.push("Your password must be at least 8 characters long");
+  errors.push(...rolesSystem.validateStrongPassword(password));
 
   const checkEmail = db.prepare("SELECT * FROM users WHERE email = ?");
   if (checkEmail.get(email)) errors.push("Email is already in use");
@@ -3331,12 +3431,7 @@ app.post("/register-fan", async (req, res) => {
     process.env.JWTSECRET
   );
 
-  res.cookie("bgcookie", ourTokenValue, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24,
-  });
+  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
 
   const html = `
     Hello ${firstname},
@@ -3355,18 +3450,6 @@ app.get("/check-email", (req,res) => {
 })
 
 
-
-// Predefined lat/lng values (normally from a geocoder)
-
-
-
-// Route for /tour
-app.get('/tour', (req, res) => {
-
-
-
-  res.render('tour-map', { events });
-});
 
 app.get("/login", (req,res) => {
   if(req.user)
@@ -3414,8 +3497,10 @@ app.get("/add-member", mustBeParent, (req,res) => {
 })
 
 app.get("/logout", mustBeLoggedIn, (req,res) => {
+  if (req.user && req.user.sid) {
+    rolesSystem.revokeSession(db, req.user.sid);
+  }
   res.clearCookie("bgcookie")
-
   return res.redirect("/")
 })
 
@@ -3485,11 +3570,26 @@ app.get("/member-portal", mustBeMember, (req,res) => {
   const linkRequests = parentLinks.getIncomingRequests(db, req.user.userid);
   const linkedParents = parentLinks.getParentsForChild(db, req.user.userid);
   const digitalGrants = merchSystem.getDigitalGrantsForUser(db, req.user.userid);
-  return res.render("member-portal", { member, contracts, leftoverForms, allergy, announcements, linkRequests, linkedParents, digitalGrants });
+  const videoAuditionActions = videoAuditionSystem.getPortalAuditionActions(
+    db,
+    member,
+    getCurrentSeasonYear()
+  );
+  return res.render("member-portal", {
+    member,
+    contracts,
+    leftoverForms,
+    allergy,
+    announcements,
+    linkRequests,
+    linkedParents,
+    digitalGrants,
+    videoAuditionActions,
+  });
 });
 
 app.get("/member-transactions", mustBeMember, (req, res) => {
-  // Logged-in memberâ€™s own record
+  // Logged-in member's own record
   const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?");
   const thisUser = getUserStatement.get(req.user.userid);
 
@@ -3512,7 +3612,7 @@ app.get("/parent/transactions/:childId", mustBeParent, (req, res) => {
   const thisUser = getChildForParent(req.user.userid, childId);
 
   if (!thisUser) {
-    // Not your kid, or doesnâ€™t exist
+    // Not your kid, or doesn't exist
     return res.redirect("/parent-portal");
   }
 
@@ -3797,7 +3897,7 @@ app.get("/upload-form/:id", mustBeMember, (req, res) => {
 
 
 
-app.get("/secure-pdf/:filename", mustBeAdmin, (req, res) => {
+app.get("/secure-pdf/:filename", mustBeStaffOrAdmin, requirePermission("download_sensitive_files"), (req, res) => {
   const filePath = path.join(__dirname, "private/pdf", req.params.filename);
 
   if (!fs.existsSync(filePath)) {
@@ -3916,6 +4016,11 @@ app.post("/reset-password/:id", (req,res) => {
     return res.render("reset-password",{errors,code})
   }
 
+  const strongErrs = rolesSystem.validateStrongPassword(password);
+  if (strongErrs.length) {
+    return res.render("reset-password", { errors: strongErrs, code });
+  }
+
   
   const userId = resetData.user_id
 
@@ -3932,33 +4037,8 @@ app.post("/reset-password/:id", (req,res) => {
   return res.redirect("/")
 })
 
-app.post("/login", (req, res) => {
-  errors = [];
-
-  const email = req.body.email.trim().toLowerCase();
-  const password = req.body.password;
-
-  const getUserStatement = db.prepare("SELECT * FROM users WHERE email = ?");
-  const userInQuestion = getUserStatement.get(email);
-
-  if (!userInQuestion) {
-    errors.push("Invalid email/password");
-    return res.render("login", { errors });
-  }
-
-  // âŒ old check removed:
-  // if(userInQuestion.verified == false) { ... }
-
-  const matchOrNot = bcrypt.compareSync(
-    req.body.password,
-    userInQuestion.password
-  );
-  if (!matchOrNot) {
-    errors = ["Invalid email/password"];
-    return res.render("login", { errors });
-  }
-
-  //Logging in
+function issueLoginToken(req, res, userInQuestion, { redirectTo = "/" } = {}) {
+  const sid = rolesSystem.createAuthSession(db, userInQuestion.id, req);
   const ourTokenValue = jwt.sign(
     {
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
@@ -3970,18 +4050,71 @@ app.post("/login", (req, res) => {
       staff: userInQuestion.staff,
       parent: userInQuestion.parent,
       fan: userInQuestion.fan || 0,
+      sid,
     },
     process.env.JWTSECRET
-  ); //Creating a token for logging in
-
-  res.cookie("bgcookie", ourTokenValue, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24,
+  );
+  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
+  rolesSystem.recordLogin(db, {
+    userId: userInQuestion.id,
+    email: userInQuestion.email,
+    success: true,
+    req,
   });
+  return res.redirect(redirectTo);
+}
 
-  return res.redirect("/");
+app.post("/login", async (req, res) => {
+  errors = [];
+
+  const email = req.body.email.trim().toLowerCase();
+  const password = req.body.password;
+
+  const getUserStatement = db.prepare("SELECT * FROM users WHERE email = ?");
+  const userInQuestion = getUserStatement.get(email);
+
+  if (!userInQuestion) {
+    rolesSystem.recordLogin(db, { email, success: false, req });
+    errors.push("Invalid email/password");
+    return res.render("login", { errors });
+  }
+
+  if (userInQuestion.deactivated_at) {
+    rolesSystem.recordLogin(db, { userId: userInQuestion.id, email, success: false, req });
+    errors = ["This account has been deactivated. Contact an administrator."];
+    return res.render("login", { errors });
+  }
+
+  const matchOrNot = bcrypt.compareSync(
+    req.body.password,
+    userInQuestion.password
+  );
+  if (!matchOrNot) {
+    rolesSystem.recordLogin(db, { userId: userInQuestion.id, email, success: false, req });
+    errors = ["Invalid email/password"];
+    return res.render("login", { errors });
+  }
+
+  if (rolesSystem.userRequiresMfa(db, userInQuestion)) {
+    const bypassMfa =
+      String(process.env.E2E_BYPASS_MFA || "").trim().toLowerCase() === "true";
+    if (!bypassMfa) {
+      const code = rolesSystem.createMfaCode(db, userInQuestion.id);
+      req.session.pendingMfaUserId = userInQuestion.id;
+      try {
+        await sendEmail(
+          userInQuestion.email,
+          "Boise Gems login verification code",
+          `<h1>Your verification code</h1><p style="font-size:28px;letter-spacing:0.2em;font-weight:bold;">${code}</p><p>This code expires in 10 minutes. If you did not try to sign in, contact an administrator.</p>`
+        );
+      } catch (err) {
+        console.error("MFA email failed:", err);
+      }
+      return res.redirect("/login/mfa");
+    }
+  }
+
+  return issueLoginToken(req, res, userInQuestion);
 });
 
 
@@ -4022,6 +4155,41 @@ app.post("/change-account-type/:id", mustBeAdmin, (req,res) => {
 
   const updateStatement = db.prepare("UPDATE users SET parent = ?, admin = ?, staff = ? WHERE id = ?")
   updateStatement.run(parent,admin,staff, userId);
+
+  // Assign default organizational role when promoting to admin/staff
+  const now = Date.now();
+  if (admin) {
+    const role = db.prepare("SELECT id FROM roles WHERE slug = 'super-administrator'").get();
+    if (role) {
+      const exists = db.prepare("SELECT id FROM user_role_assignments WHERE user_id = ? AND role_id = ? AND active = 1").get(userId, role.id);
+      if (!exists) {
+        db.prepare(`
+          INSERT INTO user_role_assignments
+            (user_id, role_id, program, season_year, department, assignment_label, starts_at, ends_at, active, created_at)
+          VALUES (?, ?, NULL, NULL, NULL, 'account-type', ?, NULL, 1, ?)
+        `).run(userId, role.id, now, now);
+      }
+    }
+  } else if (staff) {
+    const role = db.prepare("SELECT id FROM roles WHERE slug = 'instructional-staff-corps'").get()
+      || db.prepare("SELECT id FROM roles WHERE slug = 'instructional-staff'").get();
+    if (role) {
+      const exists = db.prepare("SELECT id FROM user_role_assignments WHERE user_id = ? AND active = 1 LIMIT 1").get(userId);
+      if (!exists) {
+        db.prepare(`
+          INSERT INTO user_role_assignments
+            (user_id, role_id, program, season_year, department, assignment_label, starts_at, ends_at, active, created_at)
+          VALUES (?, ?, 'corps', NULL, NULL, 'account-type', ?, NULL, 1, ?)
+        `).run(userId, role.id, now, now);
+      }
+    }
+  }
+
+  rolesSystem.writeAudit(db, req, "permission_change", {
+    targetType: "user",
+    targetId: String(userId),
+    meta: { action: "change-account-type", type: change },
+  });
 
   req.session.flashMessage = `${thisUser.firstname} has been changed to ${change}.`
   return res.redirect("/edit-users")
@@ -4220,11 +4388,42 @@ app.post("/change-membership/:id", mustBeAdmin, (req,res) => {
   if(changeAffiliate == "contracted")
     contractedAffiliate = 1
 
-  const updateStatement = db.prepare("UPDATE users SET contractedCorps = ?, contractedIndependent = ?, contractedAffiliate = ? WHERE id = ?")
-  updateStatement.run(contractedCorps, contractedIndependent, contractedAffiliate, userId)
-  
+  const defaultEnds = rolesSystem.getDefaultContractEndsAt(db);
+  const parseEnd = (val, contracted) => {
+    if (!contracted) return null;
+    if (val && String(val).trim()) {
+      const ms = Date.parse(String(val).trim() + "T23:59:59.999Z");
+      return Number.isFinite(ms) ? ms : defaultEnds;
+    }
+    return defaultEnds;
+  };
 
-  req.session.flashMessage = `${thisUser.firstname} has been changed to contracted for corps is ${changeCorps}, for Independent is ${changeIndependent}, and for Affiliate is ${changeAffiliate}`
+  const corpsEnds = parseEnd(req.body.corps_ends_at, contractedCorps);
+  const indEnds = parseEnd(req.body.independent_ends_at, contractedIndependent);
+  const affEnds = parseEnd(req.body.affiliate_ends_at, contractedAffiliate);
+
+  const updateStatement = db.prepare(`
+    UPDATE users SET
+      contractedCorps = ?, contractedIndependent = ?, contractedAffiliate = ?,
+      corps_contract_ends_at = ?, independent_contract_ends_at = ?, affiliate_contract_ends_at = ?
+    WHERE id = ?
+  `)
+  updateStatement.run(
+    contractedCorps, contractedIndependent, contractedAffiliate,
+    corpsEnds, indEnds, affEnds,
+    userId
+  )
+
+  rolesSystem.writeAudit(db, req, "contract_change", {
+    targetType: "user",
+    targetId: String(userId),
+    meta: {
+      contractedCorps, contractedIndependent, contractedAffiliate,
+      corpsEnds, indEnds, affEnds,
+    },
+  });
+
+  req.session.flashMessage = `${thisUser.firstname} membership updated (corps: ${changeCorps}, independent: ${changeIndependent}, affiliate: ${changeAffiliate}).`
 
 
   return res.redirect("/edit-users")
@@ -4295,7 +4494,7 @@ app.get("/accept-contract/:id", mustBeLoggedIn, ensureActiveContractExtension, (
 
   return res.render("accept-contract", {
     group: groupLabel,
-    season: CURRENTSEASON,
+    season: getCurrentSeasonYear(),
     contractExtension,
     bypass: contractExtension.bypass_fee,
     depositLabel,
@@ -4336,7 +4535,7 @@ app.get("/sign-contract/:id", mustBeLoggedIn, (req,res) => {
 
   return res.render("sign-contract", {
     group,
-    season: CURRENTSEASON,
+    season: getCurrentSeasonYear(),
     contractExtension,
     contractPdfPath: contractPdf ? contractPdf.pdf_path : null,
     contractFields,
@@ -4453,24 +4652,12 @@ app.post(
     // If bypass fee or user selected cash, skip Stripe but still mark contracted + store contract file
     const payWithCash = contractExtension.bypass_fee || req.body.pay_with_cash === 'on' || req.body.check === 'on';
     if (payWithCash) {
-      if (ensemble === "corps") {
-        db.prepare(
-          "UPDATE users SET contractedCorps = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
-        ).run(tuition.amount, memberId);
-      } else if (ensemble === "affiliate") {
-        db.prepare(
-          "UPDATE users SET contractedAffiliate = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
-        ).run(tuition.amount, memberId);
-      } else {
-        db.prepare(
-          "UPDATE users SET contractedIndependent = 1, owed = COALESCE(owed,0) + ? WHERE id = ?"
-        ).run(tuition.amount, memberId);
-      }
+      const endsAt = markUserContracted(memberId, ensemble, tuition.amount);
 
       db.prepare(
         `
-        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod, field_values_json, signers_log_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod, field_values_json, signers_log_json, ends_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         contractExtension.season,
@@ -4480,7 +4667,8 @@ app.post(
         contractFilePath,
         'cash',
         fieldValuesJson,
-        signersLogJson
+        signersLogJson,
+        endsAt
       );
 
       // Remove temporary contractExtension entry
@@ -4501,9 +4689,9 @@ app.post(
             <p>
               Your parent/guardian has signed your contract for the
               ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : (ensemble === "affiliate" ? "Boise Gems Affiliate" : "Boise Gems Independent")}
-              for the ${CURRENTSEASON} season.
+              for the ${getCurrentSeasonYear()} season.
             </p>
-            <p>Weâ€™re excited to have you with us!</p>
+            <p>We're excited to have you with us!</p>
           `;
           sendEmail(
             childRow.email,
@@ -4578,6 +4766,13 @@ app.post(
       return res.redirect(303, sessionObj.url);
     } catch (err) {
       console.error("Stripe session error:", err);
+      opsSystem.logFailedPayment(db, {
+        message: "Failed to create Stripe checkout for contract down payment",
+        detail: err,
+        req,
+        statusCode: 502,
+      });
+      opsSystem.markLogged(res, err);
       req.session.flashMessage =
         "There was an error starting the payment. Please try again, or contact staff.";
       return res.redirect(`/sign-contract/${contractExtension.id}`);
@@ -4631,19 +4826,10 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   const user = getUser.get(memberId);
   if (!user) return res.redirect("/");
 
-  // Set contracted flags
-  let updateFields = "";
-  if (ensemble === "corps") updateFields = "contractedCorps = 1";
-  else if (ensemble === "affiliate") updateFields = "contractedAffiliate = 1";
-  else updateFields = "contractedIndependent = 1";
-
-  // Add tuition amount to owed
-  const newOwed = (user.owed || 0) + tuition.amount;
-
-  const updateUser = db.prepare(
-    `UPDATE users SET ${updateFields}, owed = ? WHERE id = ?`
-  );
-  updateUser.run(newOwed, user.id);
+  // Set contracted flags + end date, add tuition to owed
+  const endsAt = markUserContracted(memberId, ensemble, tuition.amount);
+  const userAfter = db.prepare("SELECT * FROM users WHERE id = ?").get(memberId);
+  const newOwed = userAfter ? userAfter.owed : (user.owed || 0) + tuition.amount;
 
   // Deduct down payment based on DB deposit_amount
   let downPayment = Number(tuition.deposit_amount || 0);
@@ -4690,8 +4876,8 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   // Insert contractedMembers row (with stored contract file path)
   db.prepare(
     `
-    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod, field_values_json, signers_log_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO contractedMembers (season, ensemble, contracted_date, user_id, signedContractPath, paymentMethod, field_values_json, signers_log_json, ends_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     contractExtension.season,
@@ -4701,7 +4887,8 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     potential.contract_file_path || null,
     'stripe',
     contractExtension.field_values_json || null,
-    contractExtension.signers_log_json || null
+    contractExtension.signers_log_json || null,
+    endsAt
   );
 
   // Delete potential payment to prevent reuse
@@ -4725,9 +4912,9 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
         <p>
           Your parent/guardian has signed your contract for the
           ${ensemble === "corps" ? "Boise Gems Drum & Bugle Corps" : "Boise Gems Independent"}
-          for the ${CURRENTSEASON} season.
+          for the ${getCurrentSeasonYear()} season.
         </p>
-        <p>Weâ€™re excited to have you with us!</p>
+        <p>We're excited to have you with us!</p>
       `;
       sendEmail(
         childRow.email,
@@ -4809,7 +4996,7 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
 
 
 
-  const seasonString = String(CURRENTSEASON) + group; // e.g. "2026corps"
+  const seasonString = String(getCurrentSeasonYear()) + group; // e.g. "2026corps"
 
   // If a non-admin staff member triggers this, queue it as a pending
   // contract extension for admin review instead of sending immediately.
@@ -4834,7 +5021,7 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
       return res.redirect(req.get("Referer") || "/member-portal");
     }
 
-    // No existing pending â†’ create a new pending contract extension
+    // No existing pending -> create a new pending contract extension
     db.prepare(
       `
       INSERT INTO pendingContractExtension
@@ -4923,8 +5110,8 @@ app.post("/extend-contract/:id", mustBeStaff, (req, res) => {
     <p>
       ${
         childId
-          ? `${thisUser.firstname} ${thisUser.lastname} has been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
-          : `You've been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+          ? `${thisUser.firstname} ${thisUser.lastname} has been offered a contract with ${welcomeMessage} for the ${getCurrentSeasonYear()} season.`
+          : `You've been offered a contract with ${welcomeMessage} for the ${getCurrentSeasonYear()} season.`
       }
     </p>
     <p>
@@ -5049,7 +5236,7 @@ app.post("/admin/pending-contracts/:id/approve", mustBeAdmin, (req, res) => {
   const group = pending.group_type; // "corps" or "independent"
   const bypass = pending.bypass_fee ? 1 : 0;
   const seasonString =
-    pending.season || String(CURRENTSEASON) + String(group || "");
+    pending.season || String(getCurrentSeasonYear()) + String(group || "");
 
   // Ensure only one extension for this member/season
   const oldContractArray = db
@@ -5108,8 +5295,8 @@ app.post("/admin/pending-contracts/:id/approve", mustBeAdmin, (req, res) => {
     <p>
       ${
         childId
-          ? `${member.firstname} ${member.lastname} has been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
-          : `You've been offered a contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
+          ? `${member.firstname} ${member.lastname} has been offered a contract with ${welcomeMessage} for the ${getCurrentSeasonYear()} season.`
+          : `You've been offered a contract with ${welcomeMessage} for the ${getCurrentSeasonYear()} season.`
       }
     </p>
     <p>
@@ -5259,8 +5446,8 @@ app.post("/admin/contract-extensions/resend", mustBeAdmin, (req, res) => {
       <p>Hello ${emailName},</p>
       <p>
         ${ext.child_id
-          ? `${memberName} has a pending contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`
-          : `You have a pending contract with ${welcomeMessage} for the ${CURRENTSEASON} season.`}
+          ? `${memberName} has a pending contract with ${welcomeMessage} for the ${getCurrentSeasonYear()} season.`
+          : `You have a pending contract with ${welcomeMessage} for the ${getCurrentSeasonYear()} season.`}
       </p>
       <p>Your previous contract link has been refreshed. Please log in to your account to review and sign it.</p>
       <div style="text-align:center; margin-top:16px;">
@@ -5441,7 +5628,7 @@ app.post("/change-email/:id", mustBeAdmin, (req,res) => {
   return res.redirect("/edit-users")
 })
 
-app.get("/pay-history", mustBeAdmin, (req, res) => {
+app.get("/pay-history", mustBeStaffOrAdmin, requirePermission("view_financial"), (req, res) => {
   const search = String(req.query.search || "").trim();
   let payments;
 
@@ -6061,7 +6248,7 @@ app.get("/parent-portal", mustBeParent, (req, res) => {
 
 
 
-app.get("/add-transaction/:id", mustBeAdmin, (req,res) => {
+app.get("/add-transaction/:id", mustBeStaffOrAdmin, requirePermission("edit_financial"), (req,res) => {
   const getUserStatement = db.prepare("SELECT * FROM users WHERE id = ?")
   const thisUser = getUserStatement.get(req.params.id)
 
@@ -6073,7 +6260,8 @@ app.get("/add-transaction/:id", mustBeAdmin, (req,res) => {
   return res.render("add-transaction", {thisUser})
 })
 
-app.post("/add-transaction/:id", mustBeAdmin, (req,res) => {
+app.post("/add-transaction/:id", mustBeStaffOrAdmin, requirePermission("edit_financial"), (req,res) => {
+  rolesSystem.writeAudit(db, req, "financial_change", { targetType: "user", targetId: String(req.params.id), meta: { route: "add-transaction" } });
   const getChildStatement = db.prepare("SELECT * FROM users WHERE id = ?")
   const child = getChildStatement.get(req.params.id);
 
@@ -6572,7 +6760,7 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
 
     // Current season only (handles "2026corps"/"2026independent" strings)
     where.push("CAST(SUBSTR(ce.season, 1, 4) AS INTEGER) = ?");
-    params.push(CURRENTSEASON);
+    params.push(getCurrentSeasonYear());
 
     // Filter by corps vs independent vs affiliate extension
     if (extensionMode === "corps") {
@@ -6653,7 +6841,7 @@ app.post("/email-members/preview", mustBeAdmin, (req, res) => {
       }));
   }
 
-  // âœ… Preview just returns the list; no email sent here
+  // âœ... Preview just returns the list; no email sent here
   return res.json({ ok: true, recipients });
 });
 
@@ -6700,7 +6888,7 @@ app.post("/email-members", mustBeAdmin, (req, res) => {
     const params = [now];
 
     where.push("CAST(SUBSTR(ce.season, 1, 4) AS INTEGER) = ?");
-    params.push(CURRENTSEASON);
+    params.push(getCurrentSeasonYear());
 
     if (extensionMode === "corps") {
       where.push("LOWER(ce.season) LIKE ?");
@@ -6847,11 +7035,18 @@ app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
     })
     .catch((err) => {
       console.error("Stripe session error:", err);
+      opsSystem.logFailedPayment(db, {
+        message: "Failed to create Stripe checkout for parent pay-behalf",
+        detail: err,
+        req,
+        statusCode: 502,
+      });
+      opsSystem.markLogged(res, err);
       res.redirect("/parent-portal");
     });
 });
 
-// Success route â€” finalize payment
+// Success route - finalize payment
 app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
   const getPotential = db.prepare(
     "SELECT * FROM potential_payment WHERE id = ? AND parent_id = ?"
@@ -6986,12 +7181,19 @@ app.post("/make-payment", mustBeLoggedIn, (req, res) => {
     })
     .catch((err) => {
       console.error("Stripe session error:", err);
+      opsSystem.logFailedPayment(db, {
+        message: "Failed to create Stripe checkout for member make-payment",
+        detail: err,
+        req,
+        statusCode: 502,
+      });
+      opsSystem.markLogged(res, err);
       res.redirect("/dashboard");
     });
 });
 
 
-// Success route â€” finalize payment for the user
+// Success route - finalize payment for the user
 app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
   const getPotential = db.prepare(
     "SELECT * FROM potential_payment WHERE id = ? AND user_id = ?"
@@ -7112,7 +7314,7 @@ app.get("/donate", (req, res) => {
   return res.render("donate", { donorNames, fanType });
 });
 
-/** Donor contact for donation checkout — logged-in user or guest form fields. */
+/** Donor contact for donation checkout - logged-in user or guest form fields. */
 function resolveDonorContact(req) {
   if (req.user) {
     const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
@@ -7544,6 +7746,13 @@ app.post("/donate", async (req, res) => {
     return res.redirect(303, session.url);
   } catch (err) {
     console.error("Donate route error:", err);
+    opsSystem.logFailedPayment(db, {
+      message: "Failed to create Stripe session for donation",
+      detail: err,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, err);
     return res.status(500).send("Failed to create Stripe session");
   }
 });
@@ -7656,7 +7865,7 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     const totalString = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(potential.total_charge / 100);
 
     const title = `Donation by ${potential.name}`;
-    const description = `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "â€”"}`;
+    const description = `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "-"}`;
 
     const insertHistory = db.prepare(
       "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
@@ -7664,7 +7873,7 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     // user_id NULL because donor may not be a member
     insertHistory.run(title, description, potential.total_charge, "Stripe", Date.now(), null);
 
-    addChrisShare(potential.total_charge, `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "â€”"}`);
+    addChrisShare(potential.total_charge, `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "-"}`);
 
     // delete potential_donation row (prevent reuse)
     const deletePotential = db.prepare("DELETE FROM potential_donation WHERE id = ?");
@@ -7686,13 +7895,20 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     `;
 
     // sendEmail function expected to exist
-    sendEmail(potential.email, "Thank you for your donation â€” Boise Gems", emailBody);
-    sendEmail(MasterEmail, "Donation Received", `Donation received: ${title} â€” ${totalString}`);
+    sendEmail(potential.email, "Thank you for your donation - Boise Gems", emailBody);
+    sendEmail(MasterEmail, "Donation Received", `Donation received: ${title} - ${totalString}`);
 
     // redirect donor to a thank-you page
     return res.redirect("/donate/thank-you");
   } catch (err) {
     console.error("Donation success handler error:", err);
+    opsSystem.logFailedPayment(db, {
+      message: "Failed to finalize donation after Stripe checkout",
+      detail: err,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, err);
     return res.status(500).send("Failed to finalize donation");
   }
 });
@@ -7758,6 +7974,13 @@ app.post("/donate/feed-the-corps", async (req, res) => {
     return res.redirect(303, session.url);
   } catch (err) {
     console.error("Feed the corps donate error:", err);
+    opsSystem.logFailedPayment(db, {
+      message: "Failed to create Stripe session for Feed the Corps",
+      detail: err,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, err);
     return res.status(500).send("Failed to create Stripe session");
   }
 });
@@ -7830,6 +8053,13 @@ app.post("/donate/onetime", async (req, res) => {
     return res.redirect(303, session.url);
   } catch (err) {
     console.error("One-time donate error:", err);
+    opsSystem.logFailedPayment(db, {
+      message: "Failed to create Stripe session for one-time donation",
+      detail: err,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, err);
     return res.status(500).send("Failed to create Stripe session");
   }
 });
@@ -7914,6 +8144,13 @@ app.post("/donate/subscribe", async (req, res) => {
     return res.redirect(303, session.url);
   } catch (err) {
     console.error("Subscription error:", err);
+    opsSystem.logFailedPayment(db, {
+      message: "Failed to create Stripe subscription checkout",
+      detail: err,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, err);
     return res.status(500).send("Failed to create subscription");
   }
 });
@@ -8075,7 +8312,7 @@ app.post("/change-address", mustBeLoggedInAny, (req, res) => {
 });
 
 
-// Admin â€” view all contracted members and balances
+// Admin - view all contracted members and balances
 app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
   const rows = db.prepare(
      `SELECT 
@@ -8096,7 +8333,88 @@ app.get('/admin/contracted-members', mustBeAdmin, (req, res) => {
   return res.render('admin-contracted-members', { members: rows });
 });
 
-// Admin â€” view expired contract extensions
+// Admin - signed contracts from all seasons (history)
+app.get('/admin/contract-history', mustBeAdmin, (req, res) => {
+  const currentSeason = getCurrentSeasonYear();
+  const yearRaw = String(req.query.year || '').trim();
+  const ensembleRaw = String(req.query.ensemble || '').trim().toLowerCase();
+  const q = String(req.query.q || '').trim().toLowerCase();
+
+  const years = db.prepare(`
+    SELECT DISTINCT CAST(SUBSTR(CAST(season AS TEXT), 1, 4) AS INTEGER) AS y
+    FROM contractedMembers
+    WHERE season IS NOT NULL AND LENGTH(CAST(season AS TEXT)) >= 4
+    ORDER BY y DESC
+  `).all()
+    .map((r) => Number(r.y))
+    .filter((y) => Number.isFinite(y) && y > 0);
+
+  let selectedYear = parseInt(yearRaw, 10);
+  if (!Number.isFinite(selectedYear) || selectedYear <= 0) {
+    // Default: most recent past year if any, else current season, else all
+    const past = years.find((y) => y < currentSeason);
+    selectedYear = past || years[0] || currentSeason;
+  }
+
+  const ensemble =
+    ['corps', 'independent', 'affiliate'].includes(ensembleRaw) ? ensembleRaw : '';
+
+  const clauses = [
+    'CAST(SUBSTR(CAST(cm.season AS TEXT), 1, 4) AS INTEGER) = ?',
+  ];
+  const params = [selectedYear];
+
+  if (ensemble) {
+    clauses.push(`(
+      LOWER(COALESCE(cm.ensemble, '')) = ?
+      OR LOWER(CAST(cm.season AS TEXT)) LIKE ?
+    )`);
+    params.push(ensemble, `%${ensemble}%`);
+  }
+
+  if (q) {
+    clauses.push(`(
+      LOWER(u.firstname || ' ' || u.lastname) LIKE ?
+      OR LOWER(COALESCE(u.email, '')) LIKE ?
+      OR LOWER(COALESCE(u.phone, '')) LIKE ?
+    )`);
+    const like = `%${q}%`;
+    params.push(like, like, like);
+  }
+
+  const contracts = db.prepare(`
+    SELECT
+      cm.id AS contract_id,
+      cm.season,
+      cm.ensemble,
+      cm.contracted_date,
+      cm.paymentMethod,
+      cm.signedContractPath,
+      cm.ends_at,
+      CAST(SUBSTR(CAST(cm.season AS TEXT), 1, 4) AS INTEGER) AS season_year,
+      u.id AS user_id,
+      u.firstname,
+      u.lastname,
+      u.email,
+      u.phone,
+      u.section
+    FROM contractedMembers cm
+    JOIN users u ON u.id = cm.user_id
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY cm.contracted_date DESC, u.lastname COLLATE NOCASE, u.firstname COLLATE NOCASE
+  `).all(...params);
+
+  return res.render('admin-contract-history', {
+    contracts,
+    years,
+    selectedYear,
+    ensemble,
+    q: req.query.q || '',
+    currentSeason,
+  });
+});
+
+// Admin - view expired contract extensions
 app.get('/admin/expired-contracts', mustBeAdmin, (req, res) => {
   const now = Date.now();
   const rows = db.prepare(
@@ -8112,7 +8430,7 @@ app.get('/admin/expired-contracts', mustBeAdmin, (req, res) => {
   return res.render('admin-expired-contracts', { extensions: rows });
 });
 
-// Admin â€” delete a contract extension
+// Admin - delete a contract extension
 app.post('/admin/contract-extension/:id/delete', mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
   db.prepare('DELETE FROM contractExtension WHERE id = ?').run(id);
@@ -8183,6 +8501,11 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
   const linkRequests = parentLinks.getIncomingRequests(db, req.user.userid);
   const linkedParents = parentLinks.getParentsForChild(db, req.user.userid);
   const digitalGrants = merchSystem.getDigitalGrantsForUser(db, req.user.userid);
+  const videoAuditionActions = videoAuditionSystem.getPortalAuditionActions(
+    db,
+    member,
+    getCurrentSeasonYear()
+  );
   return res.render("member-portal", {
     member,
     contracts,
@@ -8192,6 +8515,7 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
     linkRequests,
     linkedParents,
     digitalGrants,
+    videoAuditionActions,
     previewMode: true
   });
 })
@@ -8271,7 +8595,7 @@ app.post(
 );
 
 
-app.get('/edit-event/:id', (req, res) => {
+app.get('/edit-event/:id', mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
   if (!event) return res.status(404).send('Event not found');
@@ -8291,7 +8615,7 @@ app.get('/edit-event/:id', (req, res) => {
   res.render('edit-event', { event });
 });
 
-app.post('/events/:id/edit', imageUpload.single('image'), processImageJpgOptional, (req, res) => {
+app.post('/events/:id/edit', mustBeAdmin, imageUpload.single('image'), processImageJpgOptional, (req, res) => {
   const id = Number(req.params.id);
   const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
   if (!existing) return res.status(404).send('Event not found');
@@ -8403,7 +8727,7 @@ app.get("/event/:slug", (req, res) => {
     rsvps,
     reservedSelf,
     meta: {
-      title: `${event.title} â€” Boise Gems`,
+      title: `${event.title} - Boise Gems`,
       description: desc,
       url,
       image: img
@@ -8698,7 +9022,7 @@ function stripHtml(s = "") {
 }
 function excerpt(s, n = 160) {
   const t = stripHtml(s);
-  return t.length > n ? t.slice(0, n - 1) + "â€¦" : t;
+  return t.length > n ? t.slice(0, n - 1) + "..." : t;
 }
 
 // PUBLIC: list
@@ -8894,7 +9218,7 @@ app.get("/news/:slug", (req, res) => {
   res.render("news-detail", {
     post,
     meta: {
-      title: `${post.title} â€” Boise Gems`,
+      title: `${post.title} - Boise Gems`,
       description: desc,
       url,
       image: img
@@ -8902,7 +9226,8 @@ app.get("/news/:slug", (req, res) => {
   });
 });
 
-app.get("/view-emergency/:id", mustBeAdmin, (req,res) => {
+app.get("/view-emergency/:id", mustBeStaffOrAdmin, requirePermission("view_medical"), (req,res) => {
+  rolesSystem.writeAudit(db, req, "medical_access", { targetType: "user", targetId: String(req.params.id), meta: { route: "view-emergency" } });
   const thisUser = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id)
 
   if(!thisUser)
@@ -9246,7 +9571,8 @@ app.get("/contracts-admin/export-contracts.csv", mustBeAdmin, (req, res) => {
   return res.send(csv);
 });
 
-app.get("/contracts-admin/export-emergency.csv", mustBeAdmin, (req, res) => {
+app.get("/contracts-admin/export-emergency.csv", mustBeStaffOrAdmin, requirePermission("view_medical"), (req, res) => {
+  rolesSystem.writeAudit(db, req, "medical_access", { targetType: "export", targetId: "emergency" });
   const users = db.prepare(`
     SELECT id, firstname, lastname, birthday, phone, email
     FROM users
@@ -9404,7 +9730,8 @@ app.post("/admin/export-member-info/csv", mustBeAdmin, (req, res) => {
   return res.send(csv);
 });
 
-app.get("/admin/export-allergies.csv", mustBeAdmin, (req, res) => {
+app.get("/admin/export-allergies.csv", mustBeStaffOrAdmin, requirePermission("view_medical"), (req, res) => {
+  rolesSystem.writeAudit(db, req, "medical_access", { targetType: "export", targetId: "allergies" });
   const rows = db.prepare(`
     SELECT
       u.firstname,
@@ -9722,7 +10049,7 @@ app.post("/admin-rsvps/:eventId/email/:userId", mustBeAdmin, async (req, res) =>
     <p>You can finish your RSVP and payment here:</p>
     <p><a href="${eventUrl}">${eventUrl}</a></p>
     <p>If you believe you've already paid, you can ignore this email or contact us so we can double-check.</p>
-    <p>â€“ Boise Gems</p>
+    <p>- Boise Gems</p>
   `;
 
   try {
@@ -10001,7 +10328,7 @@ app.get("/staff/:slug", (req, res) => {
   });
 });
 
-// GET /whistleblower (public — anyone can access, including logged-out users)
+// GET /whistleblower (public - anyone can access, including logged-out users)
 app.get("/whistleblower", (req, res) => {
   return res.render("whistleblower");
 });
@@ -10051,7 +10378,7 @@ app.post("/whistleblower", async (req, res) => {
       <p><small>User-Agent: ${ua}</small></p>
     `;
 
-    await sendEmail(MasterEmail, "Whistleblower Report â€” Boise Gems", html);
+    await sendEmail(MasterEmail, "Whistleblower Report - Boise Gems", html);
 
     return res.render("message", {
       message: "Thank you. Your whistleblower report has been submitted and will be investigated."
@@ -10157,6 +10484,9 @@ function buildVisibilityFlags(audience) {
 
 function canUserSeeFileItem(userRow, fileRow) {
   if (!userRow) return false;
+  if (fileRow.sensitive) {
+    return rolesSystem.hasPermission(db, userRow.id, "download_sensitive_files");
+  }
   if (userRow.admin || userRow.staff) return true;
   if (fileRow.allow_noncontracted) return true;
   if (fileRow.allow_corps && userRow.contractedCorps) return true;
@@ -10170,8 +10500,6 @@ function wantsJson(req) {
 }
 
 // Files home - choose Corps vs Independent (current season)
-const FILES_MEMBER_YEAR = 2027;
-
 app.get("/files", mustBeContractedForFiles, (req, res) => {
   const u = db.prepare(`
     SELECT contractedCorps, contractedIndependent, contractedAffiliate
@@ -10181,7 +10509,7 @@ app.get("/files", mustBeContractedForFiles, (req, res) => {
   res.render("files-root", {
     showCorps: isStaff || !!(u && (u.contractedCorps || u.contractedAffiliate)),
     showIndependent: isStaff || !!(u && u.contractedIndependent),
-    filesYear: FILES_MEMBER_YEAR,
+    filesYear: getCurrentSeasonYear(),
   });
 });
 
@@ -10217,7 +10545,10 @@ app.get("/files/folder/:id", mustBeContractedForFiles, (req, res) => {
   const canManage = !!(req.admin || req.staff);
 
   const files = rawFiles
-    .filter((f) => canManage || canUserSeeFileItem(userRow, f))
+    .filter((f) => {
+      if (f.sensitive) return canUserSeeFileItem(userRow, f);
+      return canManage || canUserSeeFileItem(userRow, f);
+    })
     .map((f) => ({
       ...f,
       title: stripFileExtension(f.title),
@@ -10292,7 +10623,10 @@ app.get("/files/folder/:id/search", mustBeContractedForFiles, (req, res) => {
   `).all(...ids, `%${q}%`, `%${q}%`);
 
   const files = rawFiles
-    .filter((f) => canManage || canUserSeeFileItem(userRow, f))
+    .filter((f) => {
+      if (f.sensitive) return canUserSeeFileItem(userRow, f);
+      return canManage || canUserSeeFileItem(userRow, f);
+    })
     .map((f) => ({
       id: f.id,
       title: stripFileExtension(f.title),
@@ -10393,9 +10727,10 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
       folder_id, uploader_id, title, original_name, stored_path,
       mime_type, size,
       allow_corps, allow_independent, allow_affiliate, allow_noncontracted,
+      sensitive,
       created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const created = [];
@@ -10422,6 +10757,8 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
       }
     }
 
+    const sensitive = req.body.sensitive === "on" || req.body.sensitive === "1" ? 1 : 0;
+
     const info = insertFile.run(
       folder.id,
       req.user.userid,
@@ -10434,6 +10771,7 @@ app.post("/files/folder/:id/upload", mustBeStaffOrAdmin, filesUpload.array("file
       allow_independent,
       allow_affiliate,
       allow_noncontracted,
+      sensitive,
       now
     );
     created.push({
@@ -10619,7 +10957,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
 
     let sentCount = 0;
 
-    // âœ… Send separate emails (NOT joined together)
+    // âœ... Send separate emails (NOT joined together)
     for (const r of rows) {
       if (!r.email) continue;
       const fullName = `${r.firstname || ""} ${r.lastname || ""}`.trim() || "there";
@@ -10689,8 +11027,10 @@ app.get("/files/:scope/:year", mustBeContractedForFiles, (req, res) => {
 });
 
 app.get("/admin/season-roster", mustBeStaffOrAdmin, (req, res) => {
-  const seasonKey = String(req.query.season || "2026-corps");
-  const activeSeason = seasonRosterSystem.getSeasonByKey(seasonKey);
+  const year = getCurrentSeasonYear();
+  const seasons = seasonRosterSystem.getRosterSeasons(year);
+  const seasonKey = String(req.query.season || seasons[0].key);
+  const activeSeason = seasonRosterSystem.getSeasonByKey(seasonKey, year);
   const { bySection } = seasonRosterSystem.listRosterForSeason(db, activeSeason.key);
   const allOnRoster = Object.values(bySection).flat().map((e) => e.userId);
   const eligibleBySection = {};
@@ -10699,7 +11039,7 @@ app.get("/admin/season-roster", mustBeStaffOrAdmin, (req, res) => {
   });
   const backUrl = req.admin ? "/admin-portal?section=members" : "/member-portal?section=staff";
   res.render("admin-season-roster", {
-    seasons: seasonRosterSystem.ROSTER_SEASONS,
+    seasons,
     activeSeason,
     sections: seasonRosterSystem.ROSTER_SECTIONS,
     rosterBySection: bySection,
@@ -10815,7 +11155,7 @@ app.post("/admin/callbacks", mustBeStaffOrAdmin, async (req, res) => {
       const html = `
         <p>Hi ${fullName},</p>
         <p>${messageHtml}</p>
-        <p>â€” Boise Gems Staff</p>
+        <p>- Boise Gems Staff</p>
       `;
 
       await sendEmail(r.email, subject, html);
@@ -10875,12 +11215,23 @@ function mobileAuth(req, res, next) {
   if (!token) return res.status(401).json({ ok: false, message: "Unauthorized" });
   try {
     req.user      = jwt.verify(token, process.env.JWTSECRET);
-    req.admin     = req.user.admin;
-    req.director  = req.user.director || 0;
-    req.staff     = req.user.staff;
-    req.parent    = req.user.parent;
-    req.volunteer = req.user.volunteer || 0;
-    req.fan       = req.user.fan || 0;
+    const live = db.prepare("SELECT deactivated_at, admin, staff, parent, fan, director, volunteer FROM users WHERE id = ?").get(req.user.userid);
+    if (!live || live.deactivated_at) {
+      return res.status(401).json({ ok: false, message: "Account deactivated" });
+    }
+    if (req.user.sid && !rolesSystem.isSessionActive(db, req.user.sid, req.user.userid)) {
+      return res.status(401).json({ ok: false, message: "Session revoked" });
+    }
+    req.user.admin = live.admin;
+    req.user.staff = live.staff;
+    req.user.parent = live.parent;
+    req.user.fan = live.fan || 0;
+    req.admin     = live.admin;
+    req.director  = live.director || 0;
+    req.staff     = live.staff;
+    req.parent    = live.parent;
+    req.volunteer = live.volunteer || 0;
+    req.fan       = live.fan || 0;
     next();
   } catch {
     return res.status(401).json({ ok: false, message: "Invalid or expired token" });
@@ -10973,18 +11324,51 @@ function serializeUser(u) {
 }
 
 // POST /api/mobile/login
-app.post("/api/mobile/login", (req, res) => {
+app.post("/api/mobile/login", async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
     if (!email || !password) return res.status(400).json({ ok: false, message: "Email and password required" });
 
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
-    if (!user) return res.status(401).json({ ok: false, message: "Invalid email or password" });
+    if (!user) {
+      rolesSystem.recordLogin(db, { email, success: false, req });
+      return res.status(401).json({ ok: false, message: "Invalid email or password" });
+    }
+    if (user.deactivated_at) {
+      rolesSystem.recordLogin(db, { userId: user.id, email, success: false, req });
+      return res.status(403).json({ ok: false, message: "Account deactivated" });
+    }
 
     const match = bcrypt.compareSync(password, user.password);
-    if (!match) return res.status(401).json({ ok: false, message: "Invalid email or password" });
+    if (!match) {
+      rolesSystem.recordLogin(db, { userId: user.id, email, success: false, req });
+      return res.status(401).json({ ok: false, message: "Invalid email or password" });
+    }
 
+    if (rolesSystem.userRequiresMfa(db, user)) {
+      const bypassMfa =
+        String(process.env.E2E_BYPASS_MFA || "").trim().toLowerCase() === "true";
+      if (!bypassMfa) {
+      const code = rolesSystem.createMfaCode(db, user.id);
+      try {
+        await sendEmail(
+          user.email,
+          "Boise Gems login verification code",
+          `<h1>Your verification code</h1><p style="font-size:28px;letter-spacing:0.2em;font-weight:bold;">${code}</p><p>This code expires in 10 minutes.</p>`
+        );
+      } catch (err) {
+        console.error("mobile MFA email failed:", err);
+      }
+      const mfaToken = jwt.sign(
+        { exp: Math.floor(Date.now() / 1000) + 60 * 10, purpose: "mfa", userid: Number(user.id) },
+        process.env.JWTSECRET
+      );
+      return res.json({ ok: true, mfaRequired: true, mfaToken });
+      }
+    }
+
+    const sid = rolesSystem.createAuthSession(db, user.id, req);
     const token = jwt.sign(
       {
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
@@ -10998,14 +11382,61 @@ app.post("/api/mobile/login", (req, res) => {
         parent: user.parent ? 1 : 0,
         volunteer: user.volunteer ? 1 : 0,
         fan: user.fan ? 1 : 0,
+        sid,
       },
       process.env.JWTSECRET
     );
-
+    rolesSystem.recordLogin(db, { userId: user.id, email: user.email, success: true, req });
     return res.json({ ok: true, token, user: serializeUser(user) });
   } catch (e) {
     console.error("mobile login error", e);
     return res.status(500).json({ ok: false, message: "Server error during login" });
+  }
+});
+
+app.post("/api/mobile/login/mfa", (req, res) => {
+  try {
+    const mfaToken = String(req.body.mfaToken || "");
+    const code = String(req.body.code || "").trim();
+    let decoded;
+    try {
+      decoded = jwt.verify(mfaToken, process.env.JWTSECRET);
+    } catch {
+      return res.status(401).json({ ok: false, message: "MFA session expired" });
+    }
+    if (decoded.purpose !== "mfa" || !decoded.userid) {
+      return res.status(401).json({ ok: false, message: "Invalid MFA session" });
+    }
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(decoded.userid);
+    if (!user || user.deactivated_at) {
+      return res.status(401).json({ ok: false, message: "Invalid user" });
+    }
+    if (!rolesSystem.verifyMfaCode(db, user.id, code)) {
+      rolesSystem.recordLogin(db, { userId: user.id, email: user.email, success: false, req });
+      return res.status(401).json({ ok: false, message: "Invalid or expired code" });
+    }
+    const sid = rolesSystem.createAuthSession(db, user.id, req);
+    const token = jwt.sign(
+      {
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
+        userid: Number(user.id),
+        firstname: user.firstname || "",
+        lastname: user.lastname || "",
+        email: user.email || "",
+        admin: user.admin ? 1 : 0,
+        director: user.director ? 1 : 0,
+        staff: user.staff ? 1 : 0,
+        parent: user.parent ? 1 : 0,
+        volunteer: user.volunteer ? 1 : 0,
+        fan: user.fan ? 1 : 0,
+        sid,
+      },
+      process.env.JWTSECRET
+    );
+    rolesSystem.recordLogin(db, { userId: user.id, email: user.email, success: true, req });
+    return res.json({ ok: true, token, user: serializeUser(user) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
   }
 });
 
@@ -11028,7 +11459,7 @@ app.post("/api/mobile/register-member", (req, res) => {
     if (!firstname) errors.push("First name is required");
     if (!lastname)  errors.push("Last name is required");
     if (!email)     errors.push("Email is required");
-    if (password.length < 8) errors.push("Password must be at least 8 characters");
+    errors.push(...rolesSystem.validateStrongPassword(password));
     if (password !== passwordRetype) errors.push("Passwords do not match");
 
     const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
@@ -11080,7 +11511,7 @@ app.post("/api/mobile/register-parent", (req, res) => {
     if (!firstname) errors.push("First name is required");
     if (!lastname)  errors.push("Last name is required");
     if (!email)     errors.push("Email is required");
-    if (password.length < 8) errors.push("Password must be at least 8 characters");
+    errors.push(...rolesSystem.validateStrongPassword(password));
     if (password !== passwordRetype) errors.push("Passwords do not match");
 
     const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
@@ -11127,7 +11558,7 @@ app.post("/api/mobile/register-volunteer", (req, res) => {
     if (!firstname) errors.push("First name is required");
     if (!lastname)  errors.push("Last name is required");
     if (!email)     errors.push("Email is required");
-    if (password.length < 8) errors.push("Password must be at least 8 characters");
+    errors.push(...rolesSystem.validateStrongPassword(password));
     if (password !== passwordRetype) errors.push("Passwords do not match");
 
     const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
@@ -11339,7 +11770,10 @@ app.get("/api/mobile/files/folder/:id", mobileAuth, (req, res) => {
     const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
     const canManage = !!(req.admin || req.staff);
     const rawFiles = db.prepare("SELECT * FROM file_items WHERE folder_id = ? ORDER BY created_at DESC").all(folderId);
-    const files = rawFiles.filter(f => canManage || canUserSeeFileItem(userRow, f));
+    const files = rawFiles.filter(f => {
+      if (f.sensitive) return canUserSeeFileItem(userRow, f);
+      return canManage || canUserSeeFileItem(userRow, f);
+    });
     return res.json({ ok: true, folder, subfolders, files });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });
@@ -11548,13 +11982,21 @@ app.get("/api/mobile/parent/child/:id/forms", mobileAuth, (req, res) => {
 app.get("/api/mobile/admin/members", mobileAuth, (req, res) => {
   try {
     if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
+    const canFinance = rolesSystem.hasPermission(db, req.user.userid, "view_financial");
     const members = db.prepare(`
       SELECT id, firstname, lastname, email, phone, section, instrument, paid, owed, img,
              contractedCorps, contractedIndependent, contractedAffiliate, shirtSize, admin, staff, parentId
       FROM users
       WHERE (parent IS NULL OR parent = 0) AND (fan IS NULL OR fan = 0)
       ORDER BY lastname COLLATE NOCASE, firstname COLLATE NOCASE
-    `).all().map(serializeUser);
+    `).all().map((u) => {
+      const s = serializeUser(u);
+      if (!canFinance) {
+        delete s.paid;
+        delete s.owed;
+      }
+      return s;
+    });
     return res.json({ ok: true, members });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });
@@ -11566,8 +12008,8 @@ app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
   try {
     if (!req.admin && !req.staff) return res.status(403).json({ ok: false, message: "Staff/admin only" });
     const stats = getAdminStats();
-    const recentPayments = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC LIMIT 10").all();
-    return res.json({
+    const canFinance = rolesSystem.hasPermission(db, req.user.userid, "view_financial");
+    const payload = {
       ok: true,
       totalMembers: stats.totalMembers,
       contractedCorps: stats.contractedCorps,
@@ -11575,13 +12017,17 @@ app.get("/api/mobile/admin/stats", mobileAuth, (req, res) => {
       contractedAffiliate: stats.contractedAffiliate,
       totalContracted: stats.totalContracted,
       uncontractedMembers: stats.uncontractedMembers,
-      totalOwed: stats.totalOwedCents / 100,
-      totalPaid: stats.totalPaidCents / 100,
-      membersWithBalanceDue: stats.membersWithBalanceDue,
       pendingContracts: stats.pendingContracts,
       instrumentsCheckedOut: stats.instrumentsCheckedOut,
-      recentPayments: recentPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 })),
-    });
+    };
+    if (canFinance) {
+      const recentPayments = db.prepare("SELECT * FROM paymentHistory ORDER BY date DESC LIMIT 10").all();
+      payload.totalOwed = stats.totalOwedCents / 100;
+      payload.totalPaid = stats.totalPaidCents / 100;
+      payload.membersWithBalanceDue = stats.membersWithBalanceDue;
+      payload.recentPayments = recentPayments.map(p => ({ ...p, amount: (Number(p.amount) || 0) / 100 }));
+    }
+    return res.json(payload);
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error: " + (e && e.message ? e.message : String(e)) });
   }
@@ -11766,6 +12212,13 @@ app.post("/api/mobile/payments/checkout", mobileAuth, async (req, res) => {
     return res.json({ ok: true, url: session.url, potentialPaymentId });
   } catch (e) {
     console.error("[Mobile API] payment checkout error:", e);
+    opsSystem.logFailedPayment(db, {
+      message: "Mobile API failed to create member checkout session",
+      detail: e,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, e);
     return res.status(500).json({ ok: false, message: "Failed to create checkout session" });
   }
 });
@@ -11847,7 +12300,7 @@ app.post("/api/mobile/parent/child/:id/checkout", mobileAuth, async (req, res) =
         price_data: {
           currency: "usd",
           product_data: {
-            name: `Payment for ${child.firstname} ${child.lastname} — Boise Gems`,
+            name: `Payment for ${child.firstname} ${child.lastname} - Boise Gems`,
           },
           unit_amount: totalCharge,
         },
@@ -11860,6 +12313,13 @@ app.post("/api/mobile/parent/child/:id/checkout", mobileAuth, async (req, res) =
     return res.json({ ok: true, url: session.url, potentialPaymentId });
   } catch (e) {
     console.error("[Mobile API] parent checkout error:", e);
+    opsSystem.logFailedPayment(db, {
+      message: "Mobile API failed to create parent checkout session",
+      detail: e,
+      req,
+      statusCode: 500,
+    });
+    opsSystem.markLogged(res, e);
     return res.status(500).json({ ok: false, message: "Failed to create checkout session" });
   }
 });
@@ -11916,7 +12376,7 @@ app.post("/api/mobile/webview-session", mobileAuth, (req, res) => {
   }
 });
 
-// GET /mobile-bridge?token=... — sets web cookie then redirects into site pages
+// GET /mobile-bridge?token=... - sets web cookie then redirects into site pages
 app.get("/mobile-bridge", (req, res) => {
   try {
     const token = String(req.query.token || "");
@@ -11944,9 +12404,7 @@ app.get("/mobile-bridge", (req, res) => {
       process.env.JWTSECRET
     );
     res.cookie("bgcookie", ourTokenValue, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
+      ...AUTH_COOKIE,
       maxAge: 1000 * 60 * 60 * 8,
     });
     return res.redirect(entry.redirect);
@@ -12184,7 +12642,7 @@ function serializeMessage(m, forUserId, preview) {
     myReadAt: myStatus?.read_at || null,
   };
   if (preview && item.body && item.body.length > 120) {
-    item.body = item.body.slice(0, 120) + "…";
+    item.body = item.body.slice(0, 120) + "...";
   }
   return item;
 }
@@ -12244,19 +12702,22 @@ app.get("/api/mobile/messages/users", mobileMsgAuth, (req, res) => {
     let rows;
     if (q) {
       rows = db.prepare(`
-        SELECT id, firstname, lastname, email, img, admin, staff, director, parent, volunteer, fan
-        FROM users WHERE verified = 1 AND id != ?
+        SELECT id, firstname, lastname, email, img, admin, staff, director, parent, volunteer, fan,
+               contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users WHERE verified = 1 AND id != ? AND deactivated_at IS NULL
           AND (LOWER(firstname || ' ' || lastname) LIKE ? OR LOWER(email) LIKE ?)
         ORDER BY lastname, firstname LIMIT ?
-      `).all(Number(req.user.userid), `%${q}%`, `%${q}%`, limit);
+      `).all(Number(req.user.userid), `%${q}%`, `%${q}%`, Math.max(limit * 3, 60));
     } else {
       rows = db.prepare(`
-        SELECT id, firstname, lastname, email, img, admin, staff, director, parent, volunteer, fan
-        FROM users WHERE verified = 1 AND id != ?
+        SELECT id, firstname, lastname, email, img, admin, staff, director, parent, volunteer, fan,
+               contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users WHERE verified = 1 AND id != ? AND deactivated_at IS NULL
         ORDER BY lastname, firstname LIMIT ?
-      `).all(Number(req.user.userid), limit);
+      `).all(Number(req.user.userid), Math.max(limit * 3, 60));
     }
-    return res.json({ ok: true, users: rows.map(serializeUser) });
+    const filtered = rolesSystem.filterUsersForMessaging(db, req.user.userid, rows).slice(0, limit);
+    return res.json({ ok: true, users: filtered.map(serializeUser) });
   } catch (e) {
     console.error("[Mobile API] messages/users error:", e.message);
     return res.status(500).json({ ok: false, message: "Server error" });
@@ -12338,17 +12799,46 @@ app.post("/api/mobile/messages/conversations", mobileMsgAuth, (req, res) => {
     if (req.director && req.body.viewAsUserId) {
       return res.status(403).json({ ok: false, message: "Cannot create conversations while viewing as another user" });
     }
-    const memberIds = (req.body.memberIds || []).map(Number).filter(id => id > 0);
-    const uniqueIds = [...new Set(memberIds)];
     const myId = Number(req.user.userid);
-    if (!uniqueIds.length) return res.status(400).json({ ok: false, message: "Select at least one user" });
-    if (uniqueIds.some(id => id === myId)) {
-      return res.status(400).json({ ok: false, message: "Cannot include yourself in memberIds" });
+    const caps = rolesSystem.getMessagingCapabilities(db, myId);
+    const audiences = [].concat(req.body.audiences || []).map(String).filter(Boolean);
+    let uniqueIds = [...new Set((req.body.memberIds || []).map(Number).filter(id => id > 0 && id !== myId))];
+
+    if (audiences.length) {
+      if (!caps.createGroup) {
+        return res.status(403).json({ ok: false, message: "You do not have permission to create group chats." });
+      }
+      const allowedAudienceKeys = new Set(caps.audiences.map((a) => a.key));
+      const denied = audiences.filter((a) => !allowedAudienceKeys.has(a));
+      if (denied.length) {
+        return res.status(403).json({ ok: false, message: "You cannot message one or more selected audiences." });
+      }
+      uniqueIds = [...new Set([
+        ...uniqueIds,
+        ...rolesSystem.resolveAudienceUserIds(db, audiences, myId),
+      ])];
+    }
+
+    if (!uniqueIds.length) return res.status(400).json({ ok: false, message: "Select at least one user or audience" });
+
+    const type = (audiences.length || uniqueIds.length > 1) ? "group" : "direct";
+    if (type === "direct" && !caps.createDirect) {
+      return res.status(403).json({ ok: false, message: "Members cannot start new direct chats. Wait for staff to message you." });
+    }
+    if (type === "group" && !caps.createGroup) {
+      return res.status(403).json({ ok: false, message: "You do not have permission to create group chats." });
+    }
+
+    for (const id of uniqueIds) {
+      const target = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+      if (!rolesSystem.canMessageTargetUser(db, myId, target)) {
+        return res.status(403).json({ ok: false, message: "You do not have permission to message one or more selected people." });
+      }
     }
 
     const allMembers = [myId, ...uniqueIds].sort((a, b) => a - b);
 
-    if (uniqueIds.length === 1) {
+    if (type === "direct" && uniqueIds.length === 1) {
       const existing = findDirectConversation(myId, uniqueIds[0]);
       if (existing) {
         return res.json({ ok: true, conversation: serializeConversation(existing, myId), existing: true });
@@ -12356,8 +12846,10 @@ app.post("/api/mobile/messages/conversations", mobileMsgAuth, (req, res) => {
     }
 
     const now = Date.now();
-    const type = uniqueIds.length === 1 ? "direct" : "group";
     const title = type === "group" ? String(req.body.title || "").trim() || null : null;
+    if (type === "group" && !title) {
+      return res.status(400).json({ ok: false, message: "Group chats require a name." });
+    }
     const result = db.prepare(
       "INSERT INTO conversations (type, title, pinned, created_by, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)"
     ).run(type, title, myId, now, now);
@@ -12748,7 +13240,8 @@ app.get("/api/web/messages/summary", webMsgAuth, (req, res) => {
           WHERE ms.message_id = m.id AND ms.user_id = ? AND ms.read_at IS NOT NULL
         )
     `).get(uid, uid, uid);
-    return res.json({ ok: true, unreadCount: row?.c || 0 });
+    const capabilities = rolesSystem.getMessagingCapabilities(db, uid);
+    return res.json({ ok: true, unreadCount: row?.c || 0, capabilities });
   } catch (e) {
     console.error("[Web API] messages summary error:", e.message);
     return res.status(500).json({ ok: false, message: "Server error" });
@@ -12764,21 +13257,24 @@ app.get("/api/web/messages/users", webMsgAuth, (req, res) => {
     let rows;
     if (q) {
       rows = db.prepare(`
-        SELECT id, firstname, lastname, email, img
-        FROM users WHERE verified = 1 AND id != ?
+        SELECT id, firstname, lastname, email, img, admin, staff, parent,
+               contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users WHERE verified = 1 AND id != ? AND deactivated_at IS NULL
           AND (LOWER(firstname || ' ' || lastname) LIKE ? OR LOWER(email) LIKE ?)
         ORDER BY lastname, firstname LIMIT ?
-      `).all(uid, `%${q}%`, `%${q}%`, limit);
+      `).all(uid, `%${q}%`, `%${q}%`, Math.max(limit * 3, 60));
     } else {
       rows = db.prepare(`
-        SELECT id, firstname, lastname, email, img
-        FROM users WHERE verified = 1 AND id != ?
+        SELECT id, firstname, lastname, email, img, admin, staff, parent,
+               contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users WHERE verified = 1 AND id != ? AND deactivated_at IS NULL
         ORDER BY lastname, firstname LIMIT ?
-      `).all(uid, limit);
+      `).all(uid, Math.max(limit * 3, 60));
     }
+    const filtered = rolesSystem.filterUsersForMessaging(db, uid, rows).slice(0, limit);
     return res.json({
       ok: true,
-      users: rows.map(u => ({
+      users: filtered.map(u => ({
         id: Number(u.id),
         firstname: u.firstname || "",
         lastname: u.lastname || "",
@@ -12830,13 +13326,45 @@ app.get("/api/web/messages/conversations", webMsgAuth, (req, res) => {
 app.post("/api/web/messages/conversations", webMsgAuth, (req, res) => {
   try {
     const myId = Number(req.user.userid);
-    const memberIds = (req.body.memberIds || []).map(Number).filter(id => id > 0);
-    const uniqueIds = [...new Set(memberIds)].filter(id => id !== myId);
-    if (!uniqueIds.length) return res.status(400).json({ ok: false, message: "Select at least one person." });
+    const caps = rolesSystem.getMessagingCapabilities(db, myId);
+    const audiences = [].concat(req.body.audiences || []).map(String).filter(Boolean);
+    let uniqueIds = [...new Set((req.body.memberIds || []).map(Number).filter(id => id > 0 && id !== myId))];
+
+    if (audiences.length) {
+      if (!caps.createGroup) {
+        return res.status(403).json({ ok: false, message: "You do not have permission to create group chats." });
+      }
+      const allowedAudienceKeys = new Set(caps.audiences.map((a) => a.key));
+      const denied = audiences.filter((a) => !allowedAudienceKeys.has(a));
+      if (denied.length) {
+        return res.status(403).json({ ok: false, message: "You cannot message one or more selected audiences." });
+      }
+      uniqueIds = [...new Set([
+        ...uniqueIds,
+        ...rolesSystem.resolveAudienceUserIds(db, audiences, myId),
+      ])];
+    }
+
+    if (!uniqueIds.length) return res.status(400).json({ ok: false, message: "Select at least one person or audience." });
+
+    const type = (audiences.length || uniqueIds.length > 1) ? "group" : "direct";
+    if (type === "direct" && !caps.createDirect) {
+      return res.status(403).json({ ok: false, message: "Members cannot start new chats. Staff will message you when needed." });
+    }
+    if (type === "group" && !caps.createGroup) {
+      return res.status(403).json({ ok: false, message: "You do not have permission to create group chats." });
+    }
+
+    for (const id of uniqueIds) {
+      const target = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+      if (!rolesSystem.canMessageTargetUser(db, myId, target)) {
+        return res.status(403).json({ ok: false, message: "You do not have permission to message one or more selected people." });
+      }
+    }
 
     const allMembers = [myId, ...uniqueIds].sort((a, b) => a - b);
 
-    if (uniqueIds.length === 1) {
+    if (type === "direct" && uniqueIds.length === 1) {
       const existing = findDirectConversation(myId, uniqueIds[0]);
       if (existing) {
         return res.json({ ok: true, conversation: serializeConversation(existing, myId), existing: true });
@@ -12844,8 +13372,10 @@ app.post("/api/web/messages/conversations", webMsgAuth, (req, res) => {
     }
 
     const now = Date.now();
-    const type = uniqueIds.length === 1 ? "direct" : "group";
     const title = type === "group" ? (String(req.body.title || "").trim() || null) : null;
+    if (type === "group" && !title) {
+      return res.status(400).json({ ok: false, message: "Please name the group chat." });
+    }
     const result = db.prepare(
       "INSERT INTO conversations (type, title, pinned, created_by, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)"
     ).run(type, title, myId, now, now);
@@ -13103,7 +13633,7 @@ function renderErrorPage(res, code, detail) {
   if (res.locals.staff === undefined) res.locals.staff = false;
   if (res.locals.parent === undefined) res.locals.parent = false;
   if (res.locals.fan === undefined) res.locals.fan = false;
-  if (res.locals.CURRENTSEASON === undefined) res.locals.CURRENTSEASON = CURRENTSEASON;
+  if (res.locals.CURRENTSEASON === undefined) res.locals.CURRENTSEASON = getCurrentSeasonYear();
   if (res.locals.RECAPTCHA_SITE_KEY === undefined) {
     res.locals.RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || "";
   }
@@ -13111,6 +13641,9 @@ function renderErrorPage(res, code, detail) {
   if (res.locals.messagingAllowed === undefined) {
     res.locals.messagingAllowed = res.locals.user ? canUseMessaging(res.locals.user) : false;
   }
+  if (res.locals.messagingCaps === undefined) res.locals.messagingCaps = null;
+  if (res.locals.merchEnabled === undefined) res.locals.merchEnabled = false;
+  if (res.locals.merchCartCount === undefined) res.locals.merchCartCount = 0;
 
   const payload = {
     code: safeCode,
@@ -13193,6 +13726,29 @@ merchSystem.registerMerchRoutes(app, {
   generateCustomFilename,
   parentLinks,
   sendEmail,
+  opsSystem,
+});
+
+opsSystem.registerOpsRoutes(app, { db, mustBeAdmin });
+
+rolesSystem.registerRolesRoutes(app, {
+  db,
+  mustBeAdmin,
+  sendEmail,
+  jwt,
+  issueLoginToken: (req, res, user) => issueLoginToken(req, res, user),
+});
+
+videoAuditionSystem.registerVideoAuditionRoutes(app, {
+  db,
+  stripe,
+  mustBeMember,
+  mustBeLoggedIn,
+  getCurrentSeasonYear,
+  addChrisShare,
+  sendEmail,
+  MasterEmail,
+  opsSystem,
 });
 
 // 404 - no route matched
@@ -13206,6 +13762,16 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   const code = err.status || err.statusCode || 500;
   const detail = err && (err.stack || err.message) ? String(err.stack || err.message) : String(err);
+  // Log server errors (5xx+) - not client 4xx errors
+  if (Number(code) >= 500) {
+    opsSystem.logApplicationError(db, {
+      message: `Unhandled error: ${err && err.message ? err.message : "unknown"}`,
+      detail,
+      statusCode: code,
+      req,
+    });
+    opsSystem.markLogged(res, detail);
+  }
   renderErrorPage(res, code, detail);
 });
 

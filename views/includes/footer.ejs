@@ -540,7 +540,12 @@
   }
 </style>
 
-<div id="bgMsgRoot" data-me="<%= user.userid %>">
+<div id="bgMsgRoot"
+  data-me="<%= user.userid %>"
+  data-can-direct="<%= (messagingCaps && messagingCaps.createDirect) ? '1' : '0' %>"
+  data-can-group="<%= (messagingCaps && messagingCaps.createGroup) ? '1' : '0' %>"
+  data-audiences="<%= messagingCaps && messagingCaps.audiences ? JSON.stringify(messagingCaps.audiences).replace(/"/g, '&quot;') : '[]' %>"
+>
   <div class="bg-msg-fab-wrap">
     <button type="button" class="bg-msg-fab" id="bgMsgFab" aria-label="Open messages">
       <ion-icon name="chatbubble-ellipses"></ion-icon>
@@ -561,9 +566,9 @@
           <ion-icon name="search"></ion-icon>
           <input type="text" class="bg-msg-search" id="bgMsgConvSearch" placeholder="Search chats…">
         </div>
-        <div class="bg-msg-newrow">
-          <button type="button" class="bg-msg-new" id="bgMsgNewChat"><ion-icon name="person-add"></ion-icon> New chat</button>
-          <button type="button" class="bg-msg-new" id="bgMsgNewGroup"><ion-icon name="people"></ion-icon> New group</button>
+        <div class="bg-msg-newrow" id="bgMsgNewRow">
+          <button type="button" class="bg-msg-new" id="bgMsgNewChat" hidden><ion-icon name="person-add"></ion-icon> New chat</button>
+          <button type="button" class="bg-msg-new" id="bgMsgNewGroup" hidden><ion-icon name="people"></ion-icon> New group</button>
         </div>
         <div class="bg-msg-list" id="bgMsgConvList"><div class="bg-msg-empty">Loading…</div></div>
       </aside>
@@ -579,7 +584,7 @@
 
         <div class="bg-msg-empty-state" id="bgMsgEmptyState">
           <ion-icon name="chatbubbles-outline"></ion-icon>
-          <p>Select a conversation<br>or start a new one.</p>
+          <p id="bgMsgEmptyCopy">Select a conversation to read messages.</p>
         </div>
 
         <div class="bg-msg-conv" id="bgMsgConvView" hidden>
@@ -607,10 +612,14 @@
         <div class="bg-msg-compose-scroll">
           <div class="bg-msg-group-name" id="bgMsgGroupTitleRow" hidden>
             <label for="bgMsgGroupTitle">Group name</label>
-            <input type="text" class="bg-msg-search" id="bgMsgGroupTitle" placeholder="Optional group name" style="padding-left: 12px !important;">
+            <input type="text" class="bg-msg-search" id="bgMsgGroupTitle" placeholder="Required group name" style="padding-left: 12px !important;" required>
+          </div>
+          <div class="bg-msg-audiences" id="bgMsgAudiences" hidden style="padding: 0 14px 10px;">
+            <p style="margin:0 0 8px;font-size:0.85rem;font-weight:600;color:#4a3263;">Auto-add people</p>
+            <div id="bgMsgAudienceChecks" style="display:grid;gap:6px;"></div>
           </div>
           <div class="bg-msg-chips" id="bgMsgChips"></div>
-          <div class="bg-msg-search-wrap bg-msg-search-wrap--big">
+          <div class="bg-msg-search-wrap bg-msg-search-wrap--big" id="bgMsgUserSearchWrap">
             <ion-icon name="search"></ion-icon>
             <input type="text" class="bg-msg-search" id="bgMsgUserSearch" placeholder="Search people to message…">
           </div>
@@ -630,6 +639,10 @@
   var root = document.getElementById('bgMsgRoot');
   if (!root) return;
   var ME = Number(root.dataset.me);
+  var CAN_DIRECT = root.dataset.canDirect === '1';
+  var CAN_GROUP = root.dataset.canGroup === '1';
+  var AUDIENCES = [];
+  try { AUDIENCES = JSON.parse((root.dataset.audiences || '[]').replace(/&quot;/g, '"')); } catch (e) { AUDIENCES = []; }
 
   var els = {
     fab: document.getElementById('bgMsgFab'),
@@ -640,6 +653,8 @@
     convSearch: document.getElementById('bgMsgConvSearch'),
     newChat: document.getElementById('bgMsgNewChat'),
     newGroup: document.getElementById('bgMsgNewGroup'),
+    newRow: document.getElementById('bgMsgNewRow'),
+    emptyCopy: document.getElementById('bgMsgEmptyCopy'),
     convList: document.getElementById('bgMsgConvList'),
     back: document.getElementById('bgMsgBack'),
     mainAvatar: document.getElementById('bgMsgMainAvatar'),
@@ -660,11 +675,29 @@
     composeTitle: document.getElementById('bgMsgComposeTitle'),
     groupTitleRow: document.getElementById('bgMsgGroupTitleRow'),
     groupTitle: document.getElementById('bgMsgGroupTitle'),
+    audiences: document.getElementById('bgMsgAudiences'),
+    audienceChecks: document.getElementById('bgMsgAudienceChecks'),
     chips: document.getElementById('bgMsgChips'),
     userSearch: document.getElementById('bgMsgUserSearch'),
     userResults: document.getElementById('bgMsgUserResults'),
     create: document.getElementById('bgMsgCreate')
   };
+
+  if (els.newChat) els.newChat.hidden = !CAN_DIRECT;
+  if (els.newGroup) els.newGroup.hidden = !CAN_GROUP;
+  if (els.newRow && !CAN_DIRECT && !CAN_GROUP) els.newRow.hidden = true;
+  if (els.emptyCopy) {
+    els.emptyCopy.innerHTML = (CAN_DIRECT || CAN_GROUP)
+      ? 'Select a conversation<br>or start a new one.'
+      : 'Select a conversation to read messages.<br>Staff will start chats when needed.';
+  }
+
+  if (els.audienceChecks && AUDIENCES.length) {
+    els.audienceChecks.innerHTML = AUDIENCES.map(function (a) {
+      return '<label style="display:flex;gap:8px;align-items:center;font-size:0.9rem;font-weight:500;color:#333;">' +
+        '<input type="checkbox" class="bg-msg-aud" value="' + a.key + '"> ' + a.label + '</label>';
+    }).join('');
+  }
 
   var state = {
     open: false,
@@ -921,17 +954,28 @@
   }
 
   /* ---------- new conversation overlay ---------- */
+  function selectedAudiences() {
+    return Array.prototype.map.call(document.querySelectorAll('.bg-msg-aud:checked'), function (el) {
+      return el.value;
+    });
+  }
   function openCompose(mode) {
+    if (mode === 'direct' && !CAN_DIRECT) return;
+    if (mode === 'group' && !CAN_GROUP) return;
     state.composeMode = mode;
     state.selected = {};
     els.composeTitle.textContent = mode === 'group' ? 'New group' : 'New chat';
     els.groupTitleRow.hidden = mode !== 'group';
     els.groupTitle.value = '';
+    if (els.audiences) {
+      els.audiences.hidden = mode !== 'group' || !AUDIENCES.length;
+      Array.prototype.forEach.call(document.querySelectorAll('.bg-msg-aud'), function (el) { el.checked = false; });
+    }
     els.userSearch.value = '';
     els.composeView.hidden = false;
     renderChips();
     searchUsers();
-    setTimeout(function () { els.userSearch.focus(); }, 60);
+    setTimeout(function () { (mode === 'group' ? els.groupTitle : els.userSearch).focus(); }, 60);
   }
   function closeCompose() {
     els.composeView.hidden = true;
@@ -995,18 +1039,28 @@
   }
   function updateCreateBtn() {
     var n = Object.keys(state.selected).length;
-    els.create.disabled = n < 1;
-    els.create.textContent = state.composeMode === 'group'
-      ? (n > 1 ? 'Create group (' + n + ')' : 'Create group')
-      : 'Start conversation';
+    var aud = selectedAudiences().length;
+    if (state.composeMode === 'group') {
+      var named = !!(els.groupTitle.value || '').trim();
+      els.create.disabled = !named || (n < 1 && aud < 1);
+      els.create.textContent = 'Create group';
+    } else {
+      els.create.disabled = n < 1;
+      els.create.textContent = 'Start conversation';
+    }
   }
   function createConversation() {
     var ids = Object.keys(state.selected).map(Number);
-    if (!ids.length) return;
+    var audiences = selectedAudiences();
+    if (!ids.length && !audiences.length) return;
+    if (state.composeMode === 'group' && !(els.groupTitle.value || '').trim()) {
+      alert('Please enter a group name.');
+      return;
+    }
     els.create.disabled = true;
     api('/api/web/messages/conversations', {
       method: 'POST',
-      body: { memberIds: ids, title: els.groupTitle.value.trim() }
+      body: { memberIds: ids, title: els.groupTitle.value.trim(), audiences: audiences }
     }).then(function (j) {
       if (!j || !j.ok) { alert((j && j.message) || 'Could not start conversation.'); els.create.disabled = false; return; }
       closeCompose();
@@ -1076,6 +1130,10 @@
   els.newChat.addEventListener('click', function () { openCompose('direct'); });
   els.newGroup.addEventListener('click', function () { openCompose('group'); });
   els.create.addEventListener('click', createConversation);
+  if (els.groupTitle) els.groupTitle.addEventListener('input', updateCreateBtn);
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bg-msg-aud')) updateCreateBtn();
+  });
 
   var convSearchT, userSearchT;
   els.convSearch.addEventListener('input', function () { clearTimeout(convSearchT); convSearchT = setTimeout(loadConversations, 250); });

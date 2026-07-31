@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Contract History - Boise Gems</title>
+    <%- include("includes/head") %>
+  </head>
+  <body>
+    <header>
+      <%- include("includes/header") %>
+    </header>
+    <main>
+      <div style="margin:12px;">
+        <p style="margin:0 0 8px;"><a href="/admin-portal#contracts">&larr; Contracts</a></p>
+        <h1>Contract History</h1>
+        <p style="color:#555; max-width:70ch;">
+          Signed contracts on file for any season. Current live contracted members are still listed under
+          <a href="/admin/contracted-members">Contracted Members</a>.
+          Site season is currently <strong><%= currentSeason %></strong>.
+        </p>
+
+        <form method="GET" action="/admin/contract-history" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;">
+          <label>
+            Season
+            <select name="year" style="padding:8px; border-radius:6px; border:1px solid #ccc;">
+              <% if (!years.length) { %>
+                <option value="<%= selectedYear %>" selected><%= selectedYear %></option>
+              <% } %>
+              <% years.forEach(function(y) { %>
+                <option value="<%= y %>" <%= Number(y) === Number(selectedYear) ? 'selected' : '' %>><%= y %></option>
+              <% }) %>
+            </select>
+          </label>
+          <label>
+            Ensemble
+            <select name="ensemble" style="padding:8px; border-radius:6px; border:1px solid #ccc;">
+              <option value="" <%= !ensemble ? 'selected' : '' %>>All</option>
+              <option value="corps" <%= ensemble === 'corps' ? 'selected' : '' %>>Corps</option>
+              <option value="independent" <%= ensemble === 'independent' ? 'selected' : '' %>>Independent</option>
+              <option value="affiliate" <%= ensemble === 'affiliate' ? 'selected' : '' %>>Affiliate</option>
+            </select>
+          </label>
+          <input
+            type="search"
+            name="q"
+            value="<%= q %>"
+            placeholder="Search name, email, phone"
+            style="flex:1; min-width:180px; padding:8px; border-radius:6px; border:1px solid #ccc;"
+          />
+          <button type="submit">Filter</button>
+        </form>
+
+        <% if (!contracts || !contracts.length) { %>
+          <p><em>No signed contracts found for <%= selectedYear %><%= ensemble ? ' / ' + ensemble : '' %>.</em></p>
+        <% } else { %>
+          <p style="color:#666; margin-bottom:8px;"><%= contracts.length %> contract<%= contracts.length === 1 ? '' : 's' %></p>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Name</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Email</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Season</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Ensemble</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Signed</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Method</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% contracts.forEach(function(c) {
+                  var ensembleLabel = (c.ensemble || '').toString();
+                  if (!ensembleLabel && c.season) {
+                    var s = String(c.season);
+                    if (s.indexOf('independent') !== -1) ensembleLabel = 'independent';
+                    else if (s.indexOf('affiliate') !== -1) ensembleLabel = 'affiliate';
+                    else if (s.indexOf('corps') !== -1) ensembleLabel = 'corps';
+                  }
+                  ensembleLabel = ensembleLabel
+                    ? ensembleLabel.charAt(0).toUpperCase() + ensembleLabel.slice(1)
+                    : '-';
+                %>
+                  <tr>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= c.firstname %> <%= c.lastname %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= c.email %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= c.season || c.season_year %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;"><%= ensembleLabel %></td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <%= c.contracted_date ? new Date(c.contracted_date).toLocaleDateString() : '-' %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (c.paymentMethod) { %>
+                        <span style="display:inline-block; padding:2px 6px; border-radius:10px; background:#f1f1f1; font-size:0.85em;">
+                          <%= c.paymentMethod === 'cash' ? 'Cash/Check' : 'Stripe' %>
+                        </span>
+                      <% } else { %>
+                        <span style="color:#888; font-size:0.85em;">-</span>
+                      <% } %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% if (c.signedContractPath) { %>
+                        <a href="/admin/contracts/<%= c.user_id %>/<%= c.contract_id %>" target="_blank" rel="noopener">View PDF</a>
+                        <span style="color:#ccc;"> · </span>
+                      <% } %>
+                      <a href="/edit-users?search=<%= encodeURIComponent(c.email || '') %>">User</a>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </main>
+    <footer>
+      <%- include("includes/footer") %>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,38 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify login - Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <h1 style="text-align:center;">Check your email</h1>
+  <p style="text-align:center;max-width:420px;margin:0 auto 1.5rem;">
+    We sent a 6-digit verification code to your email. Enter it below to finish signing in.
+  </p>
+  <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+    <div class="error" style="background:#e8f5e9;border-color:#a5d6a7;color:#1b5e20;"><%= flashMessage %></div>
+  <% } %>
+  <% if (errors && errors.length) { %>
+    <% errors.forEach(function(e) { %>
+      <div class="error"><%= e %></div>
+    <% }) %>
+  <% } %>
+  <div class="form-panel">
+    <form action="/login/mfa" method="POST">
+      <label for="code">Verification code</label>
+      <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required autofocus>
+      <div style="text-align:center;margin-top:1rem;">
+        <button type="submit">Verify &amp; sign in</button>
+      </div>
+    </form>
+    <form action="/login/mfa/resend" method="POST" style="text-align:center;margin-top:1rem;">
+      <button type="submit" style="background:transparent;color:#60437D;border:1px solid #60437D;">Resend code</button>
+    </form>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

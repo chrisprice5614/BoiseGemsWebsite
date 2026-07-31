@@ -2,7 +2,7 @@
   "workbench.colorCustomizations": {
     "titleBar.activeBackground": "#4f087b",
     "titleBar.activeForeground": "#ffffff",
-    "window.title": "${folderName} — ${activeEditorShort}",
+    "window.title": "${folderName} - ${activeEditorShort}",
     "editor.background": "#201326"
   }
   

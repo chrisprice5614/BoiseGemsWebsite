@@ -316,7 +316,24 @@
             </div>
 
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid #ddd;text-align:center;">
-              <% if (thisUser.id !== user.userid) { %>
+              <% if (thisUser.admin || thisUser.staff) { %>
+                <div style="margin-bottom:10px;">
+                  <a href="/admin/user-roles/<%= thisUser.id %>">Manage roles</a>
+                  &nbsp;·&nbsp;
+                  <a href="/admin/sessions/<%= thisUser.id %>">Sessions / sign out</a>
+                </div>
+              <% } %>
+              <% if (thisUser.deactivated_at) { %>
+                <form method="POST" action="/admin/reactivate-user/<%= thisUser.id %>" style="display:inline;margin-right:8px;">
+                  <button type="submit" style="background:#e6f4ea;border:1px solid #34a853;color:#1e6e2e;padding:8px 16px;cursor:pointer;font-weight:600;">Reactivate account</button>
+                </form>
+                <p style="color:#b02020;font-size:0.9rem;">Deactivated<%= thisUser.deactivated_reason ? ': ' + thisUser.deactivated_reason : '' %></p>
+              <% } else if (thisUser.id !== user.userid) { %>
+                <form method="POST" action="/admin/deactivate-user/<%= thisUser.id %>" style="display:inline;margin-right:8px;"
+                  onsubmit="var r=prompt('Reason for deactivation (optional):'); if(r===null) return false; this.querySelector('[name=reason]').value=r; return true;">
+                  <input type="hidden" name="reason" value="">
+                  <button type="submit" style="background:#fff3cd;border:1px solid #ffc107;color:#5a4000;padding:8px 16px;cursor:pointer;font-weight:600;">Deactivate</button>
+                </form>
                 <button type="button" class="delete-member-btn" data-user-id="<%= thisUser.id %>" data-user-name="<%= thisUser.firstname %> <%= thisUser.lastname %>" style="background:#fdeaea;border:1px solid #e57373;color:#b02020;padding:8px 16px;cursor:pointer;font-weight:600;">Delete Member</button>
               <% } else { %>
                 <span style="color:#888;font-size:0.9rem;">You cannot delete your own account from this page.</span>

@@ -1,0 +1,125 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error Log #<%= log.id %> - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    body.mon-page {
+      background: #ebe7f0;
+    }
+    body.mon-page main {
+      max-width: none;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+    .mon-hero {
+      background: linear-gradient(135deg, #4a3263 0%, #60437D 48%, #7a5a9a 100%);
+      color: #fff;
+      padding: 28px 32px 32px;
+    }
+    .mon-hero a {
+      color: rgba(255, 255, 255, 0.85);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .mon-hero a:hover { color: #fff; text-decoration: underline; }
+    .mon-hero h1 {
+      margin: 10px 0 0;
+      color: #fff;
+      font-size: 1.85rem;
+      font-weight: 700;
+    }
+    .mon-wrap {
+      width: min(1000px, calc(100% - 48px));
+      margin: -18px auto 48px;
+    }
+    .mon-panel {
+      background: #fff;
+      border: 1px solid rgba(96, 67, 125, 0.12);
+      border-radius: 14px;
+      padding: 22px 24px 26px;
+      box-shadow: 0 8px 24px rgba(40, 24, 60, 0.06);
+    }
+    .mon-meta {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px 16px;
+      margin: 8px 0 22px;
+    }
+    .mon-meta dt { font-weight: 700; color: #6b5585; }
+    .mon-meta dd { margin: 0; word-break: break-word; color: #333; }
+    .mon-pre {
+      white-space: pre-wrap;
+      background: #f6f4f9;
+      border: 1px solid rgba(96, 67, 125, 0.1);
+      padding: 16px;
+      border-radius: 10px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      overflow-x: auto;
+      color: #2a2140;
+    }
+    .mon-type {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 6px;
+      background: #eee;
+    }
+    @media (max-width: 640px) {
+      .mon-wrap { width: calc(100% - 24px); }
+      .mon-hero { padding: 22px 18px 26px; }
+      .mon-meta { grid-template-columns: 1fr; gap: 4px; }
+      .mon-meta dt { margin-top: 8px; }
+    }
+  </style>
+</head>
+<body class="mon-page">
+  <header>
+    <%- include("includes/header") %>
+  </header>
+  <main>
+    <div class="mon-hero">
+      <a href="/admin/monitoring#logs">&larr; Back to logs</a>
+      <h1>Error Log #<%= log.id %></h1>
+    </div>
+    <div class="mon-wrap">
+      <div class="mon-panel">
+        <dl class="mon-meta">
+          <dt>When</dt>
+          <dd><%= new Date(log.created_at).toLocaleString() %></dd>
+          <dt>Type</dt>
+          <dd><span class="mon-type"><%= log.type %></span></dd>
+          <dt>Status</dt>
+          <dd><%= log.status_code != null ? log.status_code : "-" %></dd>
+          <dt>User</dt>
+          <dd>
+            <% if (log.user_firstname || log.user_lastname) { %>
+              <%= log.user_firstname || "" %> <%= log.user_lastname || "" %>
+              <% if (log.user_id) { %><span style="color:#888;"> (ID <%= log.user_id %>)</span><% } %>
+            <% } else { %>
+              Not logged in
+            <% } %>
+          </dd>
+          <dt>Request</dt>
+          <dd><%= log.method || "" %> <%= log.path || "-" %></dd>
+          <dt>Message</dt>
+          <dd><%= log.message %></dd>
+        </dl>
+
+        <h2 style="font-size: 1.1rem; margin: 0 0 10px; color: #2a2140;">Detail</h2>
+        <pre class="mon-pre"><%= log.detail || "No additional detail." %></pre>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <%- include("includes/footer") %>
+  </footer>
+</body>
+</html>

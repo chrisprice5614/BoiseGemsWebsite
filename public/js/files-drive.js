@@ -431,6 +431,8 @@
     fd.append("allow_anyone", anyone ? "1" : "0");
     fd.append("allow_corps", corps ? "1" : "0");
     fd.append("allow_independent", independent ? "1" : "0");
+    var upSensitive = document.getElementById("upSensitive");
+    fd.append("sensitive", upSensitive && upSensitive.checked ? "1" : "0");
 
     var btn = document.getElementById("filesUploadConfirm");
     if (btn) btn.disabled = true;
@@ -1057,7 +1059,7 @@
   syncAnyoneExclusive("upAnyone", "upCorps", "upIndependent");
   syncAnyoneExclusive("permAnyone", "permCorps", "permIndependent");
 
-  // Drag and drop upload (no instructional overlay — silent highlight only)
+  // Drag and drop upload (no instructional overlay - silent highlight only)
   if (canManage && dropZone) {
     var dragDepth = 0;
     function hasFiles(e) {

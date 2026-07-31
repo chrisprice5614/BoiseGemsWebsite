@@ -1,5 +1,5 @@
 /**
- * Board of Directors page content — Markdown source + rendered HTML.
+ * Board of Directors page content - Markdown source + rendered HTML.
  */
 
 const { marked } = require("marked");

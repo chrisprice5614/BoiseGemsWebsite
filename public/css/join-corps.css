@@ -1,4 +1,4 @@
-/* Join Corps — immersive audition experience */
+/* Join Corps - immersive audition experience */
 
 body.join-corps-page {
   margin: 0;
@@ -6,7 +6,7 @@ body.join-corps-page {
   overflow-x: hidden;
 }
 
-/* Site footer keeps its normal styles — do not override footer inside join-corps page */
+/* Site footer keeps its normal styles - do not override footer inside join-corps page */
 body.join-corps-page > footer {
   position: relative;
   z-index: 20;
@@ -109,7 +109,7 @@ body.join-corps-page > footer {
   transform: none;
 }
 
-/* Purple beveled site buttons — same as global button style */
+/* Purple beveled site buttons - same as global button style */
 a.join-corps-cta {
   --bevel: 12px;
   display: inline-flex;
@@ -280,7 +280,7 @@ a.join-corps-cta:hover {
   );
 }
 
-/* Bottom CTA — same open layout as hero (no panel background) */
+/* Bottom CTA - same open layout as hero (no panel background) */
 .join-corps-footer {
   text-align: center;
   padding: 12vh 24px 18vh;

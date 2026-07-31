@@ -1,0 +1,47 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Season Settings - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    body.roles-admin-page { background: #ebe7f0; }
+    body.roles-admin-page main { max-width: none; width: 100%; margin: 0; padding: 0; background: transparent; box-shadow: none; }
+    .ra-hero { background: linear-gradient(135deg, #4a3263 0%, #60437D 48%, #7a5a9a 100%); color: #fff; padding: 28px 32px 32px; }
+    .ra-hero a { color: rgba(255,255,255,0.85); text-decoration: none; }
+    .ra-hero h1 { margin: 10px 0 6px; color: #fff; font-size: 1.85rem; }
+    .ra-wrap { width: min(720px, calc(100% - 48px)); margin: -18px auto 48px; }
+    .ra-panel { background: #fff; border: 1px solid rgba(96,67,125,0.12); border-radius: 14px; padding: 22px 24px; box-shadow: 0 8px 24px rgba(40,24,60,0.06); }
+    .ra-flash { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; }
+    input { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+    .ra-note { color: #666; font-size: 0.95rem; margin-top: 8px; }
+  </style>
+</head>
+<body class="roles-admin-page">
+<header><%- include("includes/header") %></header>
+<main>
+  <div class="ra-hero">
+    <a href="/admin-portal#system">&larr; System</a>
+    <h1>Season settings</h1>
+    <p style="margin:0;opacity:0.85;">One shared season for corps and independent.</p>
+  </div>
+  <div class="ra-wrap">
+    <% if (flashMessage) { %><div class="ra-flash"><%= flashMessage %></div><% } %>
+    <div class="ra-panel">
+      <form method="POST" action="/admin/season">
+        <label for="current_season">Current season year</label>
+        <input type="number" id="current_season" name="current_season" value="<%= currentSeason %>" min="2000" max="2100" required>
+        <label for="season_end_date">Default contract / assignment end date</label>
+        <input type="date" id="season_end_date" name="season_end_date" value="<%= seasonEndDate %>" required>
+        <p class="ra-note">New contracts default to this end date unless overridden per member. Access is cleared automatically after the end date.</p>
+        <div style="margin-top:1.25rem;">
+          <button type="submit">Save season</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

@@ -1,5 +1,5 @@
 /**
- * Merch store — categories, variant products, cart, Stripe checkout, digital grants.
+ * Merch store - categories, variant products, cart, Stripe checkout, digital grants.
  */
 const path = require("path");
 const fs = require("fs");
@@ -796,6 +796,7 @@ function registerMerchRoutes(app, ctx) {
     generateCustomFilename,
     parentLinks,
     sendEmail,
+    opsSystem,
   } = ctx;
 
   function merchEnabled(req, res, next) {
@@ -982,6 +983,8 @@ function registerMerchRoutes(app, ctx) {
   });
 
   // ── Store ──
+  app.get(["/merch", "/shop"], (req, res) => res.redirect(301, "/store"));
+
   app.get("/store", merchEnabled, (req, res) => {
     const products = listActiveProducts(db);
     const categories = listCategories(db);
@@ -1206,6 +1209,15 @@ function registerMerchRoutes(app, ctx) {
       return res.json({ ok: true, clientSecret: paymentIntent.client_secret, potentialId });
     } catch (e) {
       console.error("Checkout pay error:", e);
+      if (opsSystem) {
+        opsSystem.logFailedPayment(db, {
+          message: "Merch checkout payment setup failed",
+          detail: e,
+          req,
+          statusCode: 500,
+        });
+        opsSystem.markLogged(res, e);
+      }
       return res.status(500).json({ ok: false, message: e.message || "Payment setup failed." });
     }
   });
@@ -1225,6 +1237,15 @@ function registerMerchRoutes(app, ctx) {
       return res.json({ ok: true, redirect: `/store/success/${orderId}` });
     } catch (e) {
       console.error("Checkout complete error:", e);
+      if (opsSystem) {
+        opsSystem.logFailedPayment(db, {
+          message: "Merch checkout complete failed",
+          detail: e,
+          req,
+          statusCode: 500,
+        });
+        opsSystem.markLogged(res, e);
+      }
       return res.status(500).json({ ok: false, message: "Could not complete order." });
     }
   });

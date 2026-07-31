@@ -11,14 +11,9 @@
   const displayLast  = (typeof previewMode !== 'undefined' && previewMode) ? member.lastname  : user.lastname;
   const srcImage = member.img ? member.img : "/img/ui/gem.png";
   const isContracted = member.contractedIndependent || member.contractedCorps || member.contractedAffiliate;
-  let videoAuditionUrl = null;
-  if (!isContracted && member.section) {
-    if (member.section === "brass") {
-      videoAuditionUrl = "https://www.omnipply.com/programs/34bbd8ff-73b0-4452-a1ae-617a566d8817/apply";
-    } else if (member.section === "front ensemble" || member.section === "drumline") {
-      videoAuditionUrl = "https://www.omnipply.com/programs/54e57104-fb5f-4df1-8ad4-8a61f24513b8/apply";
-    }
-  }
+  const auditionActions = (typeof videoAuditionActions !== 'undefined' && Array.isArray(videoAuditionActions))
+    ? videoAuditionActions
+    : [];
 %>
 <body class="pd-body">
 <header><%- include("includes/header") %></header>
@@ -179,9 +174,15 @@
           <% if (!member.staff && member.owed > 0) { %>
             <a href="/make-payment" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
           <% } %>
-          <% if (videoAuditionUrl) { %>
-            <a href="<%= videoAuditionUrl %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> Video Audition</a>
-          <% } %>
+          <% auditionActions.forEach(function(action) { %>
+            <% if (action.unlocked && action.url) { %>
+              <a href="<%= action.url %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
+            <% } else if (action.unlocked) { %>
+              <a href="/video-audition/unlocked?program=<%= action.program %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
+            <% } else { %>
+              <a href="<%= action.payHref %>" class="pd-action-btn"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition ($<%= (action.feeCents / 100).toFixed(0) %>)</a>
+            <% } %>
+          <% }) %>
           <% if (contracts.length) { %>
             <a class="pd-action-btn pd-action-btn--primary" href="#" onclick="pdShow(document.querySelector('[onclick*=contracts]'),'contracts');return false;"><ion-icon name="document-text"></ion-icon> View Contracts</a>
           <% } %>

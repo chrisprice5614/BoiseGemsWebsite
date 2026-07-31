@@ -1,81 +1,83 @@
-<%
-  /* Requires: announcements (array), user (session user object) */
-  function annTimeLabel(ts) {
-    const d = new Date(ts);
-    const now = new Date();
-    const diffMs = now - d;
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1)   return 'Just now';
-    if (diffMins < 60)  return diffMins + 'm ago';
-    const diffHrs = Math.floor(diffMins / 60);
-    if (diffHrs < 24)   return diffHrs + 'h ago';
-    const diffDays = Math.floor(diffHrs / 24);
-    if (diffDays < 7)   return diffDays + 'd ago';
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-  function annEditJson(ann) {
-    return JSON.stringify({
-      id: ann.id,
-      body_html: ann.body_html,
-      aud_parents: !!ann.aud_parents,
-      aud_fans: !!ann.aud_fans,
-      aud_corps: !!ann.aud_corps,
-      aud_independent: !!ann.aud_independent,
-      aud_uncontracted: !!ann.aud_uncontracted,
-      images: (ann.images || []).map(function(i) { return i.filename; }),
-    }).replace(/</g, '\\u003c');
-  }
-%>
-<div class="ann-feed">
-  <% if (!announcements || !announcements.length) { %>
-    <p class="ann-empty">No announcements yet.</p>
-  <% } else { %>
-    <% announcements.forEach(function(ann) { %>
-    <div class="ann-item" id="ann-item-<%= ann.id %>">
-      <div class="ann-header">
-        <img class="ann-author-avatar" src="<%= ann.author_img || '/img/ui/gem.png' %>" alt="">
-        <div class="ann-meta">
-          <div class="ann-author-name"><%= ann.author_first %> <%= ann.author_last %></div>
-          <div class="ann-time"><%= annTimeLabel(ann.created_at) %><% if (user && user.admin && annAdminTools && ann.updated_at > ann.created_at + 60000) { %> · edited<% } %></div>
-        </div>
-        <% if (user && user.admin && annAdminTools) { %>
-        <div class="ann-admin-actions">
-          <button type="button" class="ann-edit-btn" title="Edit announcement" onclick="annStartEdit(<%= ann.id %>)">
-            <ion-icon name="create"></ion-icon>
-          </button>
-          <form id="ann-del-<%= ann.id %>" method="POST" action="/admin/announcements/<%= ann.id %>/delete" class="ann-delete-form">
-            <button type="button" class="ann-delete-btn" title="Delete announcement"
-                    onclick="bgConfirm('Delete this announcement?', function(){ document.getElementById('ann-del-<%= ann.id %>').submit(); })">
-              <ion-icon name="trash"></ion-icon>
-            </button>
-          </form>
-        </div>
-        <script type="application/json" id="ann-data-<%= ann.id %>"><%- annEditJson(ann) %></script>
-        <% } %>
-      </div>
-      <% if (user && user.admin && annAdminTools) { %>
-      <div class="ann-aud-badges">
-        <% if (ann.aud_parents)     { %><span class="ann-aud-badge">Parents</span><% } %>
-        <% if (ann.aud_fans)        { %><span class="ann-aud-badge">Fans</span><% } %>
-        <% if (ann.aud_corps)       { %><span class="ann-aud-badge">Corps</span><% } %>
-        <% if (ann.aud_independent) { %><span class="ann-aud-badge">Independent</span><% } %>
-        <% if (ann.aud_uncontracted){ %><span class="ann-aud-badge">Uncontracted</span><% } %>
-        <% if (!ann.aud_parents && !ann.aud_fans && !ann.aud_corps && !ann.aud_independent && !ann.aud_uncontracted) { %>
-        <span class="ann-aud-badge ann-aud-badge--none">No audience selected</span>
-        <% } %>
-        <span class="ann-aud-badge ann-aud-badge--always">Admin &amp; Staff</span>
-      </div>
-      <% } %>
-      <div class="ann-body"><%- ann.body_html %></div>
-      <% if (ann.images && ann.images.length) { %>
-      <div class="ann-imgs">
-        <% ann.images.forEach(function(img) { %>
-        <img class="ann-img-thumb" src="/img/publicupload/<%= img.filename %>"
-             alt="Announcement image" onclick="annImgModal(this.src)" loading="lazy">
-        <% }) %>
-      </div>
-      <% } %>
-    </div>
-    <% }) %>
-  <% } %>
-</div>
+<%
+  /* Requires: announcements (array), user (session user object)
+     Optional: annAdminTools (truthy only on admin portal) */
+  const showAnnAdmin = typeof annAdminTools !== "undefined" && !!annAdminTools;
+  function annTimeLabel(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1)   return 'Just now';
+    if (diffMins < 60)  return diffMins + 'm ago';
+    const diffHrs = Math.floor(diffMins / 60);
+    if (diffHrs < 24)   return diffHrs + 'h ago';
+    const diffDays = Math.floor(diffHrs / 24);
+    if (diffDays < 7)   return diffDays + 'd ago';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function annEditJson(ann) {
+    return JSON.stringify({
+      id: ann.id,
+      body_html: ann.body_html,
+      aud_parents: !!ann.aud_parents,
+      aud_fans: !!ann.aud_fans,
+      aud_corps: !!ann.aud_corps,
+      aud_independent: !!ann.aud_independent,
+      aud_uncontracted: !!ann.aud_uncontracted,
+      images: (ann.images || []).map(function(i) { return i.filename; }),
+    }).replace(/</g, '\\u003c');
+  }
+%>
+<div class="ann-feed">
+  <% if (!announcements || !announcements.length) { %>
+    <p class="ann-empty">No announcements yet.</p>
+  <% } else { %>
+    <% announcements.forEach(function(ann) { %>
+    <div class="ann-item" id="ann-item-<%= ann.id %>">
+      <div class="ann-header">
+        <img class="ann-author-avatar" src="<%= ann.author_img || '/img/ui/gem.png' %>" alt="">
+        <div class="ann-meta">
+          <div class="ann-author-name"><%= ann.author_first %> <%= ann.author_last %></div>
+          <div class="ann-time"><%= annTimeLabel(ann.created_at) %><% if (user && user.admin && showAnnAdmin && ann.updated_at > ann.created_at + 60000) { %> · edited<% } %></div>
+        </div>
+        <% if (user && user.admin && showAnnAdmin) { %>
+        <div class="ann-admin-actions">
+          <button type="button" class="ann-edit-btn" title="Edit announcement" onclick="annStartEdit(<%= ann.id %>)">
+            <ion-icon name="create"></ion-icon>
+          </button>
+          <form id="ann-del-<%= ann.id %>" method="POST" action="/admin/announcements/<%= ann.id %>/delete" class="ann-delete-form">
+            <button type="button" class="ann-delete-btn" title="Delete announcement"
+                    onclick="bgConfirm('Delete this announcement?', function(){ document.getElementById('ann-del-<%= ann.id %>').submit(); })">
+              <ion-icon name="trash"></ion-icon>
+            </button>
+          </form>
+        </div>
+        <script type="application/json" id="ann-data-<%= ann.id %>"><%- annEditJson(ann) %></script>
+        <% } %>
+      </div>
+      <% if (user && user.admin && showAnnAdmin) { %>
+      <div class="ann-aud-badges">
+        <% if (ann.aud_parents)     { %><span class="ann-aud-badge">Parents</span><% } %>
+        <% if (ann.aud_fans)        { %><span class="ann-aud-badge">Fans</span><% } %>
+        <% if (ann.aud_corps)       { %><span class="ann-aud-badge">Corps</span><% } %>
+        <% if (ann.aud_independent) { %><span class="ann-aud-badge">Independent</span><% } %>
+        <% if (ann.aud_uncontracted){ %><span class="ann-aud-badge">Uncontracted</span><% } %>
+        <% if (!ann.aud_parents && !ann.aud_fans && !ann.aud_corps && !ann.aud_independent && !ann.aud_uncontracted) { %>
+        <span class="ann-aud-badge ann-aud-badge--none">No audience selected</span>
+        <% } %>
+        <span class="ann-aud-badge ann-aud-badge--always">Admin &amp; Staff</span>
+      </div>
+      <% } %>
+      <div class="ann-body"><%- ann.body_html %></div>
+      <% if (ann.images && ann.images.length) { %>
+      <div class="ann-imgs">
+        <% ann.images.forEach(function(img) { %>
+        <img class="ann-img-thumb" src="/img/publicupload/<%= img.filename %>"
+             alt="Announcement image" onclick="annImgModal(this.src)" loading="lazy">
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+    <% }) %>
+  <% } %>
+</div>

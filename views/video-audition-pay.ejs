@@ -1,0 +1,50 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Audition - <%= program.shortLabel %></title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main>
+  <div style="padding: 8px; max-width: 560px; margin: 0 auto;">
+    <br>
+    <h1 style="text-align: center;">Video Audition Application</h1>
+    <p style="text-align: center; color: #555;">
+      <%= program.label %> &middot; <%= seasonYear %> season
+    </p>
+    <br>
+    <div class="form-panel">
+      <p>
+        Pay the application fee to unlock the Omnipply video audition link for the
+        <strong><%= seasonYear %></strong> season. This unlock is tied to your account for
+        <strong><%= program.shortLabel %></strong> only.
+      </p>
+      <ul style="margin: 16px 0; padding-left: 1.25rem; line-height: 1.6;">
+        <li>Application fee:
+          <strong><%= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(feeCents / 100) %></strong>
+        </li>
+        <li>Card processing (6%):
+          <%= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(processingFee / 100) %>
+        </li>
+        <li>Total charged:
+          <strong><%= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCharge / 100) %></strong>
+        </li>
+      </ul>
+      <form action="/video-audition/pay" method="POST">
+        <input type="hidden" name="program" value="<%= program.key %>">
+        <div style="text-align: center;">
+          <button type="submit">Pay &amp; Unlock Omnipply</button>
+        </div>
+      </form>
+      <p style="text-align: center; margin-top: 16px;">
+        <a href="/member-portal">Back to member portal</a>
+      </p>
+    </div>
+    <br>
+  </div>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

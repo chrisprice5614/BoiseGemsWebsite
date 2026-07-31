@@ -25,7 +25,7 @@ html, body, div, span, applet, object, iframe, h1, h2, h3, h4, h5, h6, p, blockq
     --header-drop-shadow: drop-shadow(0 1px 2px rgba(0,0,0,0.35)) drop-shadow(0 2px 5px rgba(0,0,0,0.18));
     --header-bar-height: 96px;
 
-    /* Beveled-corner motif (top-left + bottom-right cut) — site identity.
+    /* Beveled-corner motif (top-left + bottom-right cut) - site identity.
        Any element can opt in with:  clip-path: var(--bevel-clip);
        Override --bevel locally to change the cut size. */
     --bevel: 14px;
@@ -847,7 +847,7 @@ main{
                 width 300ms cubic-bezier(0.4,0,0.2,1);
 }
 
-/* Open state — bars form an X */
+/* Open state - bars form an X */
 .hamburger-btn.is-open .hamburger-bar:nth-child(1){
     transform: translateY(7px) rotate(45deg);
 }
@@ -1519,7 +1519,7 @@ a .video-header{
 }
 
 /* Marching-field grid tile (384×48px): horizontals every 48px @ 0.35px;
-   verticals every 48px — every 8th @ 1px, every 4th @ 0.6px, rest @ 0.35px. */
+   verticals every 48px - every 8th @ 1px, every 4th @ 0.6px, rest @ 0.35px. */
 :root{
   --march-grid-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='384' height='48'%3E%3Crect x='0' y='0' width='384' height='0.35' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='0' y='0' width='1' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='191.7' y='0' width='0.6' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='47.825' y='0' width='0.35' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='95.825' y='0' width='0.35' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='143.825' y='0' width='0.35' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='239.825' y='0' width='0.35' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='287.825' y='0' width='0.35' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3Crect x='335.825' y='0' width='0.35' height='48' fill='%235a3a78' fill-opacity='0.55'/%3E%3C/svg%3E");
   --march-grid-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='384' height='48'%3E%3Crect x='0' y='0' width='384' height='0.35' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='0' y='0' width='1' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='191.7' y='0' width='0.6' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='47.825' y='0' width='0.35' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='95.825' y='0' width='0.35' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='143.825' y='0' width='0.35' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='239.825' y='0' width='0.35' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='287.825' y='0' width='0.35' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3Crect x='335.825' y='0' width='0.35' height='48' fill='%23ffffff' fill-opacity='0.46'/%3E%3C/svg%3E");
@@ -1532,7 +1532,7 @@ a .video-header{
   background: linear-gradient(145deg, #f4ecfb 0%, #e2d4f2 38%, #b995d4 72%, #6f4d92 100%);
 }
 
-/* Dark grid lines — strongest on the lighter side of the gradient */
+/* Dark grid lines - strongest on the lighter side of the gradient */
 .purple-storm-2::before {
   content: "";
   position: absolute;
@@ -1547,7 +1547,7 @@ a .video-header{
   mask-image: linear-gradient(145deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.55) 42%, rgba(0, 0, 0, 0) 68%);
 }
 
-/* Light grid lines — strongest on the darker side of the gradient */
+/* Light grid lines - strongest on the darker side of the gradient */
 .purple-storm-2::after {
   content: "";
   position: absolute;
@@ -1681,7 +1681,7 @@ a.round-button:hover{
 }
 
 /* =========================================================
-   Visual refresh – November 2025
+   Visual refresh - November 2025
    (Overrides / polishes existing styles without breaking layout)
    ========================================================= */
 
@@ -1746,7 +1746,7 @@ table tr td .card {
   line-height: 1.6;
 }
 
-/* Buttons – beveled 6-sided shape (top-left + bottom-right corners cut).
+/* Buttons - beveled 6-sided shape (top-left + bottom-right corners cut).
    On hover the bevel morphs to the opposite corners. Structural buttons
    (hamburger, mobile back, mobile nav links, confirm dialog) are excluded. */
 button:not(.hamburger-btn):not(.mobile-back-btn):not(.mobile-nav-link):not(#confirm-yes):not(#confirm-no),
@@ -1813,7 +1813,7 @@ input[type="submit"]:disabled {
   }
 }
 
-/* Forms – make inputs feel more modern */
+/* Forms - make inputs feel more modern */
 input[type="text"],
 input[type="email"],
 input[type="password"],
@@ -1823,7 +1823,7 @@ input[type="number"],
 select,
 textarea {
   border-radius: 8px;
-  /* NOTE: border width intentionally NOT overridden here – stays 2px from above to prevent hover shift */
+  /* NOTE: border width intentionally NOT overridden here - stays 2px from above to prevent hover shift */
   padding: 8px 10px;
   font-size: 0.95rem;
   background-color: #ffffff;
@@ -2890,7 +2890,7 @@ footer {
 .admin-table tr:nth-child(even) { background: var(--light-half); }
 
 /* =========================================================
-   Member portal — view-materials gold button
+   Member portal - view-materials gold button
    ========================================================= */
 a[href="/view-materials"] { display: inline-block; }
 a[href="/view-materials"] > button {
@@ -3043,7 +3043,7 @@ a[href="/view-materials"] > button:hover::before {
 }
 
 /* =========================================================
-   Show 2024 — Ghost Stallion smoke effect
+   Show 2024 - Ghost Stallion smoke effect
    ========================================================= */
 .smoke-billow {
   --smoke-speed-base: 34s;
@@ -3096,7 +3096,7 @@ a[href="/view-materials"] > button:hover::before {
 }
 
 /* =========================================================
-   Portal Dashboard — member-portal & parent-portal
+   Portal Dashboard - member-portal & parent-portal
    Full-screen 2-pane layout: sidebar + content
    ========================================================= */
 
@@ -3175,7 +3175,7 @@ body.pd-body > footer { flex: 0 0 auto; }
 .pd-nav-divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 6px 14px; }
 
 /* --- Main content area --- */
-/* Two-class specificity beats the single-type "main" rule — no !important needed */
+/* Two-class specificity beats the single-type "main" rule - no !important needed */
 .pd-layout .pd-main {
   flex: 1; min-width: 0; overflow-y: auto;
   max-width: none; margin: 0; padding: 0;
@@ -3184,7 +3184,7 @@ body.pd-body > footer { flex: 0 0 auto; }
 
 .pd-section { display: none; }
 .pd-section.pd-active { display: block; }
-/* No max-width — content fills the whole available pane */
+/* No max-width - content fills the whole available pane */
 .pd-section-inner { padding: 28px 40px 52px; }
 
 .pd-section-heading { font-size: 1.5rem; font-weight: 800; color: var(--secondary-color); margin-bottom: 3px; }
@@ -3369,7 +3369,7 @@ body.pd-body > footer { flex: 0 0 auto; }
   display: none; position: fixed; inset: 0; z-index: 3499;
   background: rgba(0,0,0,0.45);
 }
-/* Old floating circle — hidden everywhere now */
+/* Old floating circle - hidden everywhere now */
 .pd-mobile-toggle { display: none !important; }
 
 /* Sticky top-bar shown only on mobile */
@@ -3422,7 +3422,7 @@ body.pd-body > footer { flex: 0 0 auto; }
 }
 
 /* =========================================================
-   BEVELED CORNER MOTIF — site identity
+   BEVELED CORNER MOTIF - site identity
    Replaces rounded corners on cards, panels, alerts, form
    fields and tables with the signature 6-sided shape
    (top-left + bottom-right cut) used by the buttons.
@@ -3551,7 +3551,7 @@ table {
 }
 
 /* =========================================================
-   Homepage — Support / Donation call-to-action
+   Homepage - Support / Donation call-to-action
    Light section creeps up at the top-left into the section
    above. The pointing figure sits at the bottom-right and is
    layered BELOW the next section, so it appears to pop up from
@@ -3658,7 +3658,7 @@ table {
 }
 
 /* =========================================================
-   Homepage — Upcoming Events
+   Homepage - Upcoming Events
    Featured (first) event: wide + centered, image left / info right.
    Remaining events: vertical cards (image top / info bottom).
    Mobile: everything becomes a horizontal card (image + info) and
@@ -4285,7 +4285,7 @@ table {
   margin-left: auto;
 }
 
-/* WYSIWYG editor — styled output, no markdown syntax visible */
+/* WYSIWYG editor - styled output, no markdown syntax visible */
 #annImgInput {
   display: none !important;
   width: 0 !important;
@@ -4975,6 +4975,7 @@ footer #test-site-overlay a:hover {
 }
 .sch-field textarea { resize: vertical; min-height: 72px; }
 .sch-field--time { width: 130px; flex: 0 0 130px; }
+.sch-des-time-head .sch-field--time:nth-child(2) { width: 150px; flex: 0 0 150px; }
 .sch-field--grow { flex: 1 1 180px; min-width: 0; }
 .sch-designer-note {
   font-size: 0.88rem;
@@ -5053,7 +5054,7 @@ footer #test-site-overlay a:hover {
 }
 .sch-designer-flash--err { background: #fff2f2; border-color: #fca5a5; color: #b02020; }
 
-/* Single-column page flow — NOT side-by-side meta | editor columns */
+/* Single-column page flow - NOT side-by-side meta | editor columns */
 .sch-designer-stack,
 .sch-designer-grid {
   display: flex;

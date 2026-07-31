@@ -1,5 +1,5 @@
 /**
- * Join Corps page content — HTML from WYSIWYG admin editor.
+ * Join Corps page content - HTML from WYSIWYG admin editor.
  */
 const marked = require("marked");
 

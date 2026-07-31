@@ -43,6 +43,8 @@
 
   function formatTimeSlotLabel(timeSlot) {
     var timeStr = formatTime12(timeSlot.time);
+    var endStr = timeSlot.end_time ? formatTime12(timeSlot.end_time) : '';
+    if (endStr) timeStr = timeStr + ' - ' + endStr;
     var title = String(timeSlot.title || '').trim();
     if (!title) return timeStr;
     return timeStr + ' - ' + title;

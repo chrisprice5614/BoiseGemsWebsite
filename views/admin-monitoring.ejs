@@ -1,0 +1,434 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Monitoring - Admin</title>
+  <%- include("includes/head") %>
+  <style>
+    /* Break out of the narrow global <main> panel */
+    body.mon-page {
+      background: #ebe7f0;
+    }
+    body.mon-page main {
+      max-width: none;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .mon-hero {
+      background: linear-gradient(135deg, #4a3263 0%, #60437D 48%, #7a5a9a 100%);
+      color: #fff;
+      padding: 28px 32px 32px;
+    }
+    .mon-hero a {
+      color: rgba(255, 255, 255, 0.85);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .mon-hero a:hover { color: #fff; text-decoration: underline; }
+    .mon-hero h1 {
+      margin: 10px 0 6px;
+      color: #fff;
+      font-size: 1.85rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .mon-hero .mon-lead {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 1rem;
+      max-width: 60ch;
+    }
+
+    .mon-wrap {
+      width: min(1400px, calc(100% - 48px));
+      margin: -18px auto 48px;
+      padding: 0;
+    }
+
+    .mon-flash {
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      color: #1b5e20;
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+    }
+
+    .mon-panel {
+      background: #fff;
+      border: 1px solid rgba(96, 67, 125, 0.12);
+      border-radius: 14px;
+      padding: 22px 24px 26px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(40, 24, 60, 0.06);
+      scroll-margin-top: 100px;
+    }
+    .mon-panel h2 {
+      margin: 0 0 6px;
+      font-size: 1.25rem;
+      color: #2a2140;
+    }
+    .mon-section-sub {
+      color: #666;
+      margin: 0 0 18px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .mon-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 1000px) {
+      .mon-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .mon-grid { grid-template-columns: 1fr; }
+      .mon-wrap { width: calc(100% - 24px); margin-top: -12px; }
+      .mon-hero { padding: 22px 18px 26px; }
+      .mon-panel { padding: 18px 16px 20px; }
+    }
+
+    .mon-card {
+      background: #f8f6fb;
+      border: 1px solid rgba(96, 67, 125, 0.1);
+      border-radius: 12px;
+      padding: 16px 18px;
+      min-height: 110px;
+    }
+    .mon-card h3 {
+      margin: 0 0 8px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b5585;
+      font-weight: 700;
+    }
+    .mon-card .mon-sub {
+      margin-top: 4px;
+      font-size: 0.92rem;
+      color: #444;
+      line-height: 1.45;
+    }
+
+    .mon-status {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+      letter-spacing: 0.02em;
+    }
+    .mon-status--ok { background: #d4edda; color: #155724; }
+    .mon-status--warn { background: #fff3cd; color: #856404; }
+    .mon-status--bad { background: #f8d7da; color: #721c24; }
+
+    .mon-note {
+      background: #f4f0f9;
+      border-left: 4px solid #60437D;
+      padding: 14px 16px;
+      margin: 0 0 18px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: #333;
+      border-radius: 0 10px 10px 0;
+    }
+    .mon-note a { color: #60437D; font-weight: 600; }
+
+    .mon-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .mon-filters select,
+    .mon-filters input[type="text"],
+    .mon-actions input[type="number"] {
+      padding: 9px 12px;
+      border: 1px solid #cfc8d8;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      background: #fff;
+    }
+    .mon-filters input[type="text"] { flex: 1; min-width: 200px; }
+    .mon-filters button,
+    .mon-actions button {
+      padding: 9px 16px;
+      border-radius: 8px;
+      border: none;
+      background: #60437D;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mon-filters button:hover,
+    .mon-actions button:hover { background: #4a3263; }
+    .mon-filters a { color: #60437D; font-weight: 600; }
+
+    .mon-type {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #eee;
+      color: #333;
+      white-space: nowrap;
+    }
+    .mon-type--application-error { background: #fdecea; color: #b71c1c; }
+    .mon-type--http-error { background: #fce4ec; color: #880e4f; }
+    .mon-type--database-error { background: #fff3e0; color: #e65100; }
+    .mon-type--failed-payment { background: #e3f2fd; color: #0d47a1; }
+    .mon-type--failed-email { background: #f3e5f5; color: #6a1b9a; }
+
+    .mon-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 0 0 18px;
+    }
+    .mon-actions form {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin: 0;
+    }
+    .mon-empty { color: #888; font-style: italic; padding: 8px 0; }
+    .mon-detail-preview {
+      max-width: 420px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #777;
+      font-size: 0.85rem;
+      margin-top: 2px;
+    }
+
+    .mon-table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid rgba(96, 67, 125, 0.1);
+      border-radius: 10px;
+    }
+    body.mon-page .admin-table {
+      margin-top: 0;
+      min-width: 720px;
+    }
+    body.mon-page .admin-table th {
+      background: #60437D;
+      position: sticky;
+      top: 0;
+    }
+    body.mon-page .admin-table td,
+    body.mon-page .admin-table th {
+      padding: 11px 14px;
+      vertical-align: top;
+    }
+    body.mon-page .admin-table tr:nth-child(even) { background: #f7f5fa; }
+    body.mon-page .admin-table a {
+      color: #60437D;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .mon-type-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(96, 67, 125, 0.1);
+    }
+  </style>
+</head>
+<body class="mon-page">
+  <header>
+    <%- include("includes/header") %>
+  </header>
+  <main>
+    <div class="mon-hero">
+      <a href="/admin-portal?section=system">&larr; Admin Portal</a>
+      <h1>System Monitoring</h1>
+      <p class="mon-lead">Website health, error logs, and database backups.</p>
+    </div>
+
+    <div class="mon-wrap">
+      <% if (flashMessage) { %>
+        <div class="mon-flash"><%= flashMessage %></div>
+      <% } %>
+
+      <!-- Health -->
+      <section class="mon-panel" id="health">
+        <h2>Website Health</h2>
+        <p class="mon-section-sub">
+          Overall:
+          <% if (health.overallOk) { %>
+            <span class="mon-status mon-status--ok">Healthy</span>
+          <% } else { %>
+            <span class="mon-status mon-status--bad">Needs attention</span>
+          <% } %>
+          · Uptime <%= health.uptimeLabel %> · Node <%= health.nodeVersion %>
+        </p>
+
+        <div class="mon-grid">
+          <% health.checks.forEach(function(c) {
+            var cls = c.ok ? "mon-status--ok" : (c.warn ? "mon-status--warn" : "mon-status--bad");
+            var label = c.ok ? "OK" : (c.warn ? "Watch" : "Issue");
+          %>
+            <div class="mon-card">
+              <span class="mon-status <%= cls %>"><%= label %></span>
+              <h3><%= c.label %></h3>
+              <div class="mon-sub"><%= c.detail %></div>
+            </div>
+          <% }) %>
+        </div>
+
+        <% if (health.stats24h.byType && health.stats24h.byType.length) { %>
+          <div class="mon-type-stats">
+            <% health.stats24h.byType.forEach(function(t) { %>
+              <div>
+                <span class="mon-type mon-type--<%= t.type %>"><%= t.type %></span>
+                <span style="margin-left:6px;color:#555;font-size:0.9rem;"><%= t.count %></span>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <!-- Backups -->
+      <section class="mon-panel" id="backups">
+        <h2>Database Backups</h2>
+        <p class="mon-section-sub">
+          Automatic copy every <%= health.backupIntervalHours %> hours. Copies older than <%= health.backupRetentionDays %> days are deleted.
+        </p>
+
+        <div class="mon-note">
+          To restore the database to a previous version, contact
+          <a href="mailto:<%= restoreContact %>"><%= restoreContact %></a>.
+          Admins cannot restore backups from this portal.
+        </div>
+
+        <div class="mon-actions">
+          <form method="POST" action="/admin/monitoring/backup-now" onsubmit="return confirm('Create a database backup now?');">
+            <button type="submit">Backup now</button>
+          </form>
+        </div>
+
+        <% if (!health.backups.length) { %>
+          <p class="mon-empty">No backups yet. One will be created shortly after server start, or click Backup now.</p>
+        <% } else { %>
+          <div class="mon-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Created</th>
+                  <th>Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% health.backups.forEach(function(b) { %>
+                  <tr>
+                    <td><code><%= b.name %></code></td>
+                    <td><%= new Date(b.createdAt).toLocaleString() %></td>
+                    <td><%= (b.sizeBytes / (1024 * 1024)).toFixed(2) %> MB</td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+
+      <!-- Logs -->
+      <section class="mon-panel" id="logs">
+        <h2>Error Logs</h2>
+        <p class="mon-section-sub">
+          HTTP 5xx responses, application errors, database failures, failed payments, and failed emails.
+          <%= logs.total %> matching <%= logs.total === 1 ? "entry" : "entries" %>.
+        </p>
+
+        <form class="mon-filters" method="GET" action="/admin/monitoring">
+          <select name="type">
+            <option value="">All types</option>
+            <% logTypes.forEach(function(t) { %>
+              <option value="<%= t %>" <%= typeFilter === t ? "selected" : "" %>><%= t %></option>
+            <% }) %>
+          </select>
+          <input type="text" name="q" value="<%= q %>" placeholder="Search message, path, name...">
+          <button type="submit">Filter</button>
+          <% if (typeFilter || q) { %>
+            <a href="/admin/monitoring#logs">Clear</a>
+          <% } %>
+        </form>
+
+        <div class="mon-actions">
+          <form method="POST" action="/admin/monitoring/clear-logs" onsubmit="return confirm('Delete logs older than the selected number of days?');">
+            <label style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              Clear logs older than
+              <input type="number" name="olderThanDays" value="30" min="1" max="365" style="width: 70px;">
+              days
+            </label>
+            <button type="submit">Clear old logs</button>
+          </form>
+        </div>
+
+        <% if (!logs.rows.length) { %>
+          <p class="mon-empty">No error logs match this filter.</p>
+        <% } else { %>
+          <div class="mon-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Type</th>
+                  <th>Code</th>
+                  <th>User</th>
+                  <th>Message</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% logs.rows.forEach(function(row) { %>
+                  <tr>
+                    <td style="white-space: nowrap;"><%= new Date(row.created_at).toLocaleString() %></td>
+                    <td><span class="mon-type mon-type--<%= row.type %>"><%= row.type %></span></td>
+                    <td><%= row.status_code != null ? row.status_code : "-" %></td>
+                    <td>
+                      <% if (row.user_firstname || row.user_lastname) { %>
+                        <%= row.user_firstname || "" %> <%= row.user_lastname || "" %>
+                      <% } else { %>
+                        <span style="color:#999;">-</span>
+                      <% } %>
+                    </td>
+                    <td>
+                      <div><%= row.message %></div>
+                      <% if (row.path) { %>
+                        <div class="mon-detail-preview"><%= row.method || "" %> <%= row.path %></div>
+                      <% } %>
+                    </td>
+                    <td><a href="/admin/error-logs/<%= row.id %>">View</a></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+    </div>
+  </main>
+  <footer>
+    <%- include("includes/footer") %>
+  </footer>
+</body>
+</html>

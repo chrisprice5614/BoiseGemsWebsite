@@ -1,5 +1,5 @@
 /**
- * Our History page content — HTML from WYSIWYG admin editor.
+ * Our History page content - HTML from WYSIWYG admin editor.
  */
 
 const DEFAULT_OUR_HISTORY_HTML = `

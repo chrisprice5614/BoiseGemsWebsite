@@ -373,7 +373,7 @@
 
     async function renderPdfFromFile(file) {
       if (!file || !pagesEl) return;
-      pagesEl.innerHTML = "<p style='padding:20px;text-align:center;'>Loading PDF…</p>";
+      pagesEl.innerHTML = "<p style='padding:20px;text-align:center;'>Loading PDF...</p>";
       await loadPdfJs();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       objectUrl = URL.createObjectURL(file);
@@ -403,7 +403,7 @@
 
     async function renderPdfFromUrl(url) {
       if (!url || !pagesEl) return;
-      pagesEl.innerHTML = "<p style='padding:20px;text-align:center;'>Loading PDF…</p>";
+      pagesEl.innerHTML = "<p style='padding:20px;text-align:center;'>Loading PDF...</p>";
       await loadPdfJs();
       pdfDoc = await pdfjsLib.getDocument(url).promise;
       pagesEl.innerHTML = "";
@@ -577,7 +577,7 @@
 
     async function renderFill() {
       if (!pdfUrl || !pagesEl) return;
-      pagesEl.innerHTML = "<p style='text-align:center;padding:24px;'>Loading the form…</p>";
+      pagesEl.innerHTML = "<p style='text-align:center;padding:24px;'>Loading the form...</p>";
       await loadPdfJs();
       var doc = await pdfjsLib.getDocument(pdfUrl).promise;
       pagesEl.innerHTML = "";
@@ -611,7 +611,7 @@
           input.name = "fld_" + f.id;
           input.dataset.fieldId = f.id;
           input.placeholder = f.label || (f.type === "signature" ? "Type your name to sign" : "Type here");
-          // Partial submit is allowed — nothing on the PDF is required by the browser.
+          // Partial submit is allowed - nothing on the PDF is required by the browser.
           input.required = false;
           var prior = prefill[f.id] != null ? String(prefill[f.id]).trim() : "";
           if (prior) {
@@ -619,7 +619,7 @@
             // Keep prior signatures/initials locked so a later signer cannot wipe them.
             if (f.type === "signature" || f.type === "initials") {
               input.readOnly = true;
-              input.title = "Already signed — kept for this legal document";
+              input.title = "Already signed - kept for this legal document";
               box.classList.add("is-locked");
             }
           }
@@ -649,7 +649,7 @@
           }
         });
         if (valuesInput) valuesInput.value = JSON.stringify(map);
-        // Intentionally no block for missing fields — users may submit partially.
+        // Intentionally no block for missing fields - users may submit partially.
       });
     }
 

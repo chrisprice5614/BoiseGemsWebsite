@@ -1,5 +1,5 @@
 /**
- * Schedule v2 — time slots with expandable section entries.
+ * Schedule v2 - time slots with expandable section entries.
  */
 const SCHEDULE_GROUPS = {
   whole_corps: "Whole Corps",
@@ -75,10 +75,17 @@ function initSchedulesV2(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
       time TEXT NOT NULL,
+      end_time TEXT,
       title TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0
     )
   `).run();
+
+  // Existing DBs created before end_time existed
+  const timeCols = db.prepare("PRAGMA table_info(schedule_times)").all().map((c) => c.name);
+  if (!timeCols.includes("end_time")) {
+    db.prepare("ALTER TABLE schedule_times ADD COLUMN end_time TEXT").run();
+  }
 
   db.prepare(`
     CREATE TABLE IF NOT EXISTS schedule_entries (
@@ -222,6 +229,7 @@ function loadScheduleTimes(db, scheduleId, userId, forEditor) {
     return {
       id: t.id,
       time: t.time,
+      end_time: t.end_time || "",
       title: t.title || "",
       entries: visible.map(serializeEntry),
     };
@@ -243,11 +251,27 @@ function loadSchedulePayload(db, scheduleRow, userId, forEditor) {
   };
 }
 
+function normalizeEndTime(startTime, endTime) {
+  const end = String(endTime || "").trim();
+  if (!end) return null;
+  const start = String(startTime || "").trim();
+  // Soft-clear invalid ranges (end before start)
+  const toMins = (hhmm) => {
+    const m = String(hhmm).match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    return Number(m[1]) * 60 + Number(m[2]);
+  };
+  const s = toMins(start);
+  const e = toMins(end);
+  if (s != null && e != null && e < s) return null;
+  return end;
+}
+
 function saveScheduleTree(db, scheduleId, times) {
   db.prepare("DELETE FROM schedule_times WHERE schedule_id = ?").run(scheduleId);
 
   const insertTime = db.prepare(`
-    INSERT INTO schedule_times (schedule_id, time, title, sort_order) VALUES (?, ?, ?, ?)
+    INSERT INTO schedule_times (schedule_id, time, end_time, title, sort_order) VALUES (?, ?, ?, ?, ?)
   `);
   const insertEntry = db.prepare(`
     INSERT INTO schedule_entries
@@ -256,7 +280,9 @@ function saveScheduleTree(db, scheduleId, times) {
   `);
 
   (times || []).forEach((t, ti) => {
-    const timeInfo = insertTime.run(scheduleId, t.time || "08:00", t.title || "", t.sort_order ?? ti);
+    const start = t.time || "08:00";
+    const end = normalizeEndTime(start, t.end_time);
+    const timeInfo = insertTime.run(scheduleId, start, end, t.title || "", t.sort_order ?? ti);
     const timeId = timeInfo.lastInsertRowid;
     (t.entries || []).forEach((e, ei) => {
       const gt = e.group || e.group_type;

@@ -25,11 +25,19 @@
   "version": "1.0.0",
   "main": "boise-server.js",
   "scripts": {
-    "dev": "nodemon server",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon boise-server.js",
+    "start": "node boise-server.js",
+    "seed:e2e": "node e2e/helpers/seed-users.js",
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
 }

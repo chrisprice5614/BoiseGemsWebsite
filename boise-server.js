@@ -9302,7 +9302,7 @@ app.get("/staff-admin", mustBeAdmin, (req, res) => {
   res.render("staff-admin", {
     grouped,
     categories,
-    canReorderStaff: staffDisplay.canReorderStaff(req.user),
+    canReorderStaff: true,
   });
 });
 
@@ -10270,13 +10270,12 @@ app.post("/staff/:id/delete", mustBeAdmin, (req, res) => {
   res.redirect("/staff-admin");
 });
 
-// Hidden drag reorder - Chris only
+// Drag reorder within a category (any admin)
 app.post("/staff/reorder-placements", mustBeAdmin, (req, res) => {
-  if (!staffDisplay.canReorderStaff(req.user)) {
-    return res.status(403).json({ ok: false, message: "Forbidden" });
-  }
-  const categoryId = Number(req.body.categoryId);
-  const placementIds = Array.isArray(req.body.placementIds) ? req.body.placementIds : [];
+  const categoryId = Number(req.body && req.body.categoryId);
+  const placementIds = Array.isArray(req.body && req.body.placementIds)
+    ? req.body.placementIds.map(Number).filter((n) => n > 0)
+    : [];
   if (!categoryId || !placementIds.length) {
     return res.status(400).json({ ok: false, message: "Invalid payload" });
   }

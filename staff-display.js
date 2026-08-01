@@ -324,8 +324,11 @@ function gemTileStyle(id) {
   return { clip, rot, z, scale, marginTop, marginLeft, marginRight, minHeight };
 }
 
+/** Any signed-in admin may reorder; staff-admin routes are already mustBeAdmin. */
 function canReorderStaff(user) {
-  return !!(user && Number(user.admin) === 1);
+  if (!user) return false;
+  const a = user.admin;
+  return a === true || a === 1 || a === "1" || Number(a) === 1;
 }
 
 function reorderPlacements(db, categoryId, placementIds) {

@@ -38,8 +38,11 @@
         <textarea id="description" name="description" rows="2"><%= role ? (role.description || '') : '' %></textarea>
         <label class="perm-item" style="margin-top:14px;">
           <input type="checkbox" name="requires_mfa" value="1" <%= (role && role.requires_mfa) ? 'checked' : '' %>>
-          Require email MFA for users with this role
+          Require email MFA (login code) for users with this role
         </label>
+        <p style="margin:8px 0 0; color:#666; font-size:0.9rem;">
+          Leave unchecked for parents, members, and regular staff. Only turn on for roles that should verify by email at login (admins / directors).
+        </p>
       </div>
       <div class="ra-panel">
         <h2 style="margin-top:0;">Permissions</h2>

@@ -25,7 +25,7 @@
         <h3 style="margin-top:6px;">Steps to Audition</h3>
         <ol style="margin:8px 0 16px; padding-left:20px;">
           <li style="margin-bottom:8px;"><strong>1. Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can keep your info, track RSVPs, and share audition materials.</li>
-          <li style="margin-bottom:8px;"><strong>2. Download Audition Materials</strong> - Log in to the <% if (user && member) { %><a href="/member-portal">Member Portal</a><% } else { %>Member Portal<% } %> and download the packet with warmups, excerpts, and rehearsal guides.</li>
+          <li style="margin-bottom:8px;"><strong>2. Download Audition Materials</strong> - Log in to the <% if (typeof user !== 'undefined' && user) { %><a href="/member-portal">Member Portal</a><% } else { %><a href="/login?returnTo=/member-portal">Member Portal</a><% } %> and download the packet with warmups, excerpts, and rehearsal guides.</li>
           <li style="margin-bottom:8px;"><strong>3. Click "BGI Video Audition"</strong> - In the Member Portal pay the $40 season application fee to unlock Omnipply, then follow the submission instructions on the Video Audition website.</li>
         </ol>
       </div>
@@ -51,7 +51,7 @@
         <p style="margin:0 0 10px; max-width:70ch;">Can't make an in-person audition or prefer to submit first? Follow these three steps to submit a video audition. Make sure audio is clear and follow the order in the audition packet.</p>
         <ol style="margin:0 0 0 20px;">
           <li style="margin-bottom:8px;"><strong>Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can associate your submission with your profile.</li>
-          <li style="margin-bottom:8px;"><strong>Download Audition Materials</strong> - Log in to the <% if (user && member) { %><a href="/member-portal">Member Portal</a><% } else { %>Member Portal<% } %> and download the packet with warmups, excerpts, and rehearsal guides.</li>
+          <li style="margin-bottom:8px;"><strong>Download Audition Materials</strong> - Log in to the <% if (typeof user !== 'undefined' && user) { %><a href="/member-portal">Member Portal</a><% } else { %><a href="/login?returnTo=/member-portal">Member Portal</a><% } %> and download the packet with warmups, excerpts, and rehearsal guides.</li>
           <li style="margin-bottom:0;"><strong>Click "BGI Video Audition"</strong> - In the Member Portal, pay the $40 application fee for the current season to unlock the Omnipply video audition link, then follow the submission instructions.</li>
         </ol>
       </div>

@@ -725,17 +725,28 @@ function hasPermission(db, userId, permissionKey, scope = {}) {
   return getUserPermissionSet(db, userId, scope).has(permissionKey);
 }
 
+/**
+ * Email OTP MFA only for privileged logins.
+ * - Never for parents, members, fans (anyone who is not admin/staff).
+ * - Staff: only if an active role has requires_mfa = 1.
+ * - Admins (users.admin = 1) and lead admin email: always.
+ */
 function userRequiresMfa(db, userRow) {
   if (!userRow) return false;
-  if (Number(userRow.admin) === 1) return true;
+
+  const isAdmin = Number(userRow.admin) === 1;
+  const isStaff = Number(userRow.staff) === 1;
+
+  // Members, parents, fans, auditionees: password only. No email login codes.
+  if (!isAdmin && !isStaff) return false;
+
   if (String(userRow.email || "").toLowerCase() === LEAD_ADMIN_EMAIL) return true;
+  if (isAdmin) return true;
+
+  // Staff: role flag only
   const assignments = getActiveAssignments(db, userRow.id);
   for (const a of assignments) {
-    if (a.requires_mfa) return true;
-    const hasAdminPortal = db
-      .prepare("SELECT 1 AS ok FROM role_permissions WHERE role_id = ? AND permission_key = 'admin_portal'")
-      .get(a.role_id);
-    if (hasAdminPortal) return true;
+    if (Number(a.requires_mfa) === 1) return true;
   }
   return false;
 }

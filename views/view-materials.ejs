@@ -12,8 +12,9 @@
       background: #f8f8f8;
       border: 1px dashed #aaa;
       border-radius: 8px;
+      width: 100%;
     }
-    .edit-panel label { font-weight: 600; font-size: 0.9rem; }
+    .edit-panel label { font-weight: 600; font-size: 0.9rem; display: block; }
     .edit-panel .upload-row {
       display: flex;
       align-items: center;
@@ -33,6 +34,7 @@
     }
     .edit-panel button[type="submit"]:hover { background: #1558b0; }
     .btn-edit-mat {
+      display: inline-block;
       padding: 5px 12px;
       border-radius: 6px;
       background: #fff3e0;
@@ -41,10 +43,15 @@
       font-size: 0.85rem;
       font-weight: 600;
       cursor: pointer;
+      list-style: none;
+      user-select: none;
     }
     .btn-edit-mat:hover { background: #ffe0b2; }
-    details > summary { list-style: none; display: inline; }
-    details > summary::-webkit-details-marker { display: none; }
+    .mat-edit-details { display: inline-block; margin-left: 6px; }
+    .mat-edit-details > summary { list-style: none; }
+    .mat-edit-details > summary::-webkit-details-marker { display: none; }
+    .mat-edit-details[open] > summary { margin-bottom: 4px; }
+    .mat-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
   </style>
 </head>
 <body>
@@ -109,19 +116,18 @@
               <button class="btn-disabled" disabled>Coming soon</button>
             <% } %>
             <% if (admin || staff) { %>
-              <details>
-                <summary><button type="button" class="btn-edit-mat">Edit</button></summary>
+              <details class="mat-edit-details">
+                <summary class="btn-edit-mat">Edit</summary>
                 <div class="edit-panel">
                   <label>Upload new PDF for <em><%= pretty[key] %></em>:</label>
-                  <div class="form-panel">
-<form action="/set-materials" method="POST" enctype="multipart/form-data">
+                  <form action="/set-materials" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="return_to" value="/view-materials">
                     <div class="upload-row">
                       <input type="file" name="<%= fieldName[key] %>" accept="application/pdf" required />
                       <button type="submit">Upload &amp; Replace</button>
                     </div>
                     <small style="color:#888;">This will replace the current PDF for this section.</small>
                   </form>
-</div>
                 </div>
               </details>
             <% } %>

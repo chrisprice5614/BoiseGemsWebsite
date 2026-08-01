@@ -3,8 +3,10 @@
  */
 
 const STAFF_CATEGORY_SEED = [
-  { name: "Director", section_title: "Director", pages: ["history", "corps", "bgi"], sort_order: 10 },
-  { name: "Admin", section_title: "Admin", pages: ["history", "corps", "bgi"], sort_order: 20 },
+  { name: "Director - Drum & Bugle Corps", section_title: "Director", pages: ["history", "corps"], sort_order: 10 },
+  { name: "Director - Boise Gems Independent", section_title: "Director", pages: ["history", "bgi"], sort_order: 11 },
+  { name: "Admin - Corps", section_title: "Admin", pages: ["history", "corps"], sort_order: 20 },
+  { name: "Admin - Independent", section_title: "Admin", pages: ["history", "bgi"], sort_order: 21 },
   { name: "Design - Corps", section_title: "Design", pages: ["corps"], sort_order: 30 },
   { name: "Design - Independent", section_title: "Design", pages: ["bgi"], sort_order: 31 },
   { name: "Brass", section_title: "Brass", pages: ["corps"], sort_order: 40 },
@@ -20,9 +22,9 @@ const STAFF_CATEGORY_SEED = [
 ];
 
 const OLD_CATEGORY_MAP = {
-  Director: "Director",
-  "BGI Director": "Director",
-  Admin: "Admin",
+  Director: "Director - Drum & Bugle Corps",
+  "BGI Director": "Director - Boise Gems Independent",
+  Admin: "Admin - Corps",
   Design: "Design - Corps",
   "BGI Design": "Design - Independent",
   Brass: "Brass",
@@ -35,8 +37,76 @@ const OLD_CATEGORY_MAP = {
   "BGI Visual": "Visual - Independent",
   Board: "Board",
   "Advisory Board": "Advisory Board",
-  Other: "Admin",
+  Other: "Admin - Corps",
 };
+
+/** Rename legacy shared Director/Admin rows and ensure corps vs independent variants exist. */
+function ensureDirectorAdminCategories(db) {
+  const getByName = (name) => db.prepare("SELECT * FROM staff_categories WHERE name = ?").get(name);
+  const insert = db.prepare(`
+    INSERT INTO staff_categories (name, section_title, pages, sort_order) VALUES (?, ?, ?, ?)
+  `);
+  const update = db.prepare(`
+    UPDATE staff_categories SET name = ?, section_title = ?, pages = ?, sort_order = ? WHERE id = ?
+  `);
+
+  const specs = [
+    {
+      name: "Director - Drum & Bugle Corps",
+      legacy: ["Director"],
+      section_title: "Director",
+      pages: ["history", "corps"],
+      sort_order: 10,
+    },
+    {
+      name: "Director - Boise Gems Independent",
+      legacy: ["BGI Director"],
+      section_title: "Director",
+      pages: ["history", "bgi"],
+      sort_order: 11,
+    },
+    {
+      name: "Admin - Corps",
+      legacy: ["Admin"],
+      section_title: "Admin",
+      pages: ["history", "corps"],
+      sort_order: 20,
+    },
+    {
+      name: "Admin - Independent",
+      legacy: [],
+      section_title: "Admin",
+      pages: ["history", "bgi"],
+      sort_order: 21,
+    },
+  ];
+
+  for (const spec of specs) {
+    let row = getByName(spec.name);
+    if (!row) {
+      for (const legacyName of spec.legacy) {
+        row = getByName(legacyName);
+        if (row) break;
+      }
+    }
+    if (row) {
+      update.run(
+        spec.name,
+        spec.section_title,
+        JSON.stringify(spec.pages),
+        spec.sort_order,
+        row.id
+      );
+    } else {
+      insert.run(
+        spec.name,
+        spec.section_title,
+        JSON.stringify(spec.pages),
+        spec.sort_order
+      );
+    }
+  }
+}
 
 function parsePages(raw) {
   try {
@@ -100,6 +170,8 @@ function initStaffDisplay(db) {
       insert.run(row.name, row.section_title, JSON.stringify(row.pages), row.sort_order);
     }
   }
+
+  ensureDirectorAdminCategories(db);
 
   const placementCount = db.prepare("SELECT COUNT(*) AS c FROM staff_placements").get().c;
   if (!placementCount) {
@@ -204,6 +276,7 @@ function getStaffAdminGrouped(db) {
 function getStaffSectionsForPage(db, pageKey) {
   const categories = getStaffCategories(db).filter((c) => c.pages.includes(pageKey));
   const sections = [];
+  const byTitle = new Map();
 
   for (const cat of categories) {
     const staff = db.prepare(`
@@ -218,8 +291,15 @@ function getStaffSectionsForPage(db, pageKey) {
       category: cat.section_title,
     }));
 
-    if (staff.length) {
-      sections.push({ title: cat.section_title, staff, categoryId: cat.id });
+    if (!staff.length) continue;
+
+    const existing = byTitle.get(cat.section_title);
+    if (existing) {
+      existing.staff.push(...staff);
+    } else {
+      const section = { title: cat.section_title, staff, categoryId: cat.id };
+      byTitle.set(cat.section_title, section);
+      sections.push(section);
     }
   }
 
@@ -245,7 +325,7 @@ function gemTileStyle(id) {
 }
 
 function canReorderStaff(user) {
-  return !!(user && user.email && user.email.toLowerCase() === "chris@chrispricemusic.net");
+  return !!(user && Number(user.admin) === 1);
 }
 
 function reorderPlacements(db, categoryId, placementIds) {

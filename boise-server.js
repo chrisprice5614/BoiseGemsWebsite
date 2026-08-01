@@ -28,6 +28,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const scheduleSystem = require("./schedule-system");
 const staffDisplay = require("./staff-display");
 const joinCorpsContent = require("./join-corps-content");
+const joinIndependentContent = require("./join-independent-content");
 const ourHistoryContent = require("./our-history-content");
 const boardDirectorsContent = require("./board-directors-content");
 const seasonRosterSystem = require("./season-roster-system");
@@ -1365,6 +1366,15 @@ const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map(c =>
       boardDirectorsContent.getDefaultBoardHtml()
     );
   }
+  if (!ssCols.includes("join_independent_body_html")) {
+    db.prepare('ALTER TABLE site_settings ADD COLUMN join_independent_body_html TEXT NOT NULL DEFAULT ""').run();
+  }
+  const jiRow = db.prepare("SELECT join_independent_body_html FROM site_settings WHERE id = 1").get();
+  if (jiRow && !String(jiRow.join_independent_body_html || "").trim()) {
+    db.prepare("UPDATE site_settings SET join_independent_body_html = ? WHERE id = 1").run(
+      joinIndependentContent.getDefaultJoinIndependentHtml()
+    );
+  }
 
   // press_kit: singleton metadata for the public press kit page
   db.prepare(`
@@ -1557,7 +1567,7 @@ function getPressKitMeta() {
 function getSiteSettings() {
   const row = db.prepare(`
     SELECT messaging_all_users, join_corps_markdown, join_corps_body_html,
-           join_corps_topo_opacity, our_history_body_html,
+           join_corps_topo_opacity, join_independent_body_html, our_history_body_html,
            board_directors_markdown, board_directors_body_html,
            merch_enabled, merch_tax_percent, merch_pass_stripe_fee,
            merch_shipping_domestic_cents, merch_shipping_intl_cents, merch_order_notify_emails,
@@ -1571,6 +1581,7 @@ function getSiteSettings() {
       join_corps_markdown: "",
       join_corps_body_html: joinCorpsContent.getDefaultJoinCorpsHtml(),
       join_corps_topo_opacity: 0.12,
+      join_independent_body_html: joinIndependentContent.getDefaultJoinIndependentHtml(),
       our_history_body_html: ourHistoryContent.getDefaultOurHistoryHtml(),
       board_directors_markdown: boardDirectorsContent.getDefaultBoardMarkdown(),
       board_directors_body_html: boardDirectorsContent.getDefaultBoardHtml(),
@@ -7416,6 +7427,24 @@ app.get("/admin/join-corps", mustBeAdmin, (req, res) => {
   });
 });
 
+// POST /admin/join-independent-settings - Join Independent page content
+app.post("/admin/join-independent-settings", mustBeAdmin, (req, res) => {
+  const bodyHtml = String(req.body.join_independent_body_html || "");
+  db.prepare(`
+    UPDATE site_settings SET join_independent_body_html = ?, updated_at = ? WHERE id = 1
+  `).run(bodyHtml, Date.now());
+  req.session.flashMessage = "Join Independent page updated.";
+  return res.redirect("/admin/join-independent");
+});
+
+// GET /admin/join-independent - edit independent audition page
+app.get("/admin/join-independent", mustBeAdmin, (req, res) => {
+  const settings = getSiteSettings();
+  res.render("admin-join-independent", {
+    bodyHtml: joinIndependentContent.renderJoinIndependentBody(settings.join_independent_body_html),
+  });
+});
+
 // GET /admin/board-of-directors - edit Board of Directors page (EasyMDE)
 app.get("/admin/board-of-directors", mustBeAdmin, (req, res) => {
   const settings = getSiteSettings();
@@ -8585,10 +8614,15 @@ app.post(
       });
 
       req.session.flashMessage = "Audition materials updated successfully.";
+      const returnTo = String(req.body.return_to || "");
+      const allowedReturns = ["/view-materials", "/set-materials"];
+      if (allowedReturns.includes(returnTo)) return res.redirect(returnTo);
       return req.admin ? res.redirect("/admin-portal") : res.redirect("/member-portal");
     } catch (err) {
       console.error("Error in /set-materials:", err);
       req.session.flashMessage = "There was an error uploading materials.";
+      const returnTo = String(req.body.return_to || "");
+      if (returnTo === "/view-materials") return res.redirect("/view-materials");
       return res.redirect("/set-materials");
     }
   }
@@ -9250,9 +9284,14 @@ app.get("/join-corps", (req, res) => {
   });
 });
 
-app.get("/join-independent", (req,res) => {
-  return res.render("join-independent")
-})
+app.get("/join-independent", (req, res) => {
+  const settings = getSiteSettings();
+  return res.render("join-independent", {
+    joinIndependentHtml: joinIndependentContent.renderJoinIndependentBody(
+      settings.join_independent_body_html
+    ),
+  });
+});
 
 // ---------- STAFF ADMIN ----------
 

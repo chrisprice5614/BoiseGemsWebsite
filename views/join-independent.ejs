@@ -11,76 +11,54 @@
   <meta property="og:title" content="Boise Gems Independent">
   <meta property="og:description" content="Independent ensemble info: auditions, season details, and how to join.">
 <% } %>
-
+  <style>
+    .admin-page-edit {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 1200;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: #fff3e0;
+      border: 1px solid #fb8c00;
+      color: #e65100;
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-decoration: none;
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    }
+    .admin-page-edit:hover { background: #ffe0b2; color: #e65100; }
+  </style>
 </head>
 <body style="background: #eee">
-  
+
   <header><%- include("includes/header") %></header>
 
   <main>
     <section class="hero" style="text-align:center; padding:28px 12px;">
       <h1 style="font-size:2rem; margin:0;">Audition for <strong>Boise Gems Independent</strong></h1>
-      <p style="max-width:70ch; margin:12px auto 18px;">Join our indoor WGI program and develop as a musician and performer.</p>
-      <div style="max-width:900px; margin:0 auto; text-align:left;">
-        <h3 style="margin-top:6px;">Steps to Audition</h3>
-        <ol style="margin:8px 0 16px; padding-left:20px;">
-          <li style="margin-bottom:8px;"><strong> Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can keep your info, track RSVPs, and share audition materials.</li>
-          <li style="margin-bottom:8px;"><strong> Download Audition Materials</strong> - Log in to the <% if (typeof user !== 'undefined' && user) { %><a href="/member-portal">Member Portal</a><% } else { %><a href="/login?returnTo=/member-portal">Member Portal</a><% } %> and download the packet with warmups, excerpts, and rehearsal guides.</li>
-          <li style="margin-bottom:8px;"><strong> Click "BGI Video Audition"</strong> - In the Member Portal pay the $40 season application fee to unlock Omnipply, then follow the submission instructions on the Video Audition website.</li>
-        </ol>
-      </div>
-      <div style="margin-top:18px; width:100%; aspect-ratio:16/6; max-width:1100px; background:#ddd; background-image:url('/img/photos/boise-gems-24.jpg'); background-size:cover; background-position:center; border-radius:8px; box-shadow: 4px 4px 8px rgba(0,0,0,0.12); margin-left:auto; margin-right:auto;"></div>
+      <div style="margin-top:18px; width:100%; aspect-ratio:16/6; max-width:1100px; background:#ddd; background-image:url('/img/shows/independent/2026/bgi-2026-2-2.jpg'); background-size:cover; background-position:center; border-radius:8px; box-shadow: 4px 4px 8px rgba(0,0,0,0.12); margin-left:auto; margin-right:auto;"></div>
     </section>
 
-     <!-- AUDITION STEPS & EXPECTATIONS -->
-  <section style="padding:16px 12px; max-width:1100px; margin:0 auto;">
-    <div class="card" style="padding:20px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.06);">
-      <h2 style="margin:0 0 6px;">How to Audition</h2>
-      <p style="margin:0 0 12px;">We make auditions straightforward so you can focus on performing. Follow these steps:</p>
-
-      <ol style="margin:8px 0 16px; padding-left:20px;">
-        <li style="margin-bottom:8px;"><strong>Create an account:</strong> Sign up at <a href="/register-member">Register</a> so we can keep your info, track RSVPs, and share updates.</li>
-        <li style="margin-bottom:8px;"><strong>Complete your profile:</strong> Add your instrument/part.</li>
-        <li style="margin-bottom:8px;"><strong>RSVP for an audition:</strong> Use the <a href="/calendar">Auditions calendar</a> to pick a session and RSVP so we know you'll attend.</li>
-        <li style="margin-bottom:8px;"><strong>Show up prepared:</strong> Bring your instrument, water, comfortable shoes, and a positive attitude.</li>
-        <li style="margin-bottom:0;"><strong>Expect to be auditioned:</strong> Auditions are short-warmups, basic performance, and a short playing/exercise so we can place you appropriately.</li>
-      </ol>
-
-      <div style="margin:14px 0; padding:16px; background:linear-gradient(90deg,#fff8e1,#fff3cf); border-left:6px solid #ffb703; border-radius:8px;">
-        <h3 style="margin:0 0 8px;">Video Auditions</h3>
-        <p style="margin:0 0 10px; max-width:70ch;">Can't make an in-person audition or prefer to submit first? Follow these three steps to submit a video audition. Make sure audio is clear and follow the order in the audition packet.</p>
-        <ol style="margin:0 0 0 20px;">
-          <li style="margin-bottom:8px;"><strong>Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can associate your submission with your profile.</li>
-          <li style="margin-bottom:8px;"><strong>Download Audition Materials</strong> - Log in to the <% if (typeof user !== 'undefined' && user) { %><a href="/member-portal">Member Portal</a><% } else { %><a href="/login?returnTo=/member-portal">Member Portal</a><% } %> and download the packet with warmups, excerpts, and rehearsal guides.</li>
-          <li style="margin-bottom:0;"><strong>Click "BGI Video Audition"</strong> - In the Member Portal, pay the $40 application fee for the current season to unlock the Omnipply video audition link, then follow the submission instructions.</li>
-        </ol>
+    <section style="padding:16px 12px; max-width:1100px; margin:0 auto;">
+      <div class="card" style="padding:20px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.06);">
+        <%- joinIndependentHtml %>
       </div>
+    </section>
 
-      <h3 style="margin-top:6px;">What to Expect at Your Audition</h3>
-      <ul style="margin:8px 0 12px;">
-        <li>Warm-up and brief sight-reading/play task</li>
-        <li>Basic placement evaluation</li>
-        <li>Friendly staff feedback and guidance on next steps</li>
-      </ul>
-
-      <h3 style="margin-top:6px;">After Your Audition</h3>
-      <p style="margin:8px 0 12px;">If selected, you'll receive an email with placement, rehearsal schedule, and next steps (uniforms, fees, and camp info). If not selected immediately, we may offer mentorship, sectional work, or feedback to help you grow toward future seasons.</p>
-
-      <div style="margin-top:8px;">
-        <p style="margin:0;">Next steps: create an account at <a href="/register-member">/register-member</a>, view audition dates at <a href="/calendar">/calendar</a>, or contact the auditions team via <a href="/contact">/contact</a>.</p>
+    <section style="padding:18px 12px; max-width:1100px; margin:18px auto;">
+      <div style="padding:14px; border-radius:8px; background:#f7f7f7; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+        <p style="margin:8px 0; font-weight:600;">Looking for information about Boise Gems Drum and Bugle Corps? <a href="/join-corps">Click Here</a></p>
       </div>
-    </div>
-  </section>
-
-  <section style="padding:18px 12px; max-width:1100px; margin:18px auto;">
-    <div style="padding:14px; border-radius:8px; background:#f7f7f7; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.04);">
-      <p style="margin:8px 0; font-weight:600;">Looking for information about Boise Gems Drum and Bugle Corps? <a href="/join-corps">Click Here</a></p>
-    </div>
-  </section>
-
-
+    </section>
   </main>
 
+  <% if (admin) { %>
+    <a class="admin-page-edit" href="/admin/join-independent">Edit page</a>
+  <% } %>
 
   <footer><%- include("includes/footer") %></footer>
 </body>

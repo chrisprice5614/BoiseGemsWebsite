@@ -41,6 +41,31 @@
     </div>
   </div>
 
+  <% if (admin) { %>
+    <a href="/admin/join-corps" class="admin-page-edit">Edit page</a>
+    <style>
+      .admin-page-edit {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 1200;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background: #fff3e0;
+        border: 1px solid #fb8c00;
+        color: #e65100;
+        font-weight: 700;
+        font-size: 0.9rem;
+        text-decoration: none;
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+      }
+      .admin-page-edit:hover { background: #ffe0b2; color: #e65100; }
+    </style>
+  <% } %>
+
   <footer><%- include("includes/footer") %></footer>
   <script src="/js/join-corps-experience.js" defer></script>
 </body>

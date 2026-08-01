@@ -29,8 +29,8 @@
       var cat = block.category;
     %>
     <section class="staff-admin-category form-panel">
-      <h2 class="staff-admin-category-title"><%= cat.section_title %></h2>
-      <p class="staff-admin-category-meta"><%= catName %><% if (cat.pages && cat.pages.length) { %> · <%= cat.pages.join(', ') %><% } %></p>
+      <h2 class="staff-admin-category-title"><%= catName %></h2>
+      <p class="staff-admin-category-meta">Shown as "<%= cat.section_title %>"<% if (cat.pages && cat.pages.length) { %> · <%= cat.pages.join(', ') %><% } %></p>
       <div class="staff-admin-rows" data-category-id="<%= cat.id %>">
         <% block.rows.forEach(function(row) { %>
         <div class="staff-admin-row card" data-placement-id="<%= row.placement_id %>">

@@ -32,6 +32,19 @@
         .btn-view-mat:hover {
             background: #d2e3fc;
         }
+        .btn-remove-mat {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 6px;
+            background: #fdeaea;
+            border: 1px solid #e57373;
+            color: #b02020;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-remove-mat:hover { background: #f8cfcf; }
         .current-badge {
             font-size: 0.78rem;
             color: #388e3c;
@@ -53,119 +66,37 @@
             <h1 style="text-align: center;">Update Audition Materials</h1>
             <p style="text-align:center; color:#555;">Upload new PDFs to replace existing audition materials for each section. Only fields with a selected file will be updated.</p>
             <br>
+            <%
+              const matSections = [
+                { field: "brass", key: "brass", label: "Brass Audition Materials", id: "upload-brass" },
+                { field: "drumline", key: "drumline", label: "Drumline Audition Materials", id: "upload-drumline" },
+                { field: "guard", key: "guard", label: "Guard Audition Materials", id: "upload-guard" },
+                { field: "front", key: "front ensemble", label: "Front Ensemble Audition Materials", id: "upload-front" },
+                { field: "drum_major", key: "drum major", label: "Drum Major Audition", id: "upload-drum-major" },
+                { field: "drumline_independent", key: "drumline (independent)", label: "Drumline (Independent) Audition", id: "upload-drumline-ind" },
+                { field: "front_independent", key: "front ensemble (independent)", label: "Front Ensemble (Independent) Audition", id: "upload-front-ind" }
+              ];
+            %>
             <form action="/set-materials" method="POST" enctype="multipart/form-data">
-
-                <label for="upload-brass"><strong>Brass Audition Materials</strong></label>
+                <% matSections.forEach(function (sec) {
+                     const link = materials && materials[sec.key];
+                %>
+                <label for="<%= sec.id %>"><strong><%= sec.label %></strong></label>
                 <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['brass']) { %>
+                    <% if (link) { %>
                         <span class="current-badge">✓ Current file on record</span>
                     <% } else { %>
                         <span class="no-badge">No file uploaded yet</span>
                     <% } %>
                 </div>
                 <div class="mat-upload-row">
-                    <input type="file" name="brass" id="upload-brass" accept="application/pdf"/>
-                    <% if (materials && materials['brass']) { %>
-                        <a class="btn-view-mat" href="<%= materials['brass'] %>" target="_blank" rel="noopener">View Current</a>
+                    <input type="file" name="<%= sec.field %>" id="<%= sec.id %>" accept="application/pdf"/>
+                    <% if (link) { %>
+                        <a class="btn-view-mat" href="<%= link %>" target="_blank" rel="noopener">View Current</a>
                     <% } %>
                 </div>
                 <br>
-
-                <label for="upload-drumline"><strong>Drumline Audition Materials</strong></label>
-                <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['drumline']) { %>
-                        <span class="current-badge">✓ Current file on record</span>
-                    <% } else { %>
-                        <span class="no-badge">No file uploaded yet</span>
-                    <% } %>
-                </div>
-                <div class="mat-upload-row">
-                    <input type="file" name="drumline" id="upload-drumline" accept="application/pdf"/>
-                    <% if (materials && materials['drumline']) { %>
-                        <a class="btn-view-mat" href="<%= materials['drumline'] %>" target="_blank" rel="noopener">View Current</a>
-                    <% } %>
-                </div>
-                <br>
-
-                <label for="upload-guard"><strong>Guard Audition Materials</strong></label>
-                <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['guard']) { %>
-                        <span class="current-badge">✓ Current file on record</span>
-                    <% } else { %>
-                        <span class="no-badge">No file uploaded yet</span>
-                    <% } %>
-                </div>
-                <div class="mat-upload-row">
-                    <input type="file" name="guard" id="upload-guard" accept="application/pdf"/>
-                    <% if (materials && materials['guard']) { %>
-                        <a class="btn-view-mat" href="<%= materials['guard'] %>" target="_blank" rel="noopener">View Current</a>
-                    <% } %>
-                </div>
-                <br>
-
-                <label for="upload-front"><strong>Front Ensemble Audition Materials</strong></label>
-                <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['front ensemble']) { %>
-                        <span class="current-badge">✓ Current file on record</span>
-                    <% } else { %>
-                        <span class="no-badge">No file uploaded yet</span>
-                    <% } %>
-                </div>
-                <div class="mat-upload-row">
-                    <input type="file" name="front" id="upload-front" accept="application/pdf"/>
-                    <% if (materials && materials['front ensemble']) { %>
-                        <a class="btn-view-mat" href="<%= materials['front ensemble'] %>" target="_blank" rel="noopener">View Current</a>
-                    <% } %>
-                </div>
-                <br>
-
-                <label for="upload-drum-major"><strong>Drum Major Audition</strong></label>
-                <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['drum major']) { %>
-                        <span class="current-badge">✓ Current file on record</span>
-                    <% } else { %>
-                        <span class="no-badge">No file uploaded yet</span>
-                    <% } %>
-                </div>
-                <div class="mat-upload-row">
-                    <input type="file" name="drum_major" id="upload-drum-major" accept="application/pdf"/>
-                    <% if (materials && materials['drum major']) { %>
-                        <a class="btn-view-mat" href="<%= materials['drum major'] %>" target="_blank" rel="noopener">View Current</a>
-                    <% } %>
-                </div>
-                <br>
-
-                <label for="upload-drumline-ind"><strong>Drumline (Independent) Audition</strong></label>
-                <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['drumline (independent)']) { %>
-                        <span class="current-badge">✓ Current file on record</span>
-                    <% } else { %>
-                        <span class="no-badge">No file uploaded yet</span>
-                    <% } %>
-                </div>
-                <div class="mat-upload-row">
-                    <input type="file" name="drumline_independent" id="upload-drumline-ind" accept="application/pdf"/>
-                    <% if (materials && materials['drumline (independent)']) { %>
-                        <a class="btn-view-mat" href="<%= materials['drumline (independent)'] %>" target="_blank" rel="noopener">View Current</a>
-                    <% } %>
-                </div>
-                <br>
-
-                <label for="upload-front-ind"><strong>Front Ensemble (Independent) Audition</strong></label>
-                <div style="margin: 4px 0 2px;">
-                    <% if (materials && materials['front ensemble (independent)']) { %>
-                        <span class="current-badge">✓ Current file on record</span>
-                    <% } else { %>
-                        <span class="no-badge">No file uploaded yet</span>
-                    <% } %>
-                </div>
-                <div class="mat-upload-row">
-                    <input type="file" name="front_independent" id="upload-front-ind" accept="application/pdf"/>
-                    <% if (materials && materials['front ensemble (independent)']) { %>
-                        <a class="btn-view-mat" href="<%= materials['front ensemble (independent)'] %>" target="_blank" rel="noopener">View Current</a>
-                    <% } %>
-                </div>
-                <br>
+                <% }) %>
 
                 <small>Only PDFs you select will be updated. Uploading a PDF will <i>overwrite</i> the previous PDF for that section.</small>
                 <br>
@@ -173,6 +104,25 @@
                     <button>Save Materials</button>
                 </div>
             </form>
+
+            <% if (admin) { %>
+              <div style="margin-top: 28px;">
+                <h2 style="font-size:1.1rem; margin:0 0 10px;">Remove materials</h2>
+                <p style="color:#666; font-size:0.9rem; margin:0 0 12px;">Clear a section so it shows as Coming soon on the public page.</p>
+                <% matSections.forEach(function (sec) {
+                     const link = materials && materials[sec.key];
+                     if (!link) return;
+                %>
+                  <form action="/set-materials/remove" method="POST" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;"
+                        onsubmit="return confirm('Remove the PDF for <%= sec.label %>?');">
+                    <span><%= sec.label %></span>
+                    <input type="hidden" name="return_to" value="/set-materials">
+                    <input type="hidden" name="section" value="<%= sec.field %>">
+                    <button type="submit" class="btn-remove-mat">Remove PDF</button>
+                  </form>
+                <% }) %>
+              </div>
+            <% } %>
             <br>
         </div>
     </main>

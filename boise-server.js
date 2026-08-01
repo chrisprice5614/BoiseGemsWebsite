@@ -8550,6 +8550,49 @@ app.get("/admin/member-view", mustBeAdmin, (req, res) => {
 })
 
 
+const MATERIALS_SECTION_MAP = {
+  brass: "brass",
+  drumline: "drumline",
+  guard: "guard",
+  front: "front ensemble",
+  drum_major: "drum major",
+  drumline_independent: "drumline (independent)",
+  front_independent: "front ensemble (independent)",
+};
+
+function clearMaterialsSection(section) {
+  const existing = db.prepare("SELECT id, pdf FROM materials WHERE section = ?").get(section);
+  if (!existing) return false;
+  if (existing.pdf) {
+    try {
+      const relative = String(existing.pdf).replace(/^\/+/, "");
+      const oldFullPath = path.join(__dirname, "public", relative);
+      if (fs.existsSync(oldFullPath)) fs.unlinkSync(oldFullPath);
+    } catch (e) {
+      console.error("Failed to delete materials PDF:", e);
+    }
+  }
+  db.prepare("UPDATE materials SET pdf = NULL WHERE section = ?").run(section);
+  return true;
+}
+
+// Admin: remove audition materials PDF for one section (leaves Coming soon)
+app.post("/set-materials/remove", mustBeAdmin, (req, res) => {
+  const field = String(req.body.section || "").trim();
+  const section = MATERIALS_SECTION_MAP[field] || null;
+  if (!section) {
+    req.session.flashMessage = "Unknown materials section.";
+    return res.redirect("/view-materials");
+  }
+  clearMaterialsSection(section);
+  req.session.flashMessage = "Audition materials removed for that section.";
+  const returnTo = String(req.body.return_to || "");
+  if (returnTo === "/view-materials" || returnTo === "/set-materials") {
+    return res.redirect(returnTo);
+  }
+  return res.redirect("/view-materials");
+});
+
 // ADD/REPLACE your current /set-materials handler with this updated version
 app.post(
   "/set-materials",
@@ -8569,28 +8612,15 @@ app.post(
     try {
       const files = req.files || {};
 
-      // map form field names -> materials.section values in DB
-      const sectionMap = {
-        brass: "brass",
-        drumline: "drumline",
-        guard: "guard",
-        front: "front ensemble",
-
-        // NEW:
-        drum_major: "drum major",
-        drumline_independent: "drumline (independent)",
-        front_independent: "front ensemble (independent)"
-      };
-
       // Ensure upload dir exists
       const uploadDir = path.join(__dirname, "public", "pdf", "publicpdf");
       if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-      Object.keys(sectionMap).forEach((field) => {
+      Object.keys(MATERIALS_SECTION_MAP).forEach((field) => {
         if (!files[field] || !files[field][0]) return; // only process uploaded ones
 
         const file = files[field][0];
-        const section = sectionMap[field];
+        const section = MATERIALS_SECTION_MAP[field];
         const pdfPath = `/pdf/publicpdf/${file.filename}`; // what we store in DB
 
         // Get existing row (if any) including the old pdf path

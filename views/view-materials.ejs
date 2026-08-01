@@ -52,6 +52,17 @@
     .mat-edit-details > summary::-webkit-details-marker { display: none; }
     .mat-edit-details[open] > summary { margin-bottom: 4px; }
     .mat-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+    .btn-remove-mat {
+      padding: 6px 14px;
+      background: #fdeaea;
+      border: 1px solid #e57373;
+      color: #b02020;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .btn-remove-mat:hover { background: #f8cfcf; }
   </style>
 </head>
 <body>
@@ -128,6 +139,14 @@
                     </div>
                     <small style="color:#888;">This will replace the current PDF for this section.</small>
                   </form>
+                  <% if (admin && link) { %>
+                    <form action="/set-materials/remove" method="POST" style="margin-top:12px;"
+                          onsubmit="return confirm('Remove the PDF for <%= pretty[key] %>? The section will show Coming soon.');">
+                      <input type="hidden" name="return_to" value="/view-materials">
+                      <input type="hidden" name="section" value="<%= fieldName[key] %>">
+                      <button type="submit" class="btn-remove-mat">Remove PDF</button>
+                    </form>
+                  <% } %>
                 </div>
               </details>
             <% } %>

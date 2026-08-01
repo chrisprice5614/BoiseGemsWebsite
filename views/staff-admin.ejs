@@ -8,25 +8,104 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <style>
     .staff-admin-lead-hint { margin: 6px 0 0; font-size: 0.9rem; color: #6b5585; }
+    /* clip-path / transform on .card and .form-panel break HTML5 DnD - keep these plain */
+    .staff-admin-category {
+      background: linear-gradient(145deg, #faf7ff 0%, #f0e8f8 55%, #ebe2f5 100%);
+      padding: 20px 24px;
+      margin: 16px 0;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(60, 30, 90, 0.07);
+      clip-path: none !important;
+      filter: none !important;
+    }
+    .staff-admin-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      min-height: 8px;
+      position: relative;
+      z-index: 1;
+      clip-path: none !important;
+    }
     .staff-admin-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      margin: 0 0 8px;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(15, 10, 40, 0.06);
       cursor: grab;
       touch-action: none;
       user-select: none;
+      clip-path: none !important;
+      filter: none !important;
+      transform: none !important;
+      transition: none !important;
     }
-    .staff-admin-row:active { cursor: grabbing; }
-    .staff-admin-row.sortable-ghost { opacity: 0.45; }
-    .staff-admin-row.sortable-chosen { box-shadow: 0 6px 18px rgba(0,0,0,0.12); }
+    .staff-admin-row:hover {
+      transform: none !important;
+      filter: none !important;
+      box-shadow: 0 4px 12px rgba(15, 10, 40, 0.1);
+    }
+    .staff-admin-row:active,
+    .staff-admin-row.sortable-chosen { cursor: grabbing; }
+    .staff-admin-row.sortable-ghost {
+      opacity: 0.35;
+      background: #ede4f7;
+    }
+    .staff-admin-row.sortable-drag {
+      opacity: 1 !important;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(15, 10, 40, 0.22);
+      z-index: 9999;
+    }
     .staff-admin-grip {
       flex: 0 0 auto;
-      width: 22px;
-      color: #9a86b0;
-      font-size: 1.1rem;
+      width: 28px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #7a6890;
+      font-size: 1.15rem;
       line-height: 1;
-      letter-spacing: -1px;
+      letter-spacing: -2px;
       cursor: grab;
-      text-align: center;
+      border-radius: 6px;
+      background: #f3eef8;
     }
-    .staff-admin-row-actions { cursor: default; user-select: auto; }
+    .staff-admin-row-photo {
+      width: 52px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 8px;
+      flex: 0 0 auto;
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+    .staff-admin-row-body { flex: 1; min-width: 0; }
+    .staff-admin-row-name { font-weight: 700; }
+    .staff-admin-row-role { font-size: 0.88rem; color: #6b5585; }
+    .staff-admin-row-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      cursor: default;
+      user-select: auto;
+      touch-action: auto;
+    }
+    .staff-admin-save-ok {
+      display: none;
+      margin-left: 10px;
+      font-size: 0.85rem;
+      color: #2e7d32;
+      font-weight: 600;
+    }
+    .staff-admin-save-ok.is-visible { display: inline; }
   </style>
 </head>
 <body class="staff-admin-page">
@@ -37,26 +116,29 @@
     <div>
       <h1>Staff Admin</h1>
       <p class="staff-admin-lead">Manage public staff profiles. Each person can hold multiple categories with their own position title.</p>
-      <p class="staff-admin-lead-hint">Drag rows by the ⋮⋮ handle to reorder within a category. Order saves automatically.</p>
+      <p class="staff-admin-lead-hint">
+        Drag the ⋮⋮ handle to reorder within a category.
+        <span class="staff-admin-save-ok" id="staffReorderSaved">Order saved.</span>
+      </p>
     </div>
     <a href="/staff/new"><button type="button">+ Add Staff Member</button></a>
   </div>
 
   <% if (Object.keys(grouped).length === 0) { %>
-    <div class="form-panel"><p>No staff yet. Add someone to get started.</p></div>
+    <div class="staff-admin-category"><p>No staff yet. Add someone to get started.</p></div>
   <% } else { %>
     <% Object.keys(grouped).forEach(function(catName) {
       var block = grouped[catName];
       var cat = block.category;
     %>
-    <section class="staff-admin-category form-panel">
+    <section class="staff-admin-category">
       <h2 class="staff-admin-category-title"><%= catName %></h2>
       <p class="staff-admin-category-meta">Shown as "<%= cat.section_title %>"<% if (cat.pages && cat.pages.length) { %> · <%= cat.pages.join(', ') %><% } %></p>
       <div class="staff-admin-rows" data-category-id="<%= cat.id %>">
         <% block.rows.forEach(function(row) { %>
-        <div class="staff-admin-row card" data-placement-id="<%= row.placement_id %>">
-          <span class="staff-admin-grip" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
-          <img src="<%= row.image ? ('/img/publicupload/' + row.image) : '/img/ui/gem.png' %>" alt="" class="staff-admin-row-photo">
+        <div class="staff-admin-row" data-placement-id="<%= row.placement_id %>">
+          <span class="staff-admin-grip" title="Drag to reorder" aria-label="Drag to reorder">⋮⋮</span>
+          <img src="<%= row.image ? ('/img/publicupload/' + row.image) : '/img/ui/gem.png' %>" alt="" class="staff-admin-row-photo" draggable="false">
           <div class="staff-admin-row-body">
             <div class="staff-admin-row-name"><%= row.first %> <%= row.last %></div>
             <div class="staff-admin-row-role"><%= row.position_title %></div>
@@ -78,20 +160,42 @@
 <script>
 (function () {
   if (typeof Sortable === 'undefined') {
-    console.error('SortableJS failed to load');
+    alert('Drag-and-drop library failed to load. Check your network / CDN access.');
     return;
   }
+
+  var savedEl = document.getElementById('staffReorderSaved');
+  var savedTimer = null;
+  function flashSaved() {
+    if (!savedEl) return;
+    savedEl.classList.add('is-visible');
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(function () {
+      savedEl.classList.remove('is-visible');
+    }, 1600);
+  }
+
   document.querySelectorAll('.staff-admin-rows[data-category-id]').forEach(function (list) {
-    new Sortable(list, {
+    Sortable.create(list, {
       animation: 150,
+      handle: '.staff-admin-grip',
       draggable: '.staff-admin-row',
-      filter: '.staff-admin-row-actions, .staff-admin-row-actions *',
-      preventOnFilter: true,
-      onEnd: function () {
-        var categoryId = Number(list.dataset.categoryId);
-        var placementIds = Array.from(list.querySelectorAll('.staff-admin-row[data-placement-id]')).map(function (el) {
-          return Number(el.dataset.placementId);
-        });
+      // Site clip-path / transforms break native HTML5 DnD hit testing
+      forceFallback: true,
+      fallbackOnBody: true,
+      fallbackTolerance: 3,
+      swapThreshold: 0.65,
+      emptyInsertThreshold: 24,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      dragClass: 'sortable-drag',
+      onEnd: function (evt) {
+        if (evt.oldIndex === evt.newIndex) return;
+        var categoryId = Number(list.getAttribute('data-category-id'));
+        var placementIds = Array.prototype.map.call(
+          list.querySelectorAll('.staff-admin-row[data-placement-id]'),
+          function (el) { return Number(el.getAttribute('data-placement-id')); }
+        );
         fetch('/staff/reorder-placements', {
           method: 'POST',
           credentials: 'same-origin',
@@ -100,6 +204,8 @@
         }).then(function (r) {
           if (!r.ok) throw new Error('save failed');
           return r.json();
+        }).then(function () {
+          flashSaved();
         }).catch(function () {
           if (window.bgAlert) bgAlert('Could not save the new order. Refresh and try again.');
           else alert('Could not save the new order. Refresh and try again.');

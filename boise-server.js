@@ -10215,6 +10215,22 @@ app.post("/staff/new", mustBeAdmin, imageUpload.single("image"), processImageJpg
 });
 
 
+// Drag reorder within a category (any admin) — register before /staff/:id routes
+app.post("/staff/reorder-placements", mustBeAdmin, (req, res) => {
+  const categoryId = Number(req.body && req.body.categoryId);
+  const placementIds = Array.isArray(req.body && req.body.placementIds)
+    ? req.body.placementIds.map(Number).filter((n) => n > 0)
+    : [];
+  if (!categoryId || !placementIds.length) {
+    return res.status(400).json({ ok: false, message: "Invalid payload" });
+  }
+  const tx = db.transaction(() => {
+    staffDisplay.reorderPlacements(db, categoryId, placementIds);
+  });
+  tx();
+  return res.json({ ok: true });
+});
+
 // Edit staff
 app.get("/staff/:id/edit", mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
@@ -10268,19 +10284,6 @@ app.post("/staff/:id/delete", mustBeAdmin, (req, res) => {
   const id = Number(req.params.id);
   db.prepare(`DELETE FROM staff WHERE id = ?`).run(id);
   res.redirect("/staff-admin");
-});
-
-// Drag reorder within a category (any admin)
-app.post("/staff/reorder-placements", mustBeAdmin, (req, res) => {
-  const categoryId = Number(req.body && req.body.categoryId);
-  const placementIds = Array.isArray(req.body && req.body.placementIds)
-    ? req.body.placementIds.map(Number).filter((n) => n > 0)
-    : [];
-  if (!categoryId || !placementIds.length) {
-    return res.status(400).json({ ok: false, message: "Invalid payload" });
-  }
-  staffDisplay.reorderPlacements(db, categoryId, placementIds);
-  return res.json({ ok: true });
 });
 
 app.get("/our-history-about", (req, res) => {

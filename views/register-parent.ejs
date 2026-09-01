@@ -161,6 +161,7 @@
     <% } %>
 
     <form action="/register-parent" method="POST">
+      <%- include("includes/neopply-partner-fields") %>
 
       <div class="field-group">
         <label>First Name</label>
@@ -210,7 +211,12 @@
     </form>
 
     <div class="reg-links">
-      Already have an account? <a href="/login">Login here</a>
+      <% var neopplyQs = (typeof client_id !== 'undefined' && client_id)
+        ? ('?client_id=' + encodeURIComponent(client_id)
+          + '&redirect_uri=' + encodeURIComponent(redirect_uri)
+          + '&state=' + encodeURIComponent(state))
+        : ''; %>
+      Already have an account? <a href="/login<%= neopplyQs %>">Login here</a>
     </div>
 
   </div>

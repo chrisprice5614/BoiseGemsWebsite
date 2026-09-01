@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corps Video Audition - Boise Gems</title>
+  <%- include("includes/head") %>
+  <style>
+    .va-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    .va-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 16px; color: #60437D; text-decoration: none; font-weight: 600; }
+    .va-card { background: #fff; border: 1px solid #e8e0ef; border-radius: 14px; padding: 24px; box-shadow: 0 2px 12px rgba(96,67,125,0.08); }
+    .va-consent { max-width: 720px; margin: 0 auto; }
+    .va-consent h1 { margin: 0 0 8px; color: #333; font-size: 1.5rem; }
+    .va-consent p, .va-consent li { color: #444; line-height: 1.6; }
+    .va-consent-box { background: #faf7fc; border: 1px solid #e8dff0; border-radius: 10px; padding: 16px 18px; margin: 18px 0; }
+    .va-consent-box ul { margin: 10px 0 0 18px; padding: 0; }
+    .va-check { display: flex; gap: 10px; align-items: flex-start; margin: 18px 0; }
+    .va-check input { margin-top: 4px; }
+    .va-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+    .va-embed-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .va-embed-head h1 { margin: 0; font-size: 1.35rem; color: #333; }
+    .va-embed-note { font-size: 0.9rem; color: #666; margin: 0 0 14px; }
+    .va-frame-wrap { border: 1px solid #ddd; border-radius: 12px; overflow: hidden; background: #f5f5f5; min-height: 70vh; }
+    .va-frame-wrap iframe { display: block; width: 100%; min-height: 70vh; border: 0; }
+    .va-flash { background: #fff3cd; border: 1px solid #ffc107; color: #664d03; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+<main class="va-wrap">
+  <a class="va-back" href="/member-portal" onclick="if (window.history.length > 1) { event.preventDefault(); history.back(); }">
+    &larr; Back to Member Portal
+  </a>
+
+  <% if (typeof flashMessage !== 'undefined' && flashMessage) { %>
+    <div class="va-flash"><%= flashMessage %></div>
+  <% } %>
+
+  <% if (!hasConsent) { %>
+  <div class="va-card va-consent">
+    <h1>Corps Video Audition via Neopply</h1>
+    <p>
+      Before you begin your <%= seasonYear %> Drum &amp; Bugle Corps video audition, please review how your
+      Boise Gems account information will be used.
+    </p>
+
+    <div class="va-consent-box">
+      <strong>What happens next</strong>
+      <ul>
+        <li>Boise Gems will securely connect your existing account to <strong>Neopply</strong>, our video audition partner.</li>
+        <li>Information already on your Gems profile (such as name, email, birthday, phone, address, section, and instrument) can be sent to Neopply so you do not have to enter it again.</li>
+        <li>Neopply will use this information to create or link your audition account and process your video submission.</li>
+        <li>Your audition will open here on boisegems.org inside a secure embedded window powered by Neopply.</li>
+      </ul>
+    </div>
+
+    <p>
+      Neopply is a third-party service. Their use of your information is governed by their privacy policy:
+      <a href="<%= neopplyPrivacyUrl %>" target="_blank" rel="noopener">Neopply Privacy Policy</a>.
+    </p>
+
+    <form action="/video-audition/corps/consent" method="POST">
+      <label class="va-check">
+        <input type="checkbox" name="agree" value="yes" required>
+        <span>
+          I understand and agree that Boise Gems may share my account information with Neopply to create or connect
+          my video audition account, and that Neopply will process my audition submission according to their terms
+          and privacy policy.
+        </span>
+      </label>
+      <div class="va-actions">
+        <button type="submit">Agree &amp; Continue to Audition</button>
+        <a href="/member-portal"><button type="button" style="background:#eee;color:#333;">Cancel</button></a>
+      </div>
+    </form>
+  </div>
+  <% } else if (embedUrl) { %>
+  <div class="va-card">
+    <div class="va-embed-head">
+      <h1>Corps Video Audition</h1>
+      <a href="/member-portal" style="font-size:0.9rem;">Member Portal</a>
+    </div>
+    <p class="va-embed-note">
+      Signed in as <%= member.firstname %> <%= member.lastname %>. Your Gems profile has been linked with Neopply
+      so you should not need to re-enter basic account details.
+    </p>
+    <div class="va-frame-wrap">
+      <iframe
+        id="neopply-embed"
+        src="<%= embedUrl %>"
+        title="Neopply Corps Video Audition"
+        allow="camera; microphone; fullscreen"
+        referrerpolicy="strict-origin-when-cross-origin"
+      ></iframe>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var frame = document.getElementById("neopply-embed");
+      if (!frame) return;
+      setInterval(function () {
+        fetch("/api/partner/neopply/embed-url?program=corps", { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok && data.embedUrl && frame.src !== data.embedUrl) {
+              frame.src = data.embedUrl;
+            }
+          })
+          .catch(function () {});
+      }, 8 * 60 * 1000);
+    })();
+  </script>
+  <% } else { %>
+  <div class="va-card va-consent">
+    <h1>Unable to load audition</h1>
+    <p>We could not connect your account to Neopply. Make sure you are signed in and try again.</p>
+    <a href="/member-portal"><button type="button">Back to Member Portal</button></a>
+  </div>
+  <% } %>
+</main>
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

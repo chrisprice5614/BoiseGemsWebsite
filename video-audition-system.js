@@ -1,7 +1,8 @@
 /**
- * Video audition unlocks - pay once per program per season to open Omnipply links.
- * Corps: $30 | BGI (independent): $40
+ * Video audition unlocks - pay once per program per season to open audition links.
+ * Corps: $30 (Neopply embed) | BGI (independent): $40 (Omnipply)
  */
+const neopplyPartner = require("./neopply-partner");
 const PROGRAMS = {
   corps: {
     key: "corps",
@@ -52,6 +53,10 @@ function getOmnipplyUrl(programKey, section) {
   return map[sec] || map.default || null;
 }
 
+function isVideoAuditionFeeBypassed() {
+  return String(process.env.VIDEO_AUDITION_BYPASS_FEE || "").trim().toLowerCase() === "true";
+}
+
 function initVideoAudition(db) {
   db.prepare(`
     CREATE TABLE IF NOT EXISTS potential_video_audition (
@@ -86,9 +91,21 @@ function initVideoAudition(db) {
     CREATE INDEX IF NOT EXISTS idx_video_audition_unlocks_user
     ON video_audition_unlocks(user_id, season_year)
   `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS neopply_data_consent (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      program TEXT NOT NULL,
+      consented_at INTEGER NOT NULL,
+      UNIQUE(user_id, program),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `).run();
 }
 
 function hasUnlock(db, userId, programKey, seasonYear) {
+  if (isVideoAuditionFeeBypassed()) return true;
   const row = db.prepare(`
     SELECT id FROM video_audition_unlocks
     WHERE user_id = ? AND program = ? AND season_year = ?
@@ -98,6 +115,9 @@ function hasUnlock(db, userId, programKey, seasonYear) {
 }
 
 function getUnlocksForUser(db, userId, seasonYear) {
+  if (isVideoAuditionFeeBypassed()) {
+    return { corps: true, independent: true, rows: [] };
+  }
   const rows = db.prepare(`
     SELECT program, season_year, unlocked_at, amount
     FROM video_audition_unlocks
@@ -109,6 +129,22 @@ function getUnlocksForUser(db, userId, seasonYear) {
     if (r.program === "independent") out.independent = true;
   }
   return out;
+}
+
+function hasNeopplyConsent(db, userId, programKey) {
+  const row = db.prepare(`
+    SELECT id FROM neopply_data_consent
+    WHERE user_id = ? AND program = ?
+    LIMIT 1
+  `).get(userId, programKey);
+  return !!row;
+}
+
+function recordNeopplyConsent(db, userId, programKey) {
+  db.prepare(`
+    INSERT OR REPLACE INTO neopply_data_consent (user_id, program, consented_at)
+    VALUES (?, ?, ?)
+  `).run(userId, programKey, Date.now());
 }
 
 function getPortalAuditionActions(db, member, seasonYear) {
@@ -125,8 +161,11 @@ function getPortalAuditionActions(db, member, seasonYear) {
       feeCents: PROGRAMS.corps.feeCents,
       unlocked,
       seasonYear,
-      url: unlocked ? getOmnipplyUrl("corps", section) : null,
+      provider: "neopply",
+      url: unlocked ? "/video-audition/corps" : null,
+      embedHref: unlocked ? "/video-audition/corps" : null,
       payHref: `/video-audition/pay?program=corps`,
+      hasConsent: hasNeopplyConsent(db, member.id, "corps"),
     });
   }
 
@@ -139,8 +178,11 @@ function getPortalAuditionActions(db, member, seasonYear) {
       feeCents: PROGRAMS.independent.feeCents,
       unlocked,
       seasonYear,
+      provider: "omnipply",
       url: unlocked ? getOmnipplyUrl("independent", section) : null,
+      embedHref: null,
       payHref: `/video-audition/pay?program=independent`,
+      hasConsent: false,
     });
   }
 
@@ -181,6 +223,7 @@ function registerVideoAuditionRoutes(app, deps) {
 
     const seasonYear = getCurrentSeasonYear();
     if (hasUnlock(db, member.id, program.key, seasonYear)) {
+      if (program.key === "corps") return res.redirect("/video-audition/corps");
       return res.redirect(`/video-audition/unlocked?program=${program.key}`);
     }
 
@@ -217,6 +260,7 @@ function registerVideoAuditionRoutes(app, deps) {
 
     const seasonYear = getCurrentSeasonYear();
     if (hasUnlock(db, member.id, program.key, seasonYear)) {
+      if (program.key === "corps") return res.redirect("/video-audition/corps");
       return res.redirect(`/video-audition/unlocked?program=${program.key}`);
     }
 
@@ -249,7 +293,7 @@ function registerVideoAuditionRoutes(app, deps) {
               currency: "usd",
               product_data: {
                 name: `${program.shortLabel} video audition (${seasonYear})`,
-                description: `Unlocks the ${program.label} Omnipply video audition link for the ${seasonYear} season.`,
+                description: `Unlocks the ${program.label} video audition for the ${seasonYear} season.`,
               },
               unit_amount: totalCharge,
             },
@@ -364,13 +408,16 @@ function registerVideoAuditionRoutes(app, deps) {
 
     const member = db.prepare("SELECT * FROM users WHERE id = ?").get(potential.user_id);
     if (member && member.email && sendEmail) {
-      const link = getOmnipplyUrl(potential.program, member.section);
+      const link =
+        potential.program === "corps"
+          ? `${process.env.BASEURL}/video-audition/corps`
+          : getOmnipplyUrl(potential.program, member.section);
       const html = `
         <p>Hi ${member.firstname},</p>
         <p>Your ${program ? program.label : "video audition"} application fee for the <strong>${seasonYear}</strong> season is paid.</p>
         ${
           link
-            ? `<p><a href="${link}">Open your Omnipply video audition</a></p>`
+            ? `<p><a href="${link}">Open your video audition</a></p>`
             : `<p>Your portal now shows the unlocked Video Audition button for this program.</p>`
         }
         <p>- Boise Gems Staff</p>
@@ -391,11 +438,99 @@ function registerVideoAuditionRoutes(app, deps) {
       }
     }
 
-    return res.redirect(`/video-audition/unlocked?program=${potential.program}`);
+    return res.redirect(
+      potential.program === "corps"
+        ? "/video-audition/corps"
+        : `/video-audition/unlocked?program=${potential.program}`
+    );
+  });
+
+  app.get("/video-audition/corps", mustBeMember, (req, res) => {
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.redirect("/");
+    if (member.contractedCorps) {
+      req.session.flashMessage = "You are already contracted with the Corps.";
+      return res.redirect("/member-portal");
+    }
+
+    const seasonYear = getCurrentSeasonYear();
+    const unlocked = hasUnlock(db, member.id, "corps", seasonYear);
+    if (!unlocked) {
+      return res.redirect("/video-audition/pay?program=corps");
+    }
+
+    const hasConsent = hasNeopplyConsent(db, member.id, "corps");
+    const accessToken = req.cookies.bgcookie || "";
+    let embedUrl = null;
+    if (hasConsent && accessToken) {
+      embedUrl = neopplyPartner.buildNeopplyCorpsEmbedUrl(member, accessToken, member.section);
+    }
+
+    return res.render("video-audition-corps", {
+      member,
+      seasonYear,
+      unlocked,
+      hasConsent,
+      embedUrl,
+      neopplyPrivacyUrl: process.env.NEOPPLY_PRIVACY_URL || "https://neopply.com/privacy",
+    });
+  });
+
+  app.post("/video-audition/corps/consent", mustBeMember, (req, res) => {
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.redirect("/");
+
+    const seasonYear = getCurrentSeasonYear();
+    if (!hasUnlock(db, member.id, "corps", seasonYear)) {
+      return res.redirect("/video-audition/pay?program=corps");
+    }
+
+    const agreed = String(req.body.agree || "").trim().toLowerCase();
+    if (agreed !== "yes" && agreed !== "on" && agreed !== "1" && agreed !== "true") {
+      req.session.flashMessage = "You must agree before your information can be shared with Neopply.";
+      return res.redirect("/video-audition/corps");
+    }
+
+    recordNeopplyConsent(db, member.id, "corps");
+    return res.redirect("/video-audition/corps");
+  });
+
+  app.get("/api/partner/neopply/embed-url", mustBeMember, (req, res) => {
+    const program = normalizeProgram(req.query.program) || "corps";
+    if (program !== "corps") {
+      return res.status(400).json({ ok: false, message: "Unsupported program" });
+    }
+
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.status(404).json({ ok: false, message: "User not found" });
+
+    const seasonYear = getCurrentSeasonYear();
+    if (!hasUnlock(db, member.id, "corps", seasonYear)) {
+      return res.status(403).json({ ok: false, message: "Video audition not unlocked" });
+    }
+    if (!hasNeopplyConsent(db, member.id, "corps")) {
+      return res.status(403).json({ ok: false, message: "Neopply consent required" });
+    }
+
+    const accessToken = req.cookies.bgcookie || "";
+    if (!accessToken) {
+      return res.status(401).json({ ok: false, message: "Not signed in" });
+    }
+
+    const embedUrl = neopplyPartner.buildNeopplyCorpsEmbedUrl(member, accessToken, member.section);
+    if (!embedUrl) {
+      return res.status(503).json({ ok: false, message: "Neopply partner not configured" });
+    }
+
+    return res.json({ ok: true, embedUrl });
   });
 
   app.get("/video-audition/unlocked", mustBeMember, (req, res) => {
     const program = getProgram(req.query.program) || PROGRAMS.corps;
+    if (program.key === "corps") {
+      return res.redirect("/video-audition/corps");
+    }
+
     const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
     if (!member) return res.redirect("/");
 
@@ -423,4 +558,7 @@ module.exports = {
   hasUnlock,
   getUnlocksForUser,
   getPortalAuditionActions,
+  hasNeopplyConsent,
+  recordNeopplyConsent,
+  isVideoAuditionFeeBypassed,
 };

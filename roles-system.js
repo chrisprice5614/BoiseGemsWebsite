@@ -947,6 +947,7 @@ function registerRolesRoutes(app, deps) {
     sendEmail,
     jwt,
     issueLoginToken,
+    partnerParamsForView,
   } = deps;
 
   const requirePermission = requirePermissionFactory(db);
@@ -956,12 +957,18 @@ function registerRolesRoutes(app, deps) {
     if (!req.session.pendingMfaUserId) {
       return res.redirect("/login");
     }
-    return res.render("login-mfa", { errors: [] });
+    const partnerView = typeof partnerParamsForView === "function"
+      ? partnerParamsForView(req)
+      : { client_id: "", redirect_uri: "", state: "" };
+    return res.render("login-mfa", { errors: [], ...partnerView });
   });
 
   app.post("/login/mfa", async (req, res) => {
     const userId = req.session.pendingMfaUserId;
     if (!userId) return res.redirect("/login");
+    const partnerView = typeof partnerParamsForView === "function"
+      ? partnerParamsForView(req)
+      : { client_id: "", redirect_uri: "", state: "" };
     const code = String(req.body.code || "").trim();
     const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
     if (!user || user.deactivated_at) {
@@ -970,7 +977,7 @@ function registerRolesRoutes(app, deps) {
     }
     if (!verifyMfaCode(db, userId, code)) {
       recordLogin(db, { userId, email: user.email, success: false, req });
-      return res.render("login-mfa", { errors: ["Invalid or expired code. Please try again."] });
+      return res.render("login-mfa", { errors: ["Invalid or expired code. Please try again."], ...partnerView });
     }
     delete req.session.pendingMfaUserId;
     if (typeof issueLoginToken === "function") {

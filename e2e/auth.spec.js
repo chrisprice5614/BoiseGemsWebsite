@@ -50,4 +50,24 @@ test.describe("Auth", () => {
     expect(USERS.admin.email).toContain("@boisegems.test");
     expect(PASSWORD.length).toBeGreaterThanOrEqual(12);
   });
+
+  test("MFA is not required for member, parent, or instructional staff", async () => {
+    const path = require("path");
+    const Database = require("better-sqlite3");
+    const rolesSystem = require("../roles-system");
+    const db = new Database(path.join(__dirname, "..", "data.db"));
+    const member = db.prepare("SELECT * FROM users WHERE email = ?").get(USERS.member.email);
+    const parent = db.prepare("SELECT * FROM users WHERE email = ?").get(USERS.parent.email);
+    const staff = db.prepare("SELECT * FROM users WHERE email = ?").get(USERS.staff.email);
+    const admin = db.prepare("SELECT * FROM users WHERE email = ?").get(USERS.admin.email);
+    expect(rolesSystem.userRequiresMfa(db, member)).toBe(false);
+    expect(rolesSystem.userRequiresMfa(db, parent)).toBe(false);
+    expect(rolesSystem.userRequiresMfa(db, staff)).toBe(false);
+    expect(rolesSystem.userRequiresMfa(db, admin)).toBe(true);
+
+    // Even if a member somehow had a requires_mfa role, non-staff/non-admin never MFA
+    const fakeMemberWithRole = { ...member, admin: 0, staff: 0, parent: 0 };
+    expect(rolesSystem.userRequiresMfa(db, fakeMemberWithRole)).toBe(false);
+    db.close();
+  });
 });

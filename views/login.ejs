@@ -184,6 +184,7 @@
     <% } %>
 
     <form action="/login" method="POST">
+      <%- include("includes/neopply-partner-fields") %>
       <div class="field-group">
         <label for="email">Email</label>
         <input
@@ -211,7 +212,12 @@
     </form>
 
     <div class="login-links">
-      <p>Don't have an account? <a href="/register">Register here</a></p>
+      <% var neopplyQs = (typeof client_id !== 'undefined' && client_id)
+        ? ('?client_id=' + encodeURIComponent(client_id)
+          + '&redirect_uri=' + encodeURIComponent(redirect_uri)
+          + '&state=' + encodeURIComponent(state))
+        : ''; %>
+      <p>Don't have an account? <a href="/register<%= neopplyQs %>">Register here</a></p>
       <p>Forgot your password? <a href="/forgot-password">Reset it here</a></p>
     </div>
 

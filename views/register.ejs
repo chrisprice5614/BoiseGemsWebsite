@@ -397,6 +397,7 @@
 
     <!-- Hidden real form - action is set by JS before submit -->
     <form id="reg-form" action="/register-member" method="POST">
+      <%- include("includes/neopply-partner-fields") %>
 
       <!-- Slider viewport -->
       <div class="step-viewport" id="step-viewport">
@@ -575,7 +576,12 @@
 
     <!-- Footer -->
     <div class="card-footer">
-      Already have an account? <a href="/login">Login here</a>
+      <% var neopplyQs = (typeof client_id !== 'undefined' && client_id)
+        ? ('?client_id=' + encodeURIComponent(client_id)
+          + '&redirect_uri=' + encodeURIComponent(redirect_uri)
+          + '&state=' + encodeURIComponent(state))
+        : ''; %>
+      Already have an account? <a href="/login<%= neopplyQs %>">Login here</a>
     </div>
 
   </div>

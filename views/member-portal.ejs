@@ -55,6 +55,9 @@
       <button class="pd-nav-item" data-label="Schedule" onclick="pdShow(this,'schedule')">
         <ion-icon name="calendar"></ion-icon> Schedule
       </button>
+      <button class="pd-nav-item" data-label="Video Audition" onclick="pdShow(this,'audition')">
+        <ion-icon name="videocam"></ion-icon> Video Audition
+      </button>
       <button class="pd-nav-item" data-label="Emergency Contacts" onclick="pdShow(this,'emergency')">
         <ion-icon name="medkit"></ion-icon> Emergency Contacts
       </button>
@@ -175,7 +178,9 @@
             <a href="/make-payment" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
           <% } %>
           <% auditionActions.forEach(function(action) { %>
-            <% if (action.unlocked && action.url) { %>
+            <% if (action.unlocked && action.embedHref) { %>
+              <a href="<%= action.embedHref %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
+            <% } else if (action.unlocked && action.url) { %>
               <a href="<%= action.url %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
             <% } else if (action.unlocked) { %>
               <a href="/video-audition/unlocked?program=<%= action.program %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
@@ -389,6 +394,66 @@
       </div>
     </div>
 
+    <!-- ══ VIDEO AUDITION ═════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-audition">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Video Audition</div>
+        <div class="pd-section-sub">Submit a video audition for Boise Gems Drum &amp; Bugle Corps or Independent.</div>
+
+        <div id="va-spots-panel" class="pd-info-card" style="margin-bottom:20px;display:none;">
+          <div class="pd-info-label">Corps spots available</div>
+          <div id="va-spots-list" class="pd-info-value" style="font-size:0.95rem;"></div>
+        </div>
+
+        <% if (!auditionActions.length) { %>
+        <div class="pd-alert pd-alert--success">
+          <ion-icon name="checkmark-circle"></ion-icon>
+          <div class="pd-alert-body">
+            <div class="pd-alert-title">You are contracted</div>
+            <div class="pd-alert-text">Video audition applications are not needed for your current membership status.</div>
+          </div>
+        </div>
+        <% } else { %>
+        <div class="pd-info-grid">
+          <% auditionActions.forEach(function(action) { %>
+          <div class="pd-info-card">
+            <div class="pd-info-label"><%= action.label %></div>
+            <div class="pd-info-value" style="font-size:1rem;margin-bottom:10px;">
+              <% if (action.unlocked) { %>
+                Unlocked for <%= action.seasonYear %>
+              <% } else { %>
+                $<%= (action.feeCents / 100).toFixed(0) %> application fee (+ 6% processing)
+              <% } %>
+            </div>
+            <% if (action.program === 'corps') { %>
+            <p style="font-size:0.85rem;color:#666;margin:0 0 12px;line-height:1.5;">
+              Audition through Neopply without leaving the member portal. Your Gems profile can be linked so you do not re-enter basic details.
+            </p>
+            <% } else { %>
+            <p style="font-size:0.85rem;color:#666;margin:0 0 12px;line-height:1.5;">
+              Opens Omnipply in a new tab after you pay the application fee.
+            </p>
+            <% } %>
+            <% if (action.unlocked && action.embedHref) { %>
+              <a href="<%= action.embedHref %>" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
+                <ion-icon name="videocam"></ion-icon> Open <%= action.shortLabel %> Audition
+              </a>
+            <% } else if (action.unlocked && action.url) { %>
+              <a href="<%= action.url %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
+                <ion-icon name="videocam"></ion-icon> Open <%= action.shortLabel %> Audition
+              </a>
+            <% } else { %>
+              <a href="<%= action.payHref %>" class="pd-action-btn" style="width:100%;justify-content:center;">
+                <ion-icon name="card"></ion-icon> Pay &amp; Unlock ($<%= (action.feeCents / 100).toFixed(0) %>)
+              </a>
+            <% } %>
+          </div>
+          <% }); %>
+        </div>
+        <% } %>
+      </div>
+    </div>
+
     <!-- ══ EMERGENCY CONTACTS ═════════════════════════════ -->
     <div class="pd-section" id="pd-sec-emergency">
       <div class="pd-section-inner">
@@ -439,6 +504,24 @@ function annImgModal(src) {
   document.getElementById('annImgModalImg').src = src;
   document.getElementById('annImgModalOverlay').hidden = false;
 }
+
+(function () {
+  fetch('/api/available-spots-corps')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!Array.isArray(data) || data.length < 2) return;
+      var panel = document.getElementById('va-spots-panel');
+      var list = document.getElementById('va-spots-list');
+      if (!panel || !list) return;
+      var parts = [];
+      for (var i = 0; i < data.length; i += 2) {
+        if (data[i + 1] != null) parts.push('<strong>' + data[i] + '</strong> ' + data[i + 1]);
+      }
+      list.innerHTML = parts.join(' &middot; ');
+      panel.style.display = 'block';
+    })
+    .catch(function () {});
+})();
 </script>
 </body>
 </html>

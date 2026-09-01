@@ -36,6 +36,7 @@ const parentLinks = require("./parent-links");
 const merchSystem = require("./merch-system");
 const opsSystem = require("./ops-system");
 const rolesSystem = require("./roles-system");
+const neopplyPartner = require("./neopply-partner");
 const videoAuditionSystem = require("./video-audition-system");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
@@ -3133,6 +3134,8 @@ const coordinates = {
 
 app.post("/register-parent", async (req, res) => {
   let errors = [];
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  const partnerView = neopplyPartner.partnerParamsForView(req);
 
   const captcha = await verifyRecaptchaToken(req.body["g-recaptcha-response"], req);
   if (!captcha.ok) errors.push(captcha.message);
@@ -3166,7 +3169,7 @@ app.post("/register-parent", async (req, res) => {
 
   res.locals.errors = errors;
 
-  if (errors.length) return res.render("register-parent", { placeholders });
+  if (errors.length) return res.render("register-parent", { placeholders, ...partnerView });
 
   const salt = bcrypt.genSaltSync(10);
   password = bcrypt.hashSync(password, salt);
@@ -3189,25 +3192,9 @@ app.post("/register-parent", async (req, res) => {
     Date.now()
   );
   const parentId = newParent.lastInsertRowid;
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(parentId);
 
-  // âœ... Auto-login just like /login
-  const ourTokenValue = jwt.sign(
-    {
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
-      userid: parentId,
-      firstname,
-      lastname,
-      email,
-      admin: 0,
-      staff: 0,
-      parent: 1,
-    },
-    process.env.JWTSECRET
-  );
-
-  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
-
-  // âœ... Welcome email instead of verify email
+  // Welcome email instead of verify email
   const html = `
     Hello ${firstname},
 
@@ -3220,7 +3207,7 @@ app.post("/register-parent", async (req, res) => {
 
   sendEmail(email, "Welcome to Boise Gems!", html);
 
-  return res.redirect("/member-portal");
+  return issueLoginToken(req, res, user, { redirectTo: "/member-portal" });
 });
 
 
@@ -3258,6 +3245,8 @@ app.get("/verify/:id", (req,res) => {
 
 app.post("/register-member", async (req, res) => {
   if (req.user) return res.redirect("/");
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  const partnerView = neopplyPartner.partnerParamsForView(req);
 
   let errors = [];
 
@@ -3304,7 +3293,7 @@ app.post("/register-member", async (req, res) => {
 
   res.locals.errors = errors;
 
-  if (errors.length) return res.render("register-member", { placeholders });
+  if (errors.length) return res.render("register-member", { placeholders, ...partnerView });
 
   const salt = bcrypt.genSaltSync(10);
   password = bcrypt.hashSync(password, salt);
@@ -3340,22 +3329,7 @@ app.post("/register-member", async (req, res) => {
   );
   addPermissions.run(newMemberId);
 
-  // âœ... Auto-login
-  const ourTokenValue = jwt.sign(
-    {
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
-      userid: newMemberId,
-      firstname,
-      lastname,
-      email,
-      admin: 0,
-      staff: 0,
-      parent: 0,
-    },
-    process.env.JWTSECRET
-  );
-
-  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(newMemberId);
 
   // âœ... Welcome email instead of verify email
   const html = `
@@ -3370,17 +3344,20 @@ app.post("/register-member", async (req, res) => {
 
   sendEmail(email, "Welcome to Boise Gems!", html);
 
-  return res.redirect("/");
+  return issueLoginToken(req, res, user, { redirectTo: "/" });
 });
 
 // ── Register Fan ──
 app.get("/register-fan", (req, res) => {
   if (req.user) return res.redirect("/");
-  return res.redirect("/register");
+  const qs = neopplyPartner.partnerQueryString(neopplyPartner.readNeopplyParams(req));
+  return res.redirect("/register" + qs);
 });
 
 app.post("/register-fan", async (req, res) => {
   if (req.user) return res.redirect("/");
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  const partnerView = neopplyPartner.partnerParamsForView(req);
 
   let errors = [];
 
@@ -3410,7 +3387,7 @@ app.post("/register-fan", async (req, res) => {
 
   if (errors.length) {
     res.locals.errors = errors;
-    return res.render("register", {});
+    return res.render("register", { ...partnerView });
   }
 
   const salt = bcrypt.genSaltSync(10);
@@ -3426,23 +3403,7 @@ app.post("/register-fan", async (req, res) => {
   );
 
   const fanId = newFan.lastInsertRowid;
-
-  const ourTokenValue = jwt.sign(
-    {
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 3,
-      userid: fanId,
-      firstname,
-      lastname,
-      email,
-      admin: 0,
-      staff: 0,
-      parent: 0,
-      fan: 1,
-    },
-    process.env.JWTSECRET
-  );
-
-  res.cookie("bgcookie", ourTokenValue, AUTH_COOKIE);
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(fanId);
 
   const html = `
     Hello ${firstname},
@@ -3452,7 +3413,7 @@ app.post("/register-fan", async (req, res) => {
   `;
   sendEmail(email, "Welcome to Boise Gems!", html);
 
-  return res.redirect("/fan-portal");
+  return issueLoginToken(req, res, user, { redirectTo: "/fan-portal" });
 });
 
 
@@ -3462,10 +3423,21 @@ app.get("/check-email", (req,res) => {
 
 
 
-app.get("/login", (req,res) => {
-  if(req.user)
-    return res.redirect("/")
-  res.render("login")
+app.get("/login", (req, res) => {
+  const partnerParams = neopplyPartner.readNeopplyParams(req);
+  neopplyPartner.persistNeopplyParams(req, partnerParams);
+
+  if (req.user) {
+    if (neopplyPartner.isValidNeopplyFlow(partnerParams)) {
+      const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+      if (user && !user.deactivated_at) {
+        return issueLoginToken(req, res, user);
+      }
+    }
+    return res.redirect("/");
+  }
+
+  return res.render("login", neopplyPartner.partnerParamsForView(req));
 })
 
 // Quick duplicate-check used by the registration wizard
@@ -3484,23 +3456,25 @@ app.get("/check-registration", (req, res) => {
   res.json(result);
 });
 
-app.get("/register", (req,res) => {
-  if(req.user)
-    return res.redirect("/")
-  res.render("register");
+app.get("/register", (req, res) => {
+  if (req.user) return res.redirect("/");
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  return res.render("register", neopplyPartner.partnerParamsForView(req));
 })
 
-app.get("/register-parent", (req,res) => {
-  if(req.user)
-    return res.redirect("/")
-  return res.render("register-parent")
+app.get("/register-parent", (req, res) => {
+  if (req.user) return res.redirect("/");
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  return res.render("register-parent", neopplyPartner.partnerParamsForView(req));
 })
 
-app.get("/register-member", (req,res) => {
-  if(req.user)
-    return res.redirect("/member-portal")
-
-  return res.render("register-member", {placeholders: undefined})
+app.get("/register-member", (req, res) => {
+  if (req.user) return res.redirect("/member-portal");
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  return res.render("register-member", {
+    placeholders: undefined,
+    ...neopplyPartner.partnerParamsForView(req),
+  });
 })
 
 app.get("/add-member", mustBeParent, (req,res) => {
@@ -4072,11 +4046,16 @@ function issueLoginToken(req, res, userInQuestion, { redirectTo = "/" } = {}) {
     success: true,
     req,
   });
+  if (neopplyPartner.sendBackToNeopply(req, res, { user: userInQuestion, accessToken: ourTokenValue })) {
+    return;
+  }
   return res.redirect(redirectTo);
 }
 
 app.post("/login", async (req, res) => {
   errors = [];
+  neopplyPartner.persistNeopplyParams(req, neopplyPartner.readNeopplyParams(req));
+  const partnerView = neopplyPartner.partnerParamsForView(req);
 
   const email = req.body.email.trim().toLowerCase();
   const password = req.body.password;
@@ -4087,13 +4066,13 @@ app.post("/login", async (req, res) => {
   if (!userInQuestion) {
     rolesSystem.recordLogin(db, { email, success: false, req });
     errors.push("Invalid email/password");
-    return res.render("login", { errors });
+    return res.render("login", { errors, ...partnerView });
   }
 
   if (userInQuestion.deactivated_at) {
     rolesSystem.recordLogin(db, { userId: userInQuestion.id, email, success: false, req });
     errors = ["This account has been deactivated. Contact an administrator."];
-    return res.render("login", { errors });
+    return res.render("login", { errors, ...partnerView });
   }
 
   const matchOrNot = bcrypt.compareSync(
@@ -4103,7 +4082,7 @@ app.post("/login", async (req, res) => {
   if (!matchOrNot) {
     rolesSystem.recordLogin(db, { userId: userInQuestion.id, email, success: false, req });
     errors = ["Invalid email/password"];
-    return res.render("login", { errors });
+    return res.render("login", { errors, ...partnerView });
   }
 
   if (rolesSystem.userRequiresMfa(db, userInQuestion)) {
@@ -11394,6 +11373,11 @@ function serializeUser(u) {
   };
 }
 
+// GET /api/available-spots-corps - live corps spot counts for Neopply / member portal
+app.get("/api/available-spots-corps", (req, res) => {
+  return res.json(["Trumpets:", "20", "Baritones:", "10"]);
+});
+
 // POST /api/mobile/login
 app.post("/api/mobile/login", async (req, res) => {
   try {
@@ -13808,6 +13792,7 @@ rolesSystem.registerRolesRoutes(app, {
   sendEmail,
   jwt,
   issueLoginToken: (req, res, user) => issueLoginToken(req, res, user),
+  partnerParamsForView: neopplyPartner.partnerParamsForView,
 });
 
 videoAuditionSystem.registerVideoAuditionRoutes(app, {

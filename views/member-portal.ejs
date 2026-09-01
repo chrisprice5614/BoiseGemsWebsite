@@ -509,14 +509,14 @@ function annImgModal(src) {
   fetch('/api/available-spots-corps')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      if (!Array.isArray(data) || data.length < 2) return;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return;
       var panel = document.getElementById('va-spots-panel');
       var list = document.getElementById('va-spots-list');
       if (!panel || !list) return;
-      var parts = [];
-      for (var i = 0; i < data.length; i += 2) {
-        if (data[i + 1] != null) parts.push('<strong>' + data[i] + '</strong> ' + data[i + 1]);
-      }
+      var parts = Object.keys(data).map(function (name) {
+        return '<strong>' + name + ':</strong> ' + data[name];
+      });
+      if (!parts.length) return;
       list.innerHTML = parts.join(' &middot; ');
       panel.style.display = 'block';
     })

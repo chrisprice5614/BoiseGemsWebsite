@@ -46,6 +46,6 @@ test.describe("Video audition unlocks", () => {
     const res = await request.get("/api/available-spots-corps");
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
-    expect(data).toEqual(["Trumpets:", "20", "Baritones:", "10"]);
+    expect(data).toEqual({ Trumpets: "20", Baritones: "10" });
   });
 });

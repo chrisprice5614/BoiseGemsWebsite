@@ -11375,7 +11375,7 @@ function serializeUser(u) {
 
 // GET /api/available-spots-corps - live corps spot counts for Neopply / member portal
 app.get("/api/available-spots-corps", (req, res) => {
-  return res.json(["Trumpets:", "20", "Baritones:", "10"]);
+  return res.json({ Trumpets: "20", Baritones: "10" });
 });
 
 // POST /api/mobile/login

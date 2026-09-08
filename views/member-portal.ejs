@@ -401,7 +401,7 @@
         <div class="pd-section-sub">Submit a video audition for Boise Gems Drum &amp; Bugle Corps or Independent.</div>
 
         <div id="va-spots-panel" class="pd-info-card" style="margin-bottom:20px;display:none;">
-          <div class="pd-info-label">Corps spots available</div>
+          <div class="pd-info-label">Corps roster (from contracts)</div>
           <div id="va-spots-list" class="pd-info-value" style="font-size:0.95rem;"></div>
         </div>
 
@@ -506,17 +506,25 @@ function annImgModal(src) {
 }
 
 (function () {
-  fetch('/api/available-spots-corps')
+  fetch('/api/contracts')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+      if (!data || !data.ok) return;
+      var map = data.spots || data.open || data.filled;
+      if (!map || typeof map !== 'object') return;
       var panel = document.getElementById('va-spots-panel');
       var list = document.getElementById('va-spots-list');
       if (!panel || !list) return;
-      var parts = Object.keys(data).map(function (name) {
-        return '<strong>' + name + ':</strong> ' + data[name];
+      var keys = Object.keys(map);
+      if (!keys.length) {
+        list.textContent = 'No contracted Corps members yet.';
+        panel.style.display = 'block';
+        return;
+      }
+      var label = data.open ? ' open' : ' contracted';
+      var parts = keys.map(function (name) {
+        return '<strong>' + name + ':</strong> ' + map[name] + label;
       });
-      if (!parts.length) return;
       list.innerHTML = parts.join(' &middot; ');
       panel.style.display = 'block';
     })

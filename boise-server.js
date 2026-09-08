@@ -36,7 +36,8 @@ const parentLinks = require("./parent-links");
 const merchSystem = require("./merch-system");
 const opsSystem = require("./ops-system");
 const rolesSystem = require("./roles-system");
-const neopplyPartner = require("./neopply-partner");
+const partnerAuth = require("./partner-auth");
+const neopplyPartner = partnerAuth; // alias for video-audition embeds / older names
 const videoAuditionSystem = require("./video-audition-system");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
@@ -4046,7 +4047,7 @@ function issueLoginToken(req, res, userInQuestion, { redirectTo = "/" } = {}) {
     success: true,
     req,
   });
-  if (neopplyPartner.sendBackToNeopply(req, res, { user: userInQuestion, accessToken: ourTokenValue })) {
+  if (partnerAuth.sendBackToPartner(req, res, { user: userInQuestion, accessToken: ourTokenValue })) {
     return;
   }
   return res.redirect(redirectTo);
@@ -11373,9 +11374,90 @@ function serializeUser(u) {
   };
 }
 
-// GET /api/available-spots-corps - live corps spot counts for Neopply / member portal
+/**
+ * GET /api/contracts
+ * Live corps fill by instrument from contracted members (replaces /api/available-spots-corps).
+ * Optional capacities via CORPS_SPOT_CAPACITIES JSON, e.g. {"Trumpets":20,"Baritones":10}
+ * → open = capacity - filled (floored at 0).
+ */
+app.get("/api/contracts", (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT instrument, section
+      FROM users
+      WHERE contractedCorps = 1
+        AND (deactivated_at IS NULL OR deactivated_at = 0)
+    `).all();
+
+    const filled = {};
+    for (const row of rows) {
+      let label = String(row.instrument || "").trim();
+      if (!label) {
+        const sec = String(row.section || "").trim();
+        label = sec || "Unspecified";
+      }
+      // Normalize plural display keys lightly (Trumpet → Trumpets) when capacity keys use plurals
+      filled[label] = (filled[label] || 0) + 1;
+    }
+
+    let capacities = null;
+    try {
+      const raw = process.env.CORPS_SPOT_CAPACITIES;
+      if (raw) capacities = JSON.parse(raw);
+    } catch (err) {
+      console.error("CORPS_SPOT_CAPACITIES parse error:", err.message);
+    }
+
+    const open = {};
+    if (capacities && typeof capacities === "object") {
+      for (const [name, cap] of Object.entries(capacities)) {
+        const used = Number(filled[name] || 0);
+        const capacity = Number(cap);
+        if (!Number.isFinite(capacity)) continue;
+        open[name] = Math.max(0, capacity - used);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      ensemble: "corps",
+      filled,
+      ...(capacities ? { capacity: capacities, open } : {}),
+      // Convenience map for UIs that just want "spots left" when capacity is set,
+      // otherwise show filled counts.
+      spots: Object.keys(open).length ? open : filled,
+    });
+  } catch (e) {
+    console.error("/api/contracts error:", e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// Legacy alias — prefer GET /api/contracts
 app.get("/api/available-spots-corps", (req, res) => {
-  return res.json({ Trumpets: "20", Baritones: "10" });
+  return res.redirect(307, "/api/contracts");
+});
+
+/**
+ * POST /api/partner/token
+ * OAuth-style authorization_code exchange for partner sites.
+ * Body: client_id, client_secret, code, redirect_uri, grant_type=authorization_code
+ */
+app.post("/api/partner/token", (req, res) => {
+  const grant = String(req.body.grant_type || "authorization_code").trim();
+  if (grant !== "authorization_code") {
+    return res.status(400).json({ ok: false, message: "Unsupported grant_type" });
+  }
+  const result = partnerAuth.exchangePartnerToken({
+    clientId: req.body.client_id,
+    clientSecret: req.body.client_secret,
+    code: String(req.body.code || "").trim(),
+    redirectUri: String(req.body.redirect_uri || "").trim(),
+  });
+  if (!result.ok) {
+    return res.status(result.status).json({ ok: false, message: result.message });
+  }
+  return res.json({ ok: true, ...result.body });
 });
 
 // POST /api/mobile/login
@@ -13792,7 +13874,7 @@ rolesSystem.registerRolesRoutes(app, {
   sendEmail,
   jwt,
   issueLoginToken: (req, res, user) => issueLoginToken(req, res, user),
-  partnerParamsForView: neopplyPartner.partnerParamsForView,
+  partnerParamsForView: partnerAuth.partnerParamsForView,
 });
 
 videoAuditionSystem.registerVideoAuditionRoutes(app, {

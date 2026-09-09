@@ -761,6 +761,57 @@ function canManageSeason(db, userId) {
   return assignments.some((a) => a.role_slug === "executive-director" || a.role_slug === "super-administrator");
 }
 
+/**
+ * Strip live contract flags from all members for a new season.
+ * Does not delete signed contract history (contractedMembers).
+ * Clears unsigned / pending contract offers so old-season invites disappear.
+ */
+function clearAllLiveContracts(db) {
+  const before = db.prepare(`
+    SELECT
+      SUM(CASE WHEN COALESCE(contractedCorps,0) = 1 THEN 1 ELSE 0 END) AS corps,
+      SUM(CASE WHEN COALESCE(contractedIndependent,0) = 1 THEN 1 ELSE 0 END) AS independent,
+      SUM(CASE WHEN COALESCE(contractedAffiliate,0) = 1 THEN 1 ELSE 0 END) AS affiliate
+    FROM users
+  `).get() || { corps: 0, independent: 0, affiliate: 0 };
+
+  const usersResult = db.prepare(`
+    UPDATE users SET
+      contractedCorps = 0,
+      contractedIndependent = 0,
+      contractedAffiliate = 0,
+      corps_contract_ends_at = NULL,
+      independent_contract_ends_at = NULL,
+      affiliate_contract_ends_at = NULL
+    WHERE COALESCE(contractedCorps,0) = 1
+       OR COALESCE(contractedIndependent,0) = 1
+       OR COALESCE(contractedAffiliate,0) = 1
+  `).run();
+
+  let unsignedExtensions = 0;
+  let pendingOffers = 0;
+  try {
+    unsignedExtensions = db.prepare(`
+      DELETE FROM contractExtension
+      WHERE signature IS NULL OR TRIM(COALESCE(signature, '')) = ''
+    `).run().changes;
+  } catch (_) {}
+  try {
+    pendingOffers = db.prepare(`DELETE FROM pendingContractExtension`).run().changes;
+  } catch (_) {}
+
+  return {
+    usersCleared: usersResult.changes || 0,
+    before: {
+      corps: Number(before.corps) || 0,
+      independent: Number(before.independent) || 0,
+      affiliate: Number(before.affiliate) || 0,
+    },
+    unsignedExtensionsRemoved: unsignedExtensions,
+    pendingOffersRemoved: pendingOffers,
+  };
+}
+
 function createAuthSession(db, userId, req) {
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -1010,10 +1061,22 @@ function registerRolesRoutes(app, deps) {
     if (!canManageSeason(db, req.user.userid)) {
       return res.status(403).render("message", { message: "Only the executive director or lead admin can change the season." });
     }
+    const contractCounts = db.prepare(`
+      SELECT
+        SUM(CASE WHEN COALESCE(contractedCorps,0) = 1 THEN 1 ELSE 0 END) AS corps,
+        SUM(CASE WHEN COALESCE(contractedIndependent,0) = 1 THEN 1 ELSE 0 END) AS independent,
+        SUM(CASE WHEN COALESCE(contractedAffiliate,0) = 1 THEN 1 ELSE 0 END) AS affiliate
+      FROM users
+    `).get() || { corps: 0, independent: 0, affiliate: 0 };
     return res.render("admin-season", {
       currentSeason: getCurrentSeason(db),
       seasonEndDate: getSeasonEndDate(db),
       flashMessage: req.session.flashMessage || null,
+      contractCounts: {
+        corps: Number(contractCounts.corps) || 0,
+        independent: Number(contractCounts.independent) || 0,
+        affiliate: Number(contractCounts.affiliate) || 0,
+      },
     });
   });
 
@@ -1039,6 +1102,30 @@ function registerRolesRoutes(app, deps) {
       meta: { season_end_date: endDate },
     });
     req.session.flashMessage = `Season set to ${season} (ends ${endDate}). Applies to both corps and independent.`;
+    return res.redirect("/admin/season");
+  });
+
+  app.post("/admin/season/clear-contracts", mustBeAdmin, (req, res) => {
+    if (!canManageSeason(db, req.user.userid)) {
+      return res.status(403).render("message", { message: "Only the executive director or lead admin can clear contracts." });
+    }
+    const confirm = String(req.body.confirm_text || "").trim().toUpperCase();
+    if (confirm !== "CLEAR CONTRACTS") {
+      req.session.flashMessage = 'Type CLEAR CONTRACTS exactly to confirm.';
+      return res.redirect("/admin/season");
+    }
+
+    const result = clearAllLiveContracts(db);
+    writeAudit(db, req, "permission_change", {
+      targetType: "contracts",
+      targetId: "clear-all",
+      meta: result,
+    });
+    req.session.flashMessage =
+      `Cleared live contracts for ${result.usersCleared} member(s) ` +
+      `(was Corps ${result.before.corps}, BGI ${result.before.independent}, Affiliate ${result.before.affiliate}). ` +
+      `Removed ${result.unsignedExtensionsRemoved} unsigned offer(s) and ${result.pendingOffersRemoved} pending request(s). ` +
+      `Signed contract history was kept.`;
     return res.redirect("/admin/season");
   });
 
@@ -1369,6 +1456,7 @@ module.exports = {
   getActiveAssignments,
   userRequiresMfa,
   canManageSeason,
+  clearAllLiveContracts,
   createAuthSession,
   isSessionActive,
   revokeSession,

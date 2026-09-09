@@ -11,11 +11,19 @@
     .ra-hero a { color: rgba(255,255,255,0.85); text-decoration: none; }
     .ra-hero h1 { margin: 10px 0 6px; color: #fff; font-size: 1.85rem; }
     .ra-wrap { width: min(720px, calc(100% - 48px)); margin: -18px auto 48px; }
-    .ra-panel { background: #fff; border: 1px solid rgba(96,67,125,0.12); border-radius: 14px; padding: 22px 24px; box-shadow: 0 8px 24px rgba(40,24,60,0.06); }
+    .ra-panel { background: #fff; border: 1px solid rgba(96,67,125,0.12); border-radius: 14px; padding: 22px 24px; box-shadow: 0 8px 24px rgba(40,24,60,0.06); margin-bottom: 18px; }
     .ra-flash { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; }
+    .ra-danger { border-color: rgba(185, 28, 28, 0.25); }
+    .ra-danger h2 { margin: 0 0 8px; color: #991b1b; font-size: 1.15rem; }
     label { display: block; margin: 12px 0 6px; font-weight: 600; }
     input { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
-    .ra-note { color: #666; font-size: 0.95rem; margin-top: 8px; }
+    .ra-note { color: #666; font-size: 0.95rem; margin-top: 8px; line-height: 1.5; }
+    .ra-counts { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
+    .ra-count { background: #f7f4fa; border-radius: 10px; padding: 10px 14px; min-width: 110px; }
+    .ra-count strong { display: block; font-size: 1.25rem; color: #4a3263; }
+    .ra-count span { font-size: 0.85rem; color: #666; }
+    .ra-danger button { background: #b91c1c; }
+    .ra-danger button:hover { background: #991b1b; }
   </style>
 </head>
 <body class="roles-admin-page">
@@ -37,6 +45,27 @@
         <p class="ra-note">New contracts default to this end date unless overridden per member. Access is cleared automatically after the end date.</p>
         <div style="margin-top:1.25rem;">
           <button type="submit">Save season</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="ra-panel ra-danger">
+      <h2>Clear all live contracts</h2>
+      <p class="ra-note" style="margin-top:0;">
+        Use this when starting a new season so last year’s contracted members no longer get free camp RSVPs,
+        contracted-only files, or “already contracted” video-audition blocks.
+        Signed contract PDFs / history are kept. Unsigned offers and pending staff requests are removed.
+      </p>
+      <div class="ra-counts">
+        <div class="ra-count"><strong><%= (contractCounts && contractCounts.corps) || 0 %></strong><span>Corps</span></div>
+        <div class="ra-count"><strong><%= (contractCounts && contractCounts.independent) || 0 %></strong><span>Independent</span></div>
+        <div class="ra-count"><strong><%= (contractCounts && contractCounts.affiliate) || 0 %></strong><span>Affiliate</span></div>
+      </div>
+      <form method="POST" action="/admin/season/clear-contracts" onsubmit="return confirm('This will uncontract EVERY member. Continue?');">
+        <label for="confirm_text">Type CLEAR CONTRACTS to confirm</label>
+        <input type="text" id="confirm_text" name="confirm_text" autocomplete="off" placeholder="CLEAR CONTRACTS" required>
+        <div style="margin-top:1.25rem;">
+          <button type="submit">Clear all contracts</button>
         </div>
       </form>
     </div>

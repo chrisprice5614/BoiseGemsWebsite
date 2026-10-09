@@ -12708,14 +12708,38 @@ function messagingEffectiveUserId(req) {
 }
 
 function isConversationMember(conversationId, userId) {
+  const cid = Number(conversationId);
+  const uid = Number(userId);
+  if (!cid || !uid) return false;
   return !!db.prepare(
     "SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
-  ).get(conversationId, userId);
+  ).get(cid, uid);
+}
+
+/** If the conversation creator is missing from members (bad create / old data), restore them. */
+function ensureCreatorMembership(conversationId, userId) {
+  const cid = Number(conversationId);
+  const uid = Number(userId);
+  if (!cid || !uid) return false;
+  if (isConversationMember(cid, uid)) return true;
+  const conv = db.prepare("SELECT id, created_by, type FROM conversations WHERE id = ?").get(cid);
+  if (!conv || Number(conv.created_by) !== uid) return false;
+  try {
+    insertConversationMember(cid, uid, Date.now(), {
+      can_send: true,
+      can_add_members: conv.type === "group",
+      can_remove_members: conv.type === "group",
+    });
+  } catch (_) {
+    // Concurrent insert is fine.
+  }
+  return isConversationMember(cid, uid);
 }
 
 function getConversationOr403(req, res, conversationId, viewAsUserId) {
-  const uid = viewAsUserId ?? messagingEffectiveUserId(req);
-  if (!isConversationMember(conversationId, uid)) {
+  const uid = Number(viewAsUserId ?? messagingEffectiveUserId(req));
+  const cid = Number(conversationId);
+  if (!isConversationMember(cid, uid) && !ensureCreatorMembership(cid, uid)) {
     res.status(403).json({ ok: false, message: "Not a member of this conversation" });
     return null;
   }
@@ -12844,18 +12868,34 @@ function assertCanManageMemberPerms(res, conversationId, userId) {
 }
 
 function insertConversationMember(conversationId, userId, now, flags) {
+  const cid = Number(conversationId);
+  const uid = Number(userId);
   db.prepare(`
-    INSERT INTO conversation_members
+    INSERT OR IGNORE INTO conversation_members
       (conversation_id, user_id, muted, can_send, can_add_members, can_remove_members, joined_at)
     VALUES (?, ?, 0, ?, ?, ?, ?)
   `).run(
-    conversationId,
-    userId,
+    cid,
+    uid,
     flags.can_send ? 1 : 0,
     flags.can_add_members ? 1 : 0,
     flags.can_remove_members ? 1 : 0,
     now
   );
+  // If the row already existed (IGNORE), still refresh permission flags when requested.
+  if (flags.forceUpdate) {
+    db.prepare(`
+      UPDATE conversation_members
+      SET can_send = ?, can_add_members = ?, can_remove_members = ?
+      WHERE conversation_id = ? AND user_id = ?
+    `).run(
+      flags.can_send ? 1 : 0,
+      flags.can_add_members ? 1 : 0,
+      flags.can_remove_members ? 1 : 0,
+      cid,
+      uid
+    );
+  }
 }
 
 function findDirectConversation(userA, userB) {
@@ -13224,9 +13264,17 @@ app.post("/api/mobile/messages/conversations", mobileMsgAuth, (req, res) => {
       type, title, myId, now, now,
       defaults.can_send, defaults.can_add_members, defaults.can_remove_members
     );
-    const convId = result.lastInsertRowid;
+    const convId = Number(result.lastInsertRowid);
     const permSets = buildChatPermissionSets(req.body, allMembers, myId, type);
+    // Creator first with full rights, then everyone else.
+    insertConversationMember(convId, myId, now, {
+      can_send: true,
+      can_add_members: type === "group",
+      can_remove_members: type === "group",
+      forceUpdate: true,
+    });
     for (const id of allMembers) {
+      if (Number(id) === myId) continue;
       insertConversationMember(convId, id, now, {
         can_send: permSets.canSend.has(Number(id)),
         can_add_members: permSets.canAdd.has(Number(id)),
@@ -13900,9 +13948,16 @@ app.post("/api/web/messages/conversations", webMsgAuth, (req, res) => {
       type, title, myId, now, now,
       defaults.can_send, defaults.can_add_members, defaults.can_remove_members
     );
-    const convId = result.lastInsertRowid;
+    const convId = Number(result.lastInsertRowid);
     const permSets = buildChatPermissionSets(req.body, allMembers, myId, type);
+    insertConversationMember(convId, myId, now, {
+      can_send: true,
+      can_add_members: type === "group",
+      can_remove_members: type === "group",
+      forceUpdate: true,
+    });
     for (const id of allMembers) {
+      if (Number(id) === myId) continue;
       insertConversationMember(convId, id, now, {
         can_send: permSets.canSend.has(Number(id)),
         can_add_members: permSets.canAdd.has(Number(id)),

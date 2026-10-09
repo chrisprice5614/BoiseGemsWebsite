@@ -514,20 +514,62 @@
   /* Attachment rendering inside bubbles */
   .bg-msg-att-img { display: block; margin-bottom: 6px; border-radius: 10px; overflow: hidden; max-width: 240px; }
   .bg-msg-att-img img { display: block; width: 100%; max-height: 260px; object-fit: cover; }
-  .bg-msg-att-video { display: block; margin-bottom: 6px; border-radius: 10px; max-width: 260px; width: 100%; background: #000; }
   .bg-msg-att-video-thumb {
     position: relative; display: block; margin-bottom: 6px; border-radius: 10px; overflow: hidden;
     max-width: 260px; width: 100%; aspect-ratio: 16 / 10; background: #1a1228; border: none; padding: 0;
     cursor: pointer; color: #fff;
-  }
-  .bg-msg-att-video-thumb video {
-    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none;
   }
   .bg-msg-att-video-thumb .bg-msg-play {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(0,0,0,0.28); font-size: 42px; text-shadow: 0 2px 8px rgba(0,0,0,0.45);
   }
   .bg-msg-att-video-thumb:hover .bg-msg-play { background: rgba(0,0,0,0.38); }
+
+  .bg-msg-dialog-overlay {
+    position: fixed; inset: 0; z-index: 11000; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55); padding: 16px;
+  }
+  .bg-msg-dialog-overlay.is-open { display: flex; }
+  .bg-msg-dialog {
+    width: min(420px, 94vw); background: #fff; color: #1a1a1a; border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4); padding: 22px 22px 16px; position: relative;
+  }
+  .bg-msg-dialog h3 { margin: 0 0 8px; font-size: 1.1rem; color: #3a2758; }
+  .bg-msg-dialog p { margin: 0 0 16px; font-size: 0.95rem; line-height: 1.4; color: #333; white-space: pre-wrap; }
+  .bg-msg-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .bg-msg-dialog-actions button {
+    min-width: 88px; border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer;
+    border: 1px solid #d7c8ea; background: #fff; color: #60437D;
+  }
+  .bg-msg-dialog-actions button.primary {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: #fff; border: none;
+  }
+  .bg-msg-dialog-actions button.danger {
+    background: #b33; color: #fff; border: none;
+  }
+
+  .bg-msg-video-overlay {
+    position: fixed; inset: 0; z-index: 12000; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.82); padding: 20px;
+  }
+  .bg-msg-video-overlay.is-open { display: flex; }
+  .bg-msg-video-shell {
+    position: relative; width: min(920px, 96vw); max-height: 90vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bg-msg-video-shell video {
+    width: 100%; max-height: 85vh; background: #000; border-radius: 12px;
+  }
+  .bg-msg-video-close {
+    position: absolute; top: -10px; right: -10px; z-index: 2;
+    width: 40px !important; height: 40px !important; border-radius: 999px !important;
+    border: none !important; background: #fff !important; color: #333 !important;
+    font-size: 22px !important; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    display: flex !important; align-items: center; justify-content: center;
+  }
   .bg-msg-att-file {
     display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 8px 10px;
     border-radius: 10px; background: rgba(0,0,0,0.06); color: inherit; text-decoration: none; max-width: 260px;
@@ -590,7 +632,7 @@
     .bg-msg-modal.show-conv .bg-msg-sidebar { display: none; }
     .bg-msg-modal.show-conv .bg-msg-main { display: flex; }
     .bg-msg-fab-wrap { right: 16px; bottom: 16px; }
-    .bg-msg-att-img, .bg-msg-att-video, .bg-msg-att-file { max-width: 72vw; }
+    .bg-msg-att-img, .bg-msg-att-video-thumb, .bg-msg-att-file { max-width: 72vw; }
   }
   @media (min-width: 721px) {
     #bgMsgCloseSide { display: none !important; }
@@ -719,6 +761,26 @@
 
     </div>
   </div>
+
+  <!-- Custom dialog (never use window.alert / confirm) -->
+  <div class="bg-msg-dialog-overlay" id="bgMsgDialogOverlay" aria-hidden="true">
+    <div class="bg-msg-dialog" role="dialog" aria-modal="true" aria-labelledby="bgMsgDialogTitle">
+      <h3 id="bgMsgDialogTitle">Notice</h3>
+      <p id="bgMsgDialogBody"></p>
+      <div class="bg-msg-dialog-actions">
+        <button type="button" id="bgMsgDialogCancel" hidden>Cancel</button>
+        <button type="button" class="primary" id="bgMsgDialogOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video lightbox -->
+  <div class="bg-msg-video-overlay" id="bgMsgVideoOverlay" aria-hidden="true">
+    <div class="bg-msg-video-shell">
+      <button type="button" class="bg-msg-video-close" id="bgMsgVideoClose" aria-label="Close video">&times;</button>
+      <video id="bgMsgVideoPlayer" controls playsinline></video>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -819,6 +881,87 @@
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* ---------- custom dialogs (never window.alert / confirm) ---------- */
+  var dialogEls = {
+    overlay: document.getElementById('bgMsgDialogOverlay'),
+    title: document.getElementById('bgMsgDialogTitle'),
+    body: document.getElementById('bgMsgDialogBody'),
+    ok: document.getElementById('bgMsgDialogOk'),
+    cancel: document.getElementById('bgMsgDialogCancel')
+  };
+  var dialogResolver = null;
+
+  function closeMsgDialog(result) {
+    if (!dialogEls.overlay) return;
+    dialogEls.overlay.classList.remove('is-open');
+    dialogEls.overlay.setAttribute('aria-hidden', 'true');
+    if (dialogResolver) {
+      var resolve = dialogResolver;
+      dialogResolver = null;
+      resolve(result);
+    }
+  }
+  function showMsgDialog(opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      if (!dialogEls.overlay) { resolve(!!opts.confirm); return; }
+      dialogResolver = resolve;
+      dialogEls.title.textContent = opts.title || (opts.confirm ? 'Please confirm' : 'Notice');
+      dialogEls.body.textContent = opts.message || '';
+      dialogEls.ok.textContent = opts.okText || (opts.confirm ? 'Confirm' : 'OK');
+      dialogEls.ok.className = opts.danger ? 'danger' : 'primary';
+      if (opts.confirm) {
+        dialogEls.cancel.hidden = false;
+        dialogEls.cancel.textContent = opts.cancelText || 'Cancel';
+      } else {
+        dialogEls.cancel.hidden = true;
+      }
+      dialogEls.overlay.classList.add('is-open');
+      dialogEls.overlay.setAttribute('aria-hidden', 'false');
+      setTimeout(function () { dialogEls.ok.focus(); }, 30);
+    });
+  }
+  function msgAlert(message, title) {
+    return showMsgDialog({ message: message, title: title || 'Notice' });
+  }
+  function msgConfirm(message, title) {
+    return showMsgDialog({ message: message, title: title || 'Please confirm', confirm: true, danger: true, okText: 'Remove' });
+  }
+  if (dialogEls.ok) dialogEls.ok.addEventListener('click', function () { closeMsgDialog(true); });
+  if (dialogEls.cancel) dialogEls.cancel.addEventListener('click', function () { closeMsgDialog(false); });
+  if (dialogEls.overlay) {
+    dialogEls.overlay.addEventListener('click', function (e) {
+      if (e.target === dialogEls.overlay) closeMsgDialog(false);
+    });
+  }
+
+  var videoEls = {
+    overlay: document.getElementById('bgMsgVideoOverlay'),
+    player: document.getElementById('bgMsgVideoPlayer'),
+    close: document.getElementById('bgMsgVideoClose')
+  };
+  function openVideoModal(src) {
+    if (!videoEls.overlay || !videoEls.player || !src) return;
+    videoEls.player.src = src;
+    videoEls.overlay.classList.add('is-open');
+    videoEls.overlay.setAttribute('aria-hidden', 'false');
+    videoEls.player.play().catch(function () {});
+  }
+  function closeVideoModal() {
+    if (!videoEls.overlay || !videoEls.player) return;
+    try { videoEls.player.pause(); } catch (_) {}
+    videoEls.player.removeAttribute('src');
+    videoEls.player.load();
+    videoEls.overlay.classList.remove('is-open');
+    videoEls.overlay.setAttribute('aria-hidden', 'true');
+  }
+  if (videoEls.close) videoEls.close.addEventListener('click', closeVideoModal);
+  if (videoEls.overlay) {
+    videoEls.overlay.addEventListener('click', function (e) {
+      if (e.target === videoEls.overlay) closeVideoModal();
+    });
   }
   function initials(name) {
     var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -1023,7 +1166,6 @@
     }
     if (m.attachmentType === 'video') {
       return '<button type="button" class="bg-msg-att-video-thumb" data-src="' + url + '" aria-label="Play video">' +
-        '<video muted playsinline preload="metadata" src="' + url + '#t=0.1"></video>' +
         '<span class="bg-msg-play" aria-hidden="true">▶</span></button>';
     }
     var isPdf = (m.attachmentMime || '').indexOf('pdf') !== -1;
@@ -1064,16 +1206,7 @@
     els.messages.innerHTML = html;
     Array.prototype.forEach.call(els.messages.querySelectorAll('.bg-msg-att-video-thumb'), function (btn) {
       btn.addEventListener('click', function () {
-        var src = btn.getAttribute('data-src');
-        if (!src) return;
-        var video = document.createElement('video');
-        video.className = 'bg-msg-att-video';
-        video.controls = true;
-        video.playsInline = true;
-        video.autoplay = true;
-        video.src = src;
-        btn.replaceWith(video);
-        video.play().catch(function () {});
+        openVideoModal(btn.getAttribute('data-src'));
       });
     });
     if (force || nearBottom) els.messages.scrollTop = els.messages.scrollHeight;
@@ -1276,7 +1409,7 @@
     var audiences = selectedAudiences();
     if (!ids.length && !audiences.length) return;
     if (state.composeMode === 'group' && !(els.groupTitle.value || '').trim()) {
-      alert('Please enter a group name.');
+      msgAlert('Please enter a group name.');
       return;
     }
     els.create.disabled = true;
@@ -1297,7 +1430,11 @@
       method: 'POST',
       body: body
     }).then(function (j) {
-      if (!j || !j.ok) { alert((j && j.message) || 'Could not start conversation.'); els.create.disabled = false; return; }
+      if (!j || !j.ok) {
+        msgAlert((j && j.message) || 'Could not start conversation.');
+        els.create.disabled = false;
+        return;
+      }
       closeCompose();
       loadConversations();
       selectConversation(j.conversation.id, j.conversation.title);
@@ -1376,7 +1513,7 @@
             }
           }
         }).then(function (j) {
-          if (!j || !j.ok) { alert((j && j.message) || 'Could not save defaults.'); return; }
+          if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not save defaults.'); return; }
           state.activeConv = j.conversation;
           renderInfoPanel();
         });
@@ -1395,7 +1532,7 @@
             canRemoveMembers: !!row.querySelector('.bg-msg-edit-remove').checked
           }
         }).then(function (j) {
-          if (!j || !j.ok) { alert((j && j.message) || 'Could not update permissions.'); return; }
+          if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not update permissions.'); return; }
           state.activeConv = j.conversation;
           applyComposerAccess(j.conversation);
           renderInfoPanel();
@@ -1407,15 +1544,17 @@
         var row = btn.closest('.bg-msg-member-row');
         var id = Number(row.dataset.id);
         var name = row.querySelector('.bg-msg-member-name').textContent;
-        if (!confirm('Remove ' + name + ' from this group?')) return;
-        fetch('/api/web/messages/conversations/' + state.convId + '/members/' + id, {
-          method: 'DELETE', credentials: 'same-origin'
-        }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
-          .then(function (j) {
-            if (!j || !j.ok) { alert((j && j.message) || 'Could not remove member.'); return; }
-            state.activeConv = j.conversation;
-            renderInfoPanel();
-          });
+        msgConfirm('Remove ' + name + ' from this group?', 'Remove member').then(function (ok) {
+          if (!ok) return;
+          fetch('/api/web/messages/conversations/' + state.convId + '/members/' + id, {
+            method: 'DELETE', credentials: 'same-origin'
+          }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+            .then(function (j) {
+              if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not remove member.'); return; }
+              state.activeConv = j.conversation;
+              renderInfoPanel();
+            });
+        });
       });
     });
     var addSearch = document.getElementById('bgMsgAddSearch');
@@ -1447,7 +1586,7 @@
                   method: 'POST',
                   body: { memberIds: [Number(it.dataset.id)] }
                 }).then(function (j2) {
-                  if (!j2 || !j2.ok) { alert((j2 && j2.message) || 'Could not add member.'); return; }
+                  if (!j2 || !j2.ok) { msgAlert((j2 && j2.message) || 'Could not add member.'); return; }
                   state.activeConv = j2.conversation;
                   renderInfoPanel();
                 });
@@ -1476,7 +1615,7 @@
     els.input.value = '';
     api('/api/web/messages/conversations/' + convId + '/messages', { method: 'POST', body: { body: body } })
       .then(function (j) {
-        if (!j || !j.ok) { alert((j && j.message) || 'Could not send.'); return; }
+        if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not send.'); return; }
         state.msgSig = '';
         loadMessages(true);
       });
@@ -1495,12 +1634,12 @@
     }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
       .then(function (j) {
         els.uploading.hidden = true;
-        if (!j || !j.ok) { alert((j && j.message) || 'Upload failed.'); return; }
+        if (!j || !j.ok) { msgAlert((j && j.message) || 'Upload failed.'); return; }
         state.msgSig = '';
         loadMessages(true);
       }).catch(function () {
         els.uploading.hidden = true;
-        alert('Upload failed. Please try again.');
+        msgAlert('Upload failed. Please try again.');
       });
   }
 
@@ -1512,7 +1651,16 @@
   els.back.addEventListener('click', backToList);
   els.composeBack.addEventListener('click', closeCompose);
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape' || !state.open) return;
+    if (e.key !== 'Escape') return;
+    if (videoEls.overlay && videoEls.overlay.classList.contains('is-open')) {
+      closeVideoModal();
+      return;
+    }
+    if (dialogEls.overlay && dialogEls.overlay.classList.contains('is-open')) {
+      closeMsgDialog(false);
+      return;
+    }
+    if (!state.open) return;
     if (!els.composeView.hidden) closeCompose();
     else closeModal();
   });

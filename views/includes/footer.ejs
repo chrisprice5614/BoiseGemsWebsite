@@ -455,6 +455,47 @@
   .bg-msg-typing { padding: 2px 16px 6px; font-size: 0.75rem; color: #8a7aa3; font-style: italic; min-height: 18px; background: #faf8fc; }
 
   .bg-msg-composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #eee; background: #fff; }
+  .bg-msg-readonly {
+    padding: 10px 14px; border-top: 1px solid #eee; background: #f7f2fc; color: #5c4578;
+    font-size: 0.84rem; text-align: center;
+  }
+  .bg-msg-perms {
+    margin: 0 14px 12px; padding: 12px; border-radius: 12px; background: #fff; border: 1px solid #e4d8f2;
+  }
+  .bg-msg-perms h4 { margin: 0 0 6px; font-size: 0.82rem; color: #4a3263; }
+  .bg-msg-perms p { margin: 0 0 8px; font-size: 0.72rem; color: #7a6a90; }
+  .bg-msg-perm-list { display: grid; gap: 4px; max-height: 120px; overflow: auto; }
+  .bg-msg-perm-list label {
+    display: flex; gap: 8px; align-items: center; font-size: 0.84rem; font-weight: 500; color: #333;
+  }
+  .bg-msg-main-title { cursor: pointer; }
+  .bg-msg-main-title.is-group:hover { text-decoration: underline; }
+  .bg-msg-info {
+    position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column;
+    background: #faf8fc; animation: bgMsgComposeIn 0.22s ease;
+  }
+  .bg-msg-info-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: #fff;
+  }
+  .bg-msg-info-title { flex: 1; font-weight: 700; font-size: 1rem; }
+  .bg-msg-info-scroll { flex: 1; overflow: auto; padding: 12px 14px 20px; }
+  .bg-msg-info-section { margin-bottom: 16px; }
+  .bg-msg-info-section h4 { margin: 0 0 8px; font-size: 0.8rem; color: #4a3263; text-transform: uppercase; letter-spacing: 0.04em; }
+  .bg-msg-member-row {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px; margin-bottom: 8px;
+    background: #fff; border: 1px solid #ebe3f4; border-radius: 12px;
+  }
+  .bg-msg-member-meta { flex: 1; min-width: 0; }
+  .bg-msg-member-name { font-weight: 600; font-size: 0.9rem; color: #2d2140; }
+  .bg-msg-member-tags { font-size: 0.72rem; color: #7a6a90; margin-top: 2px; }
+  .bg-msg-member-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .bg-msg-member-actions label { display: flex; gap: 4px; align-items: center; font-size: 0.75rem; color: #444; font-weight: 500; }
+  .bg-msg-member-actions button {
+    border: 1px solid #d7c8ea; background: #fff; color: #60437D; border-radius: 8px;
+    padding: 4px 8px; font-size: 0.75rem; cursor: pointer;
+  }
+  .bg-msg-member-actions button.danger { color: #a33; border-color: #e4b4b4; }
   .bg-msg-input { flex: 1; min-width: 0; box-sizing: border-box; margin: 0 !important; }
   .bg-msg-send { width: 48px !important; height: 44px !important; padding: 0 !important; display: flex !important; align-items: center; justify-content: center; font-size: 20px; flex: 0 0 auto; text-shadow: none !important; box-shadow: none !important; filter: none !important; }
   .bg-msg-attach { width: 46px !important; height: 44px !important; padding: 0 !important; display: flex !important; align-items: center; justify-content: center; font-size: 21px; flex: 0 0 auto; text-shadow: none !important; box-shadow: none !important; filter: none !important; }
@@ -578,7 +619,8 @@
         <div class="bg-msg-main-head">
           <button type="button" class="bg-msg-icon-btn bg-msg-back-mobile" id="bgMsgBack" aria-label="Back to chats"><ion-icon name="arrow-back"></ion-icon></button>
           <div class="bg-msg-avatar bg-msg-main-avatar" id="bgMsgMainAvatar" hidden></div>
-          <div class="bg-msg-main-title" id="bgMsgTitle">Messages</div>
+          <div class="bg-msg-main-title" id="bgMsgTitle" title="Group details">Messages</div>
+          <button type="button" class="bg-msg-icon-btn" id="bgMsgInfoBtn" hidden aria-label="Group details"><ion-icon name="information-circle-outline"></ion-icon></button>
           <button type="button" class="bg-msg-icon-btn" id="bgMsgClose" aria-label="Close messages"><ion-icon name="close"></ion-icon></button>
         </div>
 
@@ -600,6 +642,7 @@
             <input type="text" class="bg-msg-input" id="bgMsgInput" placeholder="Message…" autocomplete="off">
             <button type="submit" class="bg-msg-send" aria-label="Send"><ion-icon name="send"></ion-icon></button>
           </form>
+          <div class="bg-msg-readonly" id="bgMsgReadonly" hidden>Only selected members can send messages in this group.</div>
         </div>
       </section>
 
@@ -624,10 +667,30 @@
             <input type="text" class="bg-msg-search" id="bgMsgUserSearch" placeholder="Search people to message…">
           </div>
           <div class="bg-msg-user-list" id="bgMsgUserResults"></div>
+          <div class="bg-msg-perms" id="bgMsgPerms" hidden>
+            <h4>Who can send messages?</h4>
+            <p>You always can. Uncheck people who should only read.</p>
+            <div class="bg-msg-perm-list" id="bgMsgPermSend"></div>
+            <h4 style="margin-top:12px;">Who can add people?</h4>
+            <p>Defaults to only you.</p>
+            <div class="bg-msg-perm-list" id="bgMsgPermAdd"></div>
+            <h4 style="margin-top:12px;">Who can remove people?</h4>
+            <p>Defaults to only you.</p>
+            <div class="bg-msg-perm-list" id="bgMsgPermRemove"></div>
+          </div>
         </div>
         <div class="bg-msg-compose-footer">
           <button type="button" class="bg-msg-create" id="bgMsgCreate" disabled>Start conversation</button>
         </div>
+      </div>
+
+      <!-- GROUP INFO / MEMBERS overlay -->
+      <div class="bg-msg-info" id="bgMsgInfoView" hidden>
+        <div class="bg-msg-info-head">
+          <button type="button" class="bg-msg-icon-btn" id="bgMsgInfoBack" aria-label="Back"><ion-icon name="arrow-back"></ion-icon></button>
+          <div class="bg-msg-info-title" id="bgMsgInfoTitle">Group details</div>
+        </div>
+        <div class="bg-msg-info-scroll" id="bgMsgInfoBody"></div>
       </div>
 
     </div>
@@ -667,6 +730,7 @@
     uploading: document.getElementById('bgMsgUploading'),
     uploadingText: document.getElementById('bgMsgUploadingText'),
     composer: document.getElementById('bgMsgComposer'),
+    readonly: document.getElementById('bgMsgReadonly'),
     attach: document.getElementById('bgMsgAttach'),
     file: document.getElementById('bgMsgFile'),
     input: document.getElementById('bgMsgInput'),
@@ -680,7 +744,16 @@
     chips: document.getElementById('bgMsgChips'),
     userSearch: document.getElementById('bgMsgUserSearch'),
     userResults: document.getElementById('bgMsgUserResults'),
-    create: document.getElementById('bgMsgCreate')
+    perms: document.getElementById('bgMsgPerms'),
+    permSend: document.getElementById('bgMsgPermSend'),
+    permAdd: document.getElementById('bgMsgPermAdd'),
+    permRemove: document.getElementById('bgMsgPermRemove'),
+    create: document.getElementById('bgMsgCreate'),
+    infoBtn: document.getElementById('bgMsgInfoBtn'),
+    infoView: document.getElementById('bgMsgInfoView'),
+    infoBack: document.getElementById('bgMsgInfoBack'),
+    infoTitle: document.getElementById('bgMsgInfoTitle'),
+    infoBody: document.getElementById('bgMsgInfoBody')
   };
 
   if (els.newChat) els.newChat.hidden = !CAN_DIRECT;
@@ -703,8 +776,12 @@
     open: false,
     convId: null,
     activeTitle: '',
+    activeConv: null,
     composeMode: 'direct',
-    selected: {},           // id -> user
+    selected: {},           // id -> { id, name }
+    canSend: {},            // id -> true
+    canAdd: {},
+    canRemove: {},
     msgSig: '',
     lastTypingSent: 0
   };
@@ -828,15 +905,27 @@
   }
 
   /* ---------- open a conversation in the main pane ---------- */
+  function applyComposerAccess(conv) {
+    var canSend = !conv || !conv.myPermissions || conv.myPermissions.canSend !== false;
+    var isGroup = conv && conv.type === 'group';
+    if (els.composer) els.composer.hidden = !canSend;
+    if (els.readonly) els.readonly.hidden = canSend;
+    if (els.infoBtn) els.infoBtn.hidden = !isGroup;
+    if (els.title) els.title.classList.toggle('is-group', !!isGroup);
+  }
+
   function selectConversation(convId, title) {
     state.convId = convId;
     state.activeTitle = title || 'Conversation';
+    state.activeConv = null;
     state.msgSig = '';
+    if (els.infoView) els.infoView.hidden = true;
     els.emptyState.hidden = true;
     els.convView.hidden = false;
     els.title.textContent = state.activeTitle;
     els.mainAvatar.hidden = false;
     els.mainAvatar.textContent = initials(state.activeTitle);
+    applyComposerAccess(null);
     highlightActive();
     if (mqMobile.matches) els.modal.classList.add('show-conv');
     els.messages.innerHTML = '<div class="bg-msg-empty">Loading…</div>';
@@ -845,7 +934,7 @@
     loadMessages(true);
     stopConvPoll();
     timers.conv = setInterval(function () { loadMessages(false); }, 2800);
-    setTimeout(function () { els.input.focus(); }, 60);
+    setTimeout(function () { if (!els.composer.hidden) els.input.focus(); }, 60);
   }
   function backToList() {
     els.modal.classList.remove('show-conv');
@@ -869,10 +958,15 @@
     if (!convId) return;
     api('/api/web/messages/conversations/' + convId + '/messages').then(function (j) {
       if (!j || !j.ok || state.convId !== convId) return;
-      if (j.conversation && j.conversation.title) {
-        state.activeTitle = j.conversation.title;
-        els.title.textContent = j.conversation.title;
-        els.mainAvatar.textContent = initials(j.conversation.title);
+      if (j.conversation) {
+        state.activeConv = j.conversation;
+        if (j.conversation.title) {
+          state.activeTitle = j.conversation.title;
+          els.title.textContent = j.conversation.title;
+          els.mainAvatar.textContent = initials(j.conversation.title);
+        }
+        applyComposerAccess(j.conversation);
+        if (els.infoView && !els.infoView.hidden) renderInfoPanel();
       }
 
       // Signature to avoid needless re-render / scroll jumps
@@ -964,6 +1058,9 @@
     if (mode === 'group' && !CAN_GROUP) return;
     state.composeMode = mode;
     state.selected = {};
+    state.canSend = {};
+    state.canAdd = {};
+    state.canRemove = {};
     els.composeTitle.textContent = mode === 'group' ? 'New group' : 'New chat';
     els.groupTitleRow.hidden = mode !== 'group';
     els.groupTitle.value = '';
@@ -971,14 +1068,72 @@
       els.audiences.hidden = mode !== 'group' || !AUDIENCES.length;
       Array.prototype.forEach.call(document.querySelectorAll('.bg-msg-aud'), function (el) { el.checked = false; });
     }
+    if (els.perms) els.perms.hidden = mode !== 'group';
     els.userSearch.value = '';
     els.composeView.hidden = false;
     renderChips();
+    renderPermPickers();
     searchUsers();
     setTimeout(function () { (mode === 'group' ? els.groupTitle : els.userSearch).focus(); }, 60);
   }
   function closeCompose() {
     els.composeView.hidden = true;
+  }
+
+  function renderPermPickers() {
+    if (!els.perms) return;
+    if (state.composeMode !== 'group') {
+      els.perms.hidden = true;
+      return;
+    }
+    var ids = Object.keys(state.selected);
+    els.perms.hidden = ids.length < 1 && selectedAudiences().length < 1;
+    function rowHtml(bucket, id, name, locked) {
+      var checked = locked || !!state[bucket][id];
+      return '<label><input type="checkbox" data-bucket="' + bucket + '" data-id="' + id + '"' +
+        (checked ? ' checked' : '') + (locked ? ' disabled' : '') + '> ' + esc(name) +
+        (locked ? ' (you)' : '') + '</label>';
+    }
+    var sendHtml = rowHtml('canSend', ME, 'You', true);
+    var addHtml = rowHtml('canAdd', ME, 'You', true);
+    var removeHtml = rowHtml('canRemove', ME, 'You', true);
+    ids.forEach(function (id) {
+      if (Number(id) === ME) return;
+      if (state.canSend[id] === undefined) state.canSend[id] = true;
+      if (state.canAdd[id] === undefined) state.canAdd[id] = false;
+      if (state.canRemove[id] === undefined) state.canRemove[id] = false;
+      var name = state.selected[id].name;
+      sendHtml += rowHtml('canSend', id, name, false);
+      addHtml += rowHtml('canAdd', id, name, false);
+      removeHtml += rowHtml('canRemove', id, name, false);
+    });
+    if (selectedAudiences().length) {
+      sendHtml += '<p style="margin:4px 0 0;font-size:0.72rem;color:#7a6a90;">Audience members can send by default. Adjust after creating the group if needed.</p>';
+    }
+    els.permSend.innerHTML = sendHtml;
+    els.permAdd.innerHTML = addHtml;
+    els.permRemove.innerHTML = removeHtml;
+    Array.prototype.forEach.call(els.perms.querySelectorAll('input[type=checkbox]'), function (cb) {
+      if (cb.disabled) return;
+      cb.addEventListener('change', function () {
+        var bucket = cb.dataset.bucket;
+        var id = cb.dataset.id;
+        state[bucket][id] = !!cb.checked;
+      });
+    });
+  }
+
+  function selectedPermIds(bucket, defaultAllSend) {
+    var ids = [ME];
+    Object.keys(state.selected).forEach(function (id) {
+      if (Number(id) === ME) return;
+      if (state[bucket][id]) ids.push(Number(id));
+    });
+    if (bucket === 'canSend' && defaultAllSend && !Object.keys(state.selected).length) {
+      // audiences-only create: omit list so server defaults everyone to can-send
+      return null;
+    }
+    return ids;
   }
   function searchUsers() {
     var q = els.userSearch.value.trim();
@@ -1006,13 +1161,21 @@
     });
   }
   function toggleUser(id, name) {
-    if (state.selected[id]) { delete state.selected[id]; }
-    else {
+    if (state.selected[id]) {
+      delete state.selected[id];
+      delete state.canSend[id];
+      delete state.canAdd[id];
+      delete state.canRemove[id];
+    } else {
       if (state.composeMode === 'direct') state.selected = {};
       state.selected[id] = { id: id, name: name };
+      state.canSend[id] = true;
+      state.canAdd[id] = false;
+      state.canRemove[id] = false;
     }
     renderChips();
     renderUsersSelection();
+    renderPermPickers();
     if (state.composeMode === 'direct' && state.selected[id]) { createConversation(); }
   }
   function renderUsersSelection() {
@@ -1031,8 +1194,12 @@
     els.chips.innerHTML = html;
     Array.prototype.forEach.call(els.chips.querySelectorAll('button'), function (b) {
       b.addEventListener('click', function () {
-        delete state.selected[b.dataset.id];
-        renderChips(); renderUsersSelection(); updateCreateBtn();
+        var id = b.dataset.id;
+        delete state.selected[id];
+        delete state.canSend[id];
+        delete state.canAdd[id];
+        delete state.canRemove[id];
+        renderChips(); renderUsersSelection(); renderPermPickers(); updateCreateBtn();
       });
     });
     updateCreateBtn();
@@ -1058,15 +1225,146 @@
       return;
     }
     els.create.disabled = true;
+    var body = { memberIds: ids, title: els.groupTitle.value.trim(), audiences: audiences };
+    if (state.composeMode === 'group') {
+      var sendIds = selectedPermIds('canSend', true);
+      if (sendIds) body.canSendUserIds = sendIds;
+      body.canAddUserIds = selectedPermIds('canAdd');
+      body.canRemoveUserIds = selectedPermIds('canRemove');
+    }
     api('/api/web/messages/conversations', {
       method: 'POST',
-      body: { memberIds: ids, title: els.groupTitle.value.trim(), audiences: audiences }
+      body: body
     }).then(function (j) {
       if (!j || !j.ok) { alert((j && j.message) || 'Could not start conversation.'); els.create.disabled = false; return; }
       closeCompose();
       loadConversations();
       selectConversation(j.conversation.id, j.conversation.title);
     });
+  }
+
+  function openInfoPanel() {
+    if (!state.activeConv || state.activeConv.type !== 'group') return;
+    els.infoView.hidden = false;
+    els.infoTitle.textContent = state.activeConv.title || 'Group details';
+    renderInfoPanel();
+  }
+  function closeInfoPanel() {
+    if (els.infoView) els.infoView.hidden = true;
+  }
+  function renderInfoPanel() {
+    var conv = state.activeConv;
+    if (!conv || !els.infoBody) return;
+    var perms = conv.myPermissions || {};
+    var html = '<div class="bg-msg-info-section"><h4>Members (' + (conv.members || []).length + ')</h4>';
+    (conv.members || []).forEach(function (m) {
+      var name = ((m.firstname || '') + ' ' + (m.lastname || '')).trim();
+      var tags = [];
+      if (m.isCreator) tags.push('Creator');
+      if (m.canSend) tags.push('Can send');
+      if (m.canAddMembers) tags.push('Can add');
+      if (m.canRemoveMembers) tags.push('Can remove');
+      html += '<div class="bg-msg-member-row" data-id="' + m.id + '">' +
+        '<div class="bg-msg-avatar">' + esc(initials(name)) + '</div>' +
+        '<div class="bg-msg-member-meta">' +
+        '<div class="bg-msg-member-name">' + esc(name) + (Number(m.id) === ME ? ' (you)' : '') + '</div>' +
+        '<div class="bg-msg-member-tags">' + esc(tags.join(' · ') || 'Member') + '</div>';
+      if (perms.canManagePermissions && !m.isCreator) {
+        html += '<div class="bg-msg-member-actions">' +
+          '<label><input type="checkbox" class="bg-msg-edit-send" ' + (m.canSend ? 'checked' : '') + '> Send</label>' +
+          '<label><input type="checkbox" class="bg-msg-edit-add" ' + (m.canAddMembers ? 'checked' : '') + '> Add</label>' +
+          '<label><input type="checkbox" class="bg-msg-edit-remove" ' + (m.canRemoveMembers ? 'checked' : '') + '> Remove</label>' +
+          '<button type="button" class="bg-msg-save-perms">Save</button>' +
+          '</div>';
+      }
+      if (perms.canRemoveMembers && !m.isCreator && Number(m.id) !== ME) {
+        html += '<div class="bg-msg-member-actions"><button type="button" class="danger bg-msg-remove-member">Remove from group</button></div>';
+      }
+      html += '</div></div>';
+    });
+    html += '</div>';
+    if (perms.canAddMembers) {
+      html += '<div class="bg-msg-info-section"><h4>Add people</h4>' +
+        '<div class="bg-msg-search-wrap"><ion-icon name="search"></ion-icon>' +
+        '<input type="text" class="bg-msg-search" id="bgMsgAddSearch" placeholder="Search people to add…" style="padding-left:34px !important;"></div>' +
+        '<div id="bgMsgAddResults" style="margin-top:8px;"></div></div>';
+    }
+    els.infoBody.innerHTML = html;
+
+    Array.prototype.forEach.call(els.infoBody.querySelectorAll('.bg-msg-save-perms'), function (btn) {
+      btn.addEventListener('click', function () {
+        var row = btn.closest('.bg-msg-member-row');
+        var id = Number(row.dataset.id);
+        api('/api/web/messages/conversations/' + state.convId + '/members/' + id, {
+          method: 'PUT',
+          body: {
+            canSend: !!row.querySelector('.bg-msg-edit-send').checked,
+            canAddMembers: !!row.querySelector('.bg-msg-edit-add').checked,
+            canRemoveMembers: !!row.querySelector('.bg-msg-edit-remove').checked
+          }
+        }).then(function (j) {
+          if (!j || !j.ok) { alert((j && j.message) || 'Could not update permissions.'); return; }
+          state.activeConv = j.conversation;
+          applyComposerAccess(j.conversation);
+          renderInfoPanel();
+        });
+      });
+    });
+    Array.prototype.forEach.call(els.infoBody.querySelectorAll('.bg-msg-remove-member'), function (btn) {
+      btn.addEventListener('click', function () {
+        var row = btn.closest('.bg-msg-member-row');
+        var id = Number(row.dataset.id);
+        var name = row.querySelector('.bg-msg-member-name').textContent;
+        if (!confirm('Remove ' + name + ' from this group?')) return;
+        fetch('/api/web/messages/conversations/' + state.convId + '/members/' + id, {
+          method: 'DELETE', credentials: 'same-origin'
+        }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+          .then(function (j) {
+            if (!j || !j.ok) { alert((j && j.message) || 'Could not remove member.'); return; }
+            state.activeConv = j.conversation;
+            renderInfoPanel();
+          });
+      });
+    });
+    var addSearch = document.getElementById('bgMsgAddSearch');
+    var addResults = document.getElementById('bgMsgAddResults');
+    if (addSearch && addResults) {
+      var addT;
+      addSearch.addEventListener('input', function () {
+        clearTimeout(addT);
+        addT = setTimeout(function () {
+          var q = addSearch.value.trim();
+          api('/api/web/messages/users?q=' + encodeURIComponent(q)).then(function (j) {
+            if (!j || !j.ok) { addResults.innerHTML = ''; return; }
+            var existing = {};
+            (state.activeConv.members || []).forEach(function (m) { existing[m.id] = true; });
+            var users = (j.users || []).filter(function (u) { return !existing[u.id]; });
+            if (!users.length) { addResults.innerHTML = '<div class="bg-msg-empty">No people found.</div>'; return; }
+            addResults.innerHTML = users.map(function (u) {
+              var name = ((u.firstname || '') + ' ' + (u.lastname || '')).trim();
+              return '<div class="bg-msg-user-item" data-id="' + u.id + '">' +
+                '<div class="bg-msg-avatar">' + esc(initials(name)) + '</div>' +
+                '<div class="bg-msg-ci-main"><div class="bg-msg-ci-title">' + esc(name) + '</div>' +
+                '<div class="bg-msg-ci-preview">' + esc(u.email || '') + '</div></div>' +
+                '<button type="button" class="bg-msg-member-actions" style="border:1px solid #d7c8ea;background:#fff;color:#60437D;border-radius:8px;padding:4px 10px;">Add</button>' +
+                '</div>';
+            }).join('');
+            Array.prototype.forEach.call(addResults.querySelectorAll('.bg-msg-user-item'), function (it) {
+              it.querySelector('button').addEventListener('click', function () {
+                api('/api/web/messages/conversations/' + state.convId + '/members', {
+                  method: 'POST',
+                  body: { memberIds: [Number(it.dataset.id)] }
+                }).then(function (j2) {
+                  if (!j2 || !j2.ok) { alert((j2 && j2.message) || 'Could not add member.'); return; }
+                  state.activeConv = j2.conversation;
+                  renderInfoPanel();
+                });
+              });
+            });
+          });
+        }, 250);
+      });
+    }
   }
 
   /* ---------- typing indicator (outgoing) ---------- */
@@ -1131,9 +1429,23 @@
   els.newGroup.addEventListener('click', function () { openCompose('group'); });
   els.create.addEventListener('click', createConversation);
   if (els.groupTitle) els.groupTitle.addEventListener('input', updateCreateBtn);
-  document.addEventListener('change', function (e) {
-    if (e.target && e.target.classList && e.target.classList.contains('bg-msg-aud')) updateCreateBtn();
+  if (els.infoBtn) els.infoBtn.addEventListener('click', openInfoPanel);
+  if (els.infoBack) els.infoBack.addEventListener('click', closeInfoPanel);
+  if (els.title) els.title.addEventListener('click', function () {
+    if (state.activeConv && state.activeConv.type === 'group') openInfoPanel();
   });
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bg-msg-aud')) {
+      updateCreateBtn();
+      renderPermPickers();
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && els.infoView && !els.infoView.hidden) {
+      closeInfoPanel();
+      e.stopPropagation();
+    }
+  }, true);
 
   var convSearchT, userSearchT;
   els.convSearch.addEventListener('input', function () { clearTimeout(convSearchT); convSearchT = setTimeout(loadConversations, 250); });

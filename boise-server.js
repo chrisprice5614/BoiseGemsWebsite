@@ -2216,12 +2216,37 @@ function initMessagingTables(db) {
       conversation_id  INTEGER NOT NULL,
       user_id          INTEGER NOT NULL,
       muted            INTEGER NOT NULL DEFAULT 0,
+      can_send           INTEGER NOT NULL DEFAULT 1,
+      can_add_members    INTEGER NOT NULL DEFAULT 0,
+      can_remove_members INTEGER NOT NULL DEFAULT 0,
       joined_at        INTEGER NOT NULL,
       UNIQUE(conversation_id, user_id)
     )
   `).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_conv_members_user ON conversation_members(user_id)`).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_conv_members_conv ON conversation_members(conversation_id)`).run();
+
+  // Migrate older DBs that predate per-member chat permissions.
+  const cmCols = db.prepare("PRAGMA table_info(conversation_members)").all().map((c) => c.name);
+  if (!cmCols.includes("can_send")) {
+    db.prepare("ALTER TABLE conversation_members ADD COLUMN can_send INTEGER NOT NULL DEFAULT 1").run();
+  }
+  if (!cmCols.includes("can_add_members")) {
+    db.prepare("ALTER TABLE conversation_members ADD COLUMN can_add_members INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!cmCols.includes("can_remove_members")) {
+    db.prepare("ALTER TABLE conversation_members ADD COLUMN can_remove_members INTEGER NOT NULL DEFAULT 0").run();
+  }
+  // Creators always keep full manage rights.
+  db.prepare(`
+    UPDATE conversation_members
+    SET can_send = 1, can_add_members = 1, can_remove_members = 1
+    WHERE EXISTS (
+      SELECT 1 FROM conversations c
+      WHERE c.id = conversation_members.conversation_id
+        AND c.created_by = conversation_members.user_id
+    )
+  `).run();
 
   db.prepare(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -12684,6 +12709,109 @@ function getConversationOr403(req, res, conversationId, viewAsUserId) {
   return uid;
 }
 
+function parseUserIdSet(arr) {
+  return new Set([].concat(arr || []).map(Number).filter((id) => id > 0));
+}
+
+function buildChatPermissionSets(body, allMemberIds, creatorId, type) {
+  if (type === "direct") {
+    return {
+      canSend: new Set(allMemberIds.map(Number)),
+      canAdd: new Set(),
+      canRemove: new Set(),
+    };
+  }
+  const hasSendList = body && body.canSendUserIds != null;
+  const hasAddList = body && body.canAddUserIds != null;
+  const hasRemoveList = body && body.canRemoveUserIds != null;
+  const canSend = hasSendList ? parseUserIdSet(body.canSendUserIds) : new Set(allMemberIds.map(Number));
+  const canAdd = hasAddList ? parseUserIdSet(body.canAddUserIds) : new Set();
+  const canRemove = hasRemoveList ? parseUserIdSet(body.canRemoveUserIds) : new Set();
+  const cid = Number(creatorId);
+  canSend.add(cid);
+  canAdd.add(cid);
+  canRemove.add(cid);
+  return { canSend, canAdd, canRemove };
+}
+
+function getMemberPermRow(conversationId, userId) {
+  return db.prepare(`
+    SELECT cm.*, c.created_by, c.type
+    FROM conversation_members cm
+    JOIN conversations c ON c.id = cm.conversation_id
+    WHERE cm.conversation_id = ? AND cm.user_id = ?
+  `).get(conversationId, userId);
+}
+
+function memberPermFlags(row) {
+  if (!row) {
+    return { canSend: false, canAddMembers: false, canRemoveMembers: false, isCreator: false };
+  }
+  const isCreator = Number(row.created_by) === Number(row.user_id);
+  const isDirect = row.type === "direct";
+  return {
+    canSend: isDirect || isCreator || !!row.can_send,
+    canAddMembers: !isDirect && (isCreator || !!row.can_add_members),
+    canRemoveMembers: !isDirect && (isCreator || !!row.can_remove_members),
+    isCreator,
+  };
+}
+
+function assertCanSendInConversation(res, conversationId, userId) {
+  const row = getMemberPermRow(conversationId, userId);
+  const flags = memberPermFlags(row);
+  if (!flags.canSend) {
+    res.status(403).json({ ok: false, message: "You do not have permission to send messages in this group." });
+    return false;
+  }
+  return true;
+}
+
+function assertCanAddMembers(res, conversationId, userId) {
+  const row = getMemberPermRow(conversationId, userId);
+  const flags = memberPermFlags(row);
+  if (!flags.canAddMembers) {
+    res.status(403).json({ ok: false, message: "You do not have permission to add people to this group." });
+    return false;
+  }
+  return true;
+}
+
+function assertCanRemoveMembers(res, conversationId, userId) {
+  const row = getMemberPermRow(conversationId, userId);
+  const flags = memberPermFlags(row);
+  if (!flags.canRemoveMembers) {
+    res.status(403).json({ ok: false, message: "You do not have permission to remove people from this group." });
+    return false;
+  }
+  return true;
+}
+
+function assertCanManageMemberPerms(res, conversationId, userId) {
+  const row = getMemberPermRow(conversationId, userId);
+  const flags = memberPermFlags(row);
+  if (!flags.isCreator) {
+    res.status(403).json({ ok: false, message: "Only the group creator can change member permissions." });
+    return false;
+  }
+  return true;
+}
+
+function insertConversationMember(conversationId, userId, now, flags) {
+  db.prepare(`
+    INSERT INTO conversation_members
+      (conversation_id, user_id, muted, can_send, can_add_members, can_remove_members, joined_at)
+    VALUES (?, ?, 0, ?, ?, ?, ?)
+  `).run(
+    conversationId,
+    userId,
+    flags.can_send ? 1 : 0,
+    flags.can_add_members ? 1 : 0,
+    flags.can_remove_members ? 1 : 0,
+    now
+  );
+}
+
 function findDirectConversation(userA, userB) {
   return db.prepare(`
     SELECT c.* FROM conversations c
@@ -12722,12 +12850,15 @@ function getConversationTitle(conv, forUserId) {
 
 function serializeConversation(conv, forUserId) {
   const members = db.prepare(`
-    SELECT u.id, u.firstname, u.lastname, u.img, cm.muted
+    SELECT u.id, u.firstname, u.lastname, u.img, cm.muted,
+           cm.can_send, cm.can_add_members, cm.can_remove_members
     FROM conversation_members cm
     JOIN users u ON u.id = cm.user_id
     WHERE cm.conversation_id = ?
   `).all(conv.id);
   const myMember = members.find(m => Number(m.id) === Number(forUserId));
+  const createdBy = conv.created_by != null ? Number(conv.created_by) : null;
+  const isDirect = conv.type === "direct";
   const lastMsg = db.prepare(`
     SELECT m.*, u.firstname, u.lastname, u.img
     FROM messages m JOIN users u ON u.id = m.sender_id
@@ -12743,20 +12874,38 @@ function serializeConversation(conv, forUserId) {
       )
   `).get(conv.id, forUserId, forUserId);
 
+  const myIsCreator = createdBy != null && Number(forUserId) === createdBy;
+  const myPermissions = {
+    canSend: isDirect || myIsCreator || !!(myMember && myMember.can_send),
+    canAddMembers: !isDirect && (myIsCreator || !!(myMember && myMember.can_add_members)),
+    canRemoveMembers: !isDirect && (myIsCreator || !!(myMember && myMember.can_remove_members)),
+    isCreator: myIsCreator,
+    canManagePermissions: myIsCreator && !isDirect,
+  };
+
   return {
     id: Number(conv.id),
     type: conv.type,
     title: getConversationTitle(conv, forUserId),
     pinned: conv.pinned ? 1 : 0,
     muted: myMember?.muted ? 1 : 0,
+    createdBy,
+    myPermissions,
     memberCount: members.length,
-    members: members.map(m => ({
-      id: Number(m.id),
-      firstname: m.firstname || "",
-      lastname: m.lastname || "",
-      img: m.img || null,
-      muted: m.muted ? 1 : 0,
-    })),
+    members: members.map(m => {
+      const isCreator = createdBy != null && Number(m.id) === createdBy;
+      return {
+        id: Number(m.id),
+        firstname: m.firstname || "",
+        lastname: m.lastname || "",
+        img: m.img || null,
+        muted: m.muted ? 1 : 0,
+        canSend: isDirect || isCreator || !!m.can_send ? 1 : 0,
+        canAddMembers: !isDirect && (isCreator || !!m.can_add_members) ? 1 : 0,
+        canRemoveMembers: !isDirect && (isCreator || !!m.can_remove_members) ? 1 : 0,
+        isCreator: isCreator ? 1 : 0,
+      };
+    }),
     lastMessage: lastMsg ? serializeMessage(lastMsg, forUserId, true) : null,
     unreadCount: unread?.c || 0,
     updatedAt: Number(conv.updated_at),
@@ -13018,15 +13167,127 @@ app.post("/api/mobile/messages/conversations", mobileMsgAuth, (req, res) => {
       "INSERT INTO conversations (type, title, pinned, created_by, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)"
     ).run(type, title, myId, now, now);
     const convId = result.lastInsertRowid;
-    const insertMember = db.prepare(
-      "INSERT INTO conversation_members (conversation_id, user_id, muted, joined_at) VALUES (?, ?, 0, ?)"
-    );
-    for (const id of allMembers) insertMember.run(convId, id, now);
+    const permSets = buildChatPermissionSets(req.body, allMembers, myId, type);
+    for (const id of allMembers) {
+      insertConversationMember(convId, id, now, {
+        can_send: permSets.canSend.has(Number(id)),
+        can_add_members: permSets.canAdd.has(Number(id)),
+        can_remove_members: permSets.canRemove.has(Number(id)),
+      });
+    }
 
     const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
     return res.json({ ok: true, conversation: serializeConversation(conv, myId), existing: false });
   } catch (e) {
     console.error("[Mobile API] create conversation error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/messages/conversations/:id/members
+app.post("/api/mobile/messages/conversations/:id/members", mobileMsgAuth, (req, res) => {
+  try {
+    if (req.director && req.body.viewAsUserId) {
+      return res.status(403).json({ ok: false, message: "Cannot add members while viewing as another user" });
+    }
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv || conv.type !== "group") {
+      return res.status(400).json({ ok: false, message: "Members can only be added to group chats." });
+    }
+    if (!assertCanAddMembers(res, convId, uid)) return;
+
+    const addIds = [...new Set((req.body.memberIds || []).map(Number).filter((id) => id > 0 && id !== uid))];
+    if (!addIds.length) return res.status(400).json({ ok: false, message: "Select at least one person to add." });
+
+    const now = Date.now();
+    const canSendSet = req.body.canSendUserIds != null ? parseUserIdSet(req.body.canSendUserIds) : null;
+    const canAddSet = req.body.canAddUserIds != null ? parseUserIdSet(req.body.canAddUserIds) : null;
+    const canRemoveSet = req.body.canRemoveUserIds != null ? parseUserIdSet(req.body.canRemoveUserIds) : null;
+    const actorIsCreator = Number(conv.created_by) === uid;
+
+    for (const id of addIds) {
+      if (isConversationMember(convId, id)) continue;
+      const target = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+      if (!target || target.deactivated_at) {
+        return res.status(400).json({ ok: false, message: "One or more selected users are invalid." });
+      }
+      if (!rolesSystem.canMessageTargetUser(db, uid, target)) {
+        return res.status(403).json({ ok: false, message: "You do not have permission to message one or more selected people." });
+      }
+      insertConversationMember(convId, id, now, {
+        can_send: canSendSet ? canSendSet.has(id) : true,
+        can_add_members: actorIsCreator && canAddSet ? canAddSet.has(id) : false,
+        can_remove_members: actorIsCreator && canRemoveSet ? canRemoveSet.has(id) : false,
+      });
+    }
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
+    const updated = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(updated, uid) });
+  } catch (e) {
+    console.error("[Mobile API] add members error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// DELETE /api/mobile/messages/conversations/:id/members/:userId
+app.delete("/api/mobile/messages/conversations/:id/members/:userId", mobileMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    const targetId = Number(req.params.userId);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv || conv.type !== "group") {
+      return res.status(400).json({ ok: false, message: "Members can only be removed from group chats." });
+    }
+    if (!assertCanRemoveMembers(res, convId, uid)) return;
+    if (!isConversationMember(convId, targetId)) {
+      return res.status(404).json({ ok: false, message: "User is not in this group." });
+    }
+    if (Number(conv.created_by) === targetId) {
+      return res.status(400).json({ ok: false, message: "The group creator cannot be removed." });
+    }
+    db.prepare("DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?").run(convId, targetId);
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(Date.now(), convId);
+    const updated = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(updated, uid) });
+  } catch (e) {
+    console.error("[Mobile API] remove member error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// PUT /api/mobile/messages/conversations/:id/members/:userId
+app.put("/api/mobile/messages/conversations/:id/members/:userId", mobileMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    const targetId = Number(req.params.userId);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv || conv.type !== "group") {
+      return res.status(400).json({ ok: false, message: "Permissions can only be changed in group chats." });
+    }
+    if (!assertCanManageMemberPerms(res, convId, uid)) return;
+    if (!isConversationMember(convId, targetId)) {
+      return res.status(404).json({ ok: false, message: "User is not in this group." });
+    }
+    const isCreatorTarget = Number(conv.created_by) === targetId;
+    const canSend = isCreatorTarget ? 1 : (req.body.canSend === false || req.body.canSend === 0 || req.body.canSend === "0" ? 0 : 1);
+    const canAdd = isCreatorTarget ? 1 : (req.body.canAddMembers === true || req.body.canAddMembers === 1 || req.body.canAddMembers === "1" ? 1 : 0);
+    const canRemove = isCreatorTarget ? 1 : (req.body.canRemoveMembers === true || req.body.canRemoveMembers === 1 || req.body.canRemoveMembers === "1" ? 1 : 0);
+    db.prepare(`
+      UPDATE conversation_members
+      SET can_send = ?, can_add_members = ?, can_remove_members = ?
+      WHERE conversation_id = ? AND user_id = ?
+    `).run(canSend, canAdd, canRemove, convId, targetId);
+    const updated = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(updated, uid) });
+  } catch (e) {
+    console.error("[Mobile API] update member perms error:", e.message);
     return res.status(500).json({ ok: false, message: "Server error" });
   }
 });
@@ -13132,6 +13393,7 @@ app.post("/api/mobile/messages/conversations/:id/messages", mobileMsgAuth, (req,
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
     if (!getConversationOr403(req, res, convId, uid)) return;
+    if (!assertCanSendInConversation(res, convId, uid)) return;
 
     const body = String(req.body.body || "").trim();
     if (!body) return res.status(400).json({ ok: false, message: "Message body required" });
@@ -13165,6 +13427,7 @@ app.post("/api/mobile/messages/conversations/:id/messages/upload", mobileMsgAuth
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
     if (!getConversationOr403(req, res, convId, uid)) return;
+    if (!assertCanSendInConversation(res, convId, uid)) return;
     if (!req.file) return res.status(400).json({ ok: false, message: "File required" });
 
     const caption = String(req.body.body || "").trim();
@@ -13544,15 +13807,124 @@ app.post("/api/web/messages/conversations", webMsgAuth, (req, res) => {
       "INSERT INTO conversations (type, title, pinned, created_by, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)"
     ).run(type, title, myId, now, now);
     const convId = result.lastInsertRowid;
-    const insertMember = db.prepare(
-      "INSERT INTO conversation_members (conversation_id, user_id, muted, joined_at) VALUES (?, ?, 0, ?)"
-    );
-    for (const id of allMembers) insertMember.run(convId, id, now);
+    const permSets = buildChatPermissionSets(req.body, allMembers, myId, type);
+    for (const id of allMembers) {
+      insertConversationMember(convId, id, now, {
+        can_send: permSets.canSend.has(Number(id)),
+        can_add_members: permSets.canAdd.has(Number(id)),
+        can_remove_members: permSets.canRemove.has(Number(id)),
+      });
+    }
 
     const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
     return res.json({ ok: true, conversation: serializeConversation(conv, myId), existing: false });
   } catch (e) {
     console.error("[Web API] create conversation error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/web/messages/conversations/:id/members
+app.post("/api/web/messages/conversations/:id/members", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv || conv.type !== "group") {
+      return res.status(400).json({ ok: false, message: "Members can only be added to group chats." });
+    }
+    if (!assertCanAddMembers(res, convId, uid)) return;
+
+    const addIds = [...new Set((req.body.memberIds || []).map(Number).filter((id) => id > 0 && id !== uid))];
+    if (!addIds.length) return res.status(400).json({ ok: false, message: "Select at least one person to add." });
+
+    const now = Date.now();
+    const canSendSet = req.body.canSendUserIds != null ? parseUserIdSet(req.body.canSendUserIds) : null;
+    const canAddSet = req.body.canAddUserIds != null ? parseUserIdSet(req.body.canAddUserIds) : null;
+    const canRemoveSet = req.body.canRemoveUserIds != null ? parseUserIdSet(req.body.canRemoveUserIds) : null;
+    const actorIsCreator = Number(conv.created_by) === uid;
+
+    for (const id of addIds) {
+      if (isConversationMember(convId, id)) continue;
+      const target = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+      if (!target || target.deactivated_at) {
+        return res.status(400).json({ ok: false, message: "One or more selected users are invalid." });
+      }
+      if (!rolesSystem.canMessageTargetUser(db, uid, target)) {
+        return res.status(403).json({ ok: false, message: "You do not have permission to message one or more selected people." });
+      }
+      insertConversationMember(convId, id, now, {
+        can_send: canSendSet ? canSendSet.has(id) : true,
+        can_add_members: actorIsCreator && canAddSet ? canAddSet.has(id) : false,
+        can_remove_members: actorIsCreator && canRemoveSet ? canRemoveSet.has(id) : false,
+      });
+    }
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, convId);
+    const updated = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(updated, uid) });
+  } catch (e) {
+    console.error("[Web API] add members error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// DELETE /api/web/messages/conversations/:id/members/:userId
+app.delete("/api/web/messages/conversations/:id/members/:userId", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    const targetId = Number(req.params.userId);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv || conv.type !== "group") {
+      return res.status(400).json({ ok: false, message: "Members can only be removed from group chats." });
+    }
+    if (!assertCanRemoveMembers(res, convId, uid)) return;
+    if (!isConversationMember(convId, targetId)) {
+      return res.status(404).json({ ok: false, message: "User is not in this group." });
+    }
+    if (Number(conv.created_by) === targetId) {
+      return res.status(400).json({ ok: false, message: "The group creator cannot be removed." });
+    }
+    db.prepare("DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?").run(convId, targetId);
+    db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(Date.now(), convId);
+    const updated = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(updated, uid) });
+  } catch (e) {
+    console.error("[Web API] remove member error:", e.message);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// PUT /api/web/messages/conversations/:id/members/:userId
+app.put("/api/web/messages/conversations/:id/members/:userId", webMsgAuth, (req, res) => {
+  try {
+    const convId = Number(req.params.id);
+    const uid = Number(req.user.userid);
+    const targetId = Number(req.params.userId);
+    if (!getConversationOr403(req, res, convId, uid)) return;
+    const conv = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    if (!conv || conv.type !== "group") {
+      return res.status(400).json({ ok: false, message: "Permissions can only be changed in group chats." });
+    }
+    if (!assertCanManageMemberPerms(res, convId, uid)) return;
+    if (!isConversationMember(convId, targetId)) {
+      return res.status(404).json({ ok: false, message: "User is not in this group." });
+    }
+    const isCreatorTarget = Number(conv.created_by) === targetId;
+    const canSend = isCreatorTarget ? 1 : (req.body.canSend === false || req.body.canSend === 0 || req.body.canSend === "0" ? 0 : 1);
+    const canAdd = isCreatorTarget ? 1 : (req.body.canAddMembers === true || req.body.canAddMembers === 1 || req.body.canAddMembers === "1" ? 1 : 0);
+    const canRemove = isCreatorTarget ? 1 : (req.body.canRemoveMembers === true || req.body.canRemoveMembers === 1 || req.body.canRemoveMembers === "1" ? 1 : 0);
+    db.prepare(`
+      UPDATE conversation_members
+      SET can_send = ?, can_add_members = ?, can_remove_members = ?
+      WHERE conversation_id = ? AND user_id = ?
+    `).run(canSend, canAdd, canRemove, convId, targetId);
+    const updated = db.prepare("SELECT * FROM conversations WHERE id = ?").get(convId);
+    return res.json({ ok: true, conversation: serializeConversation(updated, uid) });
+  } catch (e) {
+    console.error("[Web API] update member perms error:", e.message);
     return res.status(500).json({ ok: false, message: "Server error" });
   }
 });
@@ -13613,6 +13985,7 @@ app.post("/api/web/messages/conversations/:id/messages", webMsgAuth, (req, res) 
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
     if (!getConversationOr403(req, res, convId, uid)) return;
+    if (!assertCanSendInConversation(res, convId, uid)) return;
 
     const body = String(req.body.body || "").trim();
     if (!body) return res.status(400).json({ ok: false, message: "Message body required" });
@@ -13680,6 +14053,7 @@ app.post("/api/web/messages/conversations/:id/messages/upload", webMsgAuth, mess
     const convId = Number(req.params.id);
     const uid = Number(req.user.userid);
     if (!getConversationOr403(req, res, convId, uid)) return;
+    if (!assertCanSendInConversation(res, convId, uid)) return;
     if (!req.file) return res.status(400).json({ ok: false, message: "File required" });
 
     const caption = String(req.body.body || "").trim();

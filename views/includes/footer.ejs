@@ -469,15 +469,23 @@
     display: flex; gap: 8px; align-items: center; font-size: 0.84rem; font-weight: 500; color: #333;
   }
   .bg-msg-info {
-    position: absolute; inset: 0; z-index: 7; display: none; flex-direction: column;
+    position: absolute; inset: 0; z-index: 20; display: none; flex-direction: column;
     background: #faf8fc;
   }
-  .bg-msg-info:not([hidden]) {
-    display: flex;
+  .bg-msg-info.is-open {
+    display: flex !important;
     animation: bgMsgComposeIn 0.22s ease;
   }
   .bg-msg-compose[hidden],
-  .bg-msg-info[hidden] { display: none !important; }
+  .bg-msg-info[hidden]:not(.is-open) { display: none !important; }
+  .bg-msg-toast {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 30; max-width: 90%; padding: 10px 16px; border-radius: 10px;
+    background: #2d2140; color: #fff; font-size: 0.88rem; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35); pointer-events: none;
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  .bg-msg-toast.is-open { opacity: 1; }
   .bg-msg-info-head {
     display: flex; align-items: center; gap: 10px; padding: 14px 16px;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: #fff;
@@ -784,6 +792,8 @@
         <div class="bg-msg-info-scroll" id="bgMsgInfoBody"></div>
       </div>
 
+      <div class="bg-msg-toast" id="bgMsgToast" role="status" aria-live="polite"></div>
+
     </div>
   </div>
 
@@ -869,8 +879,22 @@
     infoView: document.getElementById('bgMsgInfoView'),
     infoBack: document.getElementById('bgMsgInfoBack'),
     infoTitle: document.getElementById('bgMsgInfoTitle'),
-    infoBody: document.getElementById('bgMsgInfoBody')
+    infoBody: document.getElementById('bgMsgInfoBody'),
+    toast: document.getElementById('bgMsgToast')
   };
+  var toastTimer = null;
+  function showMsgToast(message) {
+    if (!els.toast) {
+      msgAlert(message, 'Saved');
+      return;
+    }
+    els.toast.textContent = message || '';
+    els.toast.classList.add('is-open');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      els.toast.classList.remove('is-open');
+    }, 2800);
+  }
 
   if (els.newChat) els.newChat.hidden = !CAN_DIRECT;
   if (els.newGroup) els.newGroup.hidden = !CAN_GROUP;
@@ -892,6 +916,7 @@
     open: false,
     convId: null,
     activeTitle: '',
+    activeType: '',
     activeConv: null,
     composeMode: 'direct',
     selected: {},           // id -> { id, name }
@@ -1095,6 +1120,7 @@
   }
   function closeModal() {
     state.open = false;
+    closeInfoPanel();
     els.overlay.classList.remove('is-open');
     els.overlay.setAttribute('aria-hidden', 'true');
     stopConvPoll(); stopListPoll();
@@ -1103,11 +1129,15 @@
 
   function showEmptyState() {
     state.convId = null;
+    state.activeType = '';
+    state.activeConv = null;
+    closeInfoPanel();
     stopConvPoll();
     els.convView.hidden = true;
     els.emptyState.hidden = false;
     els.title.textContent = 'Messages';
     els.mainAvatar.hidden = true;
+    if (els.infoBtn) els.infoBtn.hidden = true;
     els.modal.classList.remove('show-conv');
     highlightActive();
   }
@@ -1134,7 +1164,7 @@
       }
       var unread = c.unreadCount > 0 ? '<span class="bg-msg-ci-unread">' + (c.unreadCount > 99 ? '99+' : c.unreadCount) + '</span>' : '';
       var active = c.id === state.convId ? ' active' : '';
-      html += '<div class="bg-msg-conv-item' + active + '" data-id="' + c.id + '" data-title="' + esc(c.title) + '">' +
+      html += '<div class="bg-msg-conv-item' + active + '" data-id="' + c.id + '" data-title="' + esc(c.title) + '" data-type="' + esc(c.type || '') + '">' +
         '<div class="bg-msg-avatar">' + esc(initials(c.title)) + '</div>' +
         '<div class="bg-msg-ci-main">' +
           '<div class="bg-msg-ci-title">' + esc(c.title) + '</div>' +
@@ -1144,7 +1174,7 @@
     els.convList.innerHTML = html;
     Array.prototype.forEach.call(els.convList.querySelectorAll('.bg-msg-conv-item'), function (it) {
       it.addEventListener('click', function () {
-        selectConversation(Number(it.dataset.id), it.dataset.title);
+        selectConversation(Number(it.dataset.id), it.dataset.title, it.dataset.type);
       });
     });
   }
@@ -1157,24 +1187,28 @@
   /* ---------- open a conversation in the main pane ---------- */
   function applyComposerAccess(conv) {
     var canSend = !conv || !conv.myPermissions || conv.myPermissions.canSend !== false;
-    var isGroup = conv && conv.type === 'group';
+    var isGroup = !!(conv && conv.type === 'group') || state.activeType === 'group';
     if (els.composer) els.composer.hidden = !canSend;
     if (els.readonly) els.readonly.hidden = canSend;
-    if (els.infoBtn) els.infoBtn.hidden = !isGroup;
+    if (els.infoBtn) {
+      els.infoBtn.hidden = !isGroup;
+      els.infoBtn.removeAttribute('aria-hidden');
+    }
   }
 
-  function selectConversation(convId, title) {
+  function selectConversation(convId, title, type) {
     state.convId = convId;
     state.activeTitle = title || 'Conversation';
+    state.activeType = type || '';
     state.activeConv = null;
     state.msgSig = '';
-    if (els.infoView) els.infoView.hidden = true;
+    closeInfoPanel();
     els.emptyState.hidden = true;
     els.convView.hidden = false;
     els.title.textContent = state.activeTitle;
     els.mainAvatar.hidden = false;
     els.mainAvatar.textContent = initials(state.activeTitle);
-    applyComposerAccess(null);
+    applyComposerAccess(state.activeType === 'group' ? { type: 'group', myPermissions: { canSend: true } } : null);
     highlightActive();
     if (mqMobile.matches) els.modal.classList.add('show-conv');
     els.messages.innerHTML = '<div class="bg-msg-empty">Loading…</div>';
@@ -1209,13 +1243,14 @@
       if (!j || !j.ok || state.convId !== convId) return;
       if (j.conversation) {
         state.activeConv = j.conversation;
+        state.activeType = j.conversation.type || state.activeType || '';
         if (j.conversation.title) {
           state.activeTitle = j.conversation.title;
           els.title.textContent = j.conversation.title;
           els.mainAvatar.textContent = initials(j.conversation.title);
         }
         applyComposerAccess(j.conversation);
-        if (els.infoView && !els.infoView.hidden) renderInfoPanel();
+        if (els.infoView && els.infoView.classList.contains('is-open')) renderInfoPanel();
       }
 
       // Signature to avoid needless re-render / scroll jumps
@@ -1517,18 +1552,54 @@
       }
       closeCompose();
       loadConversations();
-      selectConversation(j.conversation.id, j.conversation.title);
+      selectConversation(j.conversation.id, j.conversation.title, j.conversation.type);
     });
   }
 
   function openInfoPanel() {
-    if (!state.activeConv || state.activeConv.type !== 'group') return;
+    if (!state.convId) return;
+    if (!els.infoView) return;
+    var isGroup = (state.activeConv && state.activeConv.type === 'group') || state.activeType === 'group';
+    if (!isGroup && state.activeConv && state.activeConv.type === 'direct') {
+      msgAlert('Group details are only available for group chats.', 'Info');
+      return;
+    }
     els.infoView.hidden = false;
-    els.infoTitle.textContent = state.activeConv.title || 'Group details';
+    els.infoView.removeAttribute('hidden');
+    els.infoView.classList.add('is-open');
+    els.infoTitle.textContent = (state.activeConv && state.activeConv.title) || state.activeTitle || 'Group details';
+    if (!state.activeConv) {
+      els.infoBody.innerHTML = '<div class="bg-msg-empty">Loading group details…</div>';
+      api('/api/web/messages/conversations/' + state.convId + '/messages').then(function (j) {
+        if (!j || !j.ok || !j.conversation) {
+          els.infoBody.innerHTML = '<div class="bg-msg-empty">Could not load group details.</div>';
+          return;
+        }
+        state.activeConv = j.conversation;
+        state.activeType = j.conversation.type || '';
+        if (j.conversation.type !== 'group') {
+          closeInfoPanel();
+          msgAlert('Group details are only available for group chats.', 'Info');
+          return;
+        }
+        els.infoTitle.textContent = j.conversation.title || 'Group details';
+        applyComposerAccess(j.conversation);
+        renderInfoPanel();
+      });
+      return;
+    }
+    if (state.activeConv.type !== 'group') {
+      closeInfoPanel();
+      msgAlert('Group details are only available for group chats.', 'Info');
+      return;
+    }
     renderInfoPanel();
   }
   function closeInfoPanel() {
-    if (els.infoView) els.infoView.hidden = true;
+    if (!els.infoView) return;
+    els.infoView.classList.remove('is-open');
+    els.infoView.hidden = true;
+    els.infoView.setAttribute('hidden', '');
   }
   function renderInfoPanel() {
     var conv = state.activeConv;
@@ -1583,30 +1654,28 @@
     var saveDefaults = document.getElementById('bgMsgSaveDefaults');
     if (saveDefaults) {
       saveDefaults.addEventListener('click', function () {
-        showMsgDialog({
-          title: 'Save defaults?',
-          message: 'New members added to this group will get these permissions.',
-          confirm: true,
-          okText: 'Save',
-          cancelText: 'Cancel',
-          danger: false
-        }).then(function (ok) {
-          if (!ok) return;
-          api('/api/web/messages/conversations/' + state.convId + '/defaults', {
-            method: 'PUT',
-            body: {
-              defaultPermissions: {
-                canSend: !!document.getElementById('bgMsgInfoDefSend').checked,
-                canAddMembers: !!document.getElementById('bgMsgInfoDefAdd').checked,
-                canRemoveMembers: !!document.getElementById('bgMsgInfoDefRemove').checked
-              }
+        var sendEl = document.getElementById('bgMsgInfoDefSend');
+        var addEl = document.getElementById('bgMsgInfoDefAdd');
+        var removeEl = document.getElementById('bgMsgInfoDefRemove');
+        saveDefaults.disabled = true;
+        api('/api/web/messages/conversations/' + state.convId + '/defaults', {
+          method: 'PUT',
+          body: {
+            defaultPermissions: {
+              canSend: !!(sendEl && sendEl.checked),
+              canAddMembers: !!(addEl && addEl.checked),
+              canRemoveMembers: !!(removeEl && removeEl.checked)
             }
-          }).then(function (j) {
-            if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not save defaults.'); return; }
-            state.activeConv = j.conversation;
-            renderInfoPanel();
-            msgAlert('Defaults saved. New members will get these permissions.', 'Saved');
-          });
+          }
+        }).then(function (j) {
+          saveDefaults.disabled = false;
+          if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not save defaults.'); return; }
+          state.activeConv = j.conversation;
+          renderInfoPanel();
+          showMsgToast('Defaults saved');
+        }).catch(function () {
+          saveDefaults.disabled = false;
+          msgAlert('Could not save defaults.');
         });
       });
     }
@@ -1752,6 +1821,10 @@
       return;
     }
     if (!state.open) return;
+    if (els.infoView && els.infoView.classList.contains('is-open')) {
+      closeInfoPanel();
+      return;
+    }
     if (!els.composeView.hidden) closeCompose();
     else closeModal();
   });
@@ -1760,7 +1833,13 @@
   els.newGroup.addEventListener('click', function () { openCompose('group'); });
   els.create.addEventListener('click', createConversation);
   if (els.groupTitle) els.groupTitle.addEventListener('input', updateCreateBtn);
-  if (els.infoBtn) els.infoBtn.addEventListener('click', openInfoPanel);
+  if (els.infoBtn) {
+    els.infoBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      openInfoPanel();
+    });
+  }
   if (els.infoBack) els.infoBack.addEventListener('click', closeInfoPanel);
   function onDefaultPermChange() {
     // Apply new defaults to currently selected people (create flow starting point).
@@ -1782,13 +1861,6 @@
       renderPermPickers();
     }
   });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && els.infoView && !els.infoView.hidden) {
-      closeInfoPanel();
-      e.stopPropagation();
-    }
-  }, true);
-
   var convSearchT, userSearchT;
   els.convSearch.addEventListener('input', function () { clearTimeout(convSearchT); convSearchT = setTimeout(loadConversations, 250); });
   els.userSearch.addEventListener('input', function () { clearTimeout(userSearchT); userSearchT = setTimeout(searchUsers, 250); });

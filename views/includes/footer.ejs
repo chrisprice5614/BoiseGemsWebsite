@@ -515,6 +515,19 @@
   .bg-msg-att-img { display: block; margin-bottom: 6px; border-radius: 10px; overflow: hidden; max-width: 240px; }
   .bg-msg-att-img img { display: block; width: 100%; max-height: 260px; object-fit: cover; }
   .bg-msg-att-video { display: block; margin-bottom: 6px; border-radius: 10px; max-width: 260px; width: 100%; background: #000; }
+  .bg-msg-att-video-thumb {
+    position: relative; display: block; margin-bottom: 6px; border-radius: 10px; overflow: hidden;
+    max-width: 260px; width: 100%; aspect-ratio: 16 / 10; background: #1a1228; border: none; padding: 0;
+    cursor: pointer; color: #fff;
+  }
+  .bg-msg-att-video-thumb video {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none;
+  }
+  .bg-msg-att-video-thumb .bg-msg-play {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.28); font-size: 42px; text-shadow: 0 2px 8px rgba(0,0,0,0.45);
+  }
+  .bg-msg-att-video-thumb:hover .bg-msg-play { background: rgba(0,0,0,0.38); }
   .bg-msg-att-file {
     display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 8px 10px;
     border-radius: 10px; background: rgba(0,0,0,0.06); color: inherit; text-decoration: none; max-width: 260px;
@@ -672,14 +685,21 @@
           </div>
           <div class="bg-msg-user-list" id="bgMsgUserResults"></div>
           <div class="bg-msg-perms" id="bgMsgPerms" hidden>
-            <h4>Who can send messages?</h4>
+            <h4>Default for new members</h4>
+            <p>Applied to people you add later, and used as the starting point below.</p>
+            <div class="bg-msg-perm-list" id="bgMsgDefaultPerms">
+              <label><input type="checkbox" id="bgMsgDefSend" checked> Can send messages</label>
+              <label><input type="checkbox" id="bgMsgDefAdd"> Can add members</label>
+              <label><input type="checkbox" id="bgMsgDefRemove"> Can remove members</label>
+            </div>
+            <h4 style="margin-top:12px;">Who can send messages?</h4>
             <p>You always can. Uncheck people who should only read.</p>
             <div class="bg-msg-perm-list" id="bgMsgPermSend"></div>
-            <h4 style="margin-top:12px;">Who can add people?</h4>
-            <p>Defaults to only you.</p>
+            <h4 style="margin-top:12px;">Who can add members?</h4>
+            <p>Defaults to only you unless changed above.</p>
             <div class="bg-msg-perm-list" id="bgMsgPermAdd"></div>
-            <h4 style="margin-top:12px;">Who can remove people?</h4>
-            <p>Defaults to only you.</p>
+            <h4 style="margin-top:12px;">Who can remove members?</h4>
+            <p>Defaults to only you unless changed above.</p>
             <div class="bg-msg-perm-list" id="bgMsgPermRemove"></div>
           </div>
         </div>
@@ -749,6 +769,9 @@
     userSearch: document.getElementById('bgMsgUserSearch'),
     userResults: document.getElementById('bgMsgUserResults'),
     perms: document.getElementById('bgMsgPerms'),
+    defSend: document.getElementById('bgMsgDefSend'),
+    defAdd: document.getElementById('bgMsgDefAdd'),
+    defRemove: document.getElementById('bgMsgDefRemove'),
     permSend: document.getElementById('bgMsgPermSend'),
     permAdd: document.getElementById('bgMsgPermAdd'),
     permRemove: document.getElementById('bgMsgPermRemove'),
@@ -999,7 +1022,9 @@
       return '<a class="bg-msg-att-img" href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" alt="image" loading="lazy"></a>';
     }
     if (m.attachmentType === 'video') {
-      return '<video class="bg-msg-att-video" src="' + url + '" controls preload="metadata"></video>';
+      return '<button type="button" class="bg-msg-att-video-thumb" data-src="' + url + '" aria-label="Play video">' +
+        '<video muted playsinline preload="metadata" src="' + url + '#t=0.1"></video>' +
+        '<span class="bg-msg-play" aria-hidden="true">▶</span></button>';
     }
     var isPdf = (m.attachmentMime || '').indexOf('pdf') !== -1;
     var href = isPdf ? url : (url + '?download=1');
@@ -1037,6 +1062,20 @@
       prevSender = m.senderId;
     });
     els.messages.innerHTML = html;
+    Array.prototype.forEach.call(els.messages.querySelectorAll('.bg-msg-att-video-thumb'), function (btn) {
+      btn.addEventListener('click', function () {
+        var src = btn.getAttribute('data-src');
+        if (!src) return;
+        var video = document.createElement('video');
+        video.className = 'bg-msg-att-video';
+        video.controls = true;
+        video.playsInline = true;
+        video.autoplay = true;
+        video.src = src;
+        btn.replaceWith(video);
+        video.play().catch(function () {});
+      });
+    });
     if (force || nearBottom) els.messages.scrollTop = els.messages.scrollHeight;
   }
 
@@ -1067,6 +1106,9 @@
     els.composeTitle.textContent = mode === 'group' ? 'New group' : 'New chat';
     els.groupTitleRow.hidden = mode !== 'group';
     els.groupTitle.value = '';
+    if (els.defSend) els.defSend.checked = true;
+    if (els.defAdd) els.defAdd.checked = false;
+    if (els.defRemove) els.defRemove.checked = false;
     if (els.audiences) {
       els.audiences.hidden = mode !== 'group' || !AUDIENCES.length;
       Array.prototype.forEach.call(document.querySelectorAll('.bg-msg-aud'), function (el) { el.checked = false; });
@@ -1078,6 +1120,14 @@
     renderPermPickers();
     searchUsers();
     setTimeout(function () { (mode === 'group' ? els.groupTitle : els.userSearch).focus(); }, 60);
+  }
+
+  function defaultPermFlags() {
+    return {
+      send: !!(els.defSend && els.defSend.checked),
+      add: !!(els.defAdd && els.defAdd.checked),
+      remove: !!(els.defRemove && els.defRemove.checked)
+    };
   }
   function closeCompose() {
     els.composeView.hidden = true;
@@ -1100,18 +1150,19 @@
     var sendHtml = rowHtml('canSend', ME, 'You', true);
     var addHtml = rowHtml('canAdd', ME, 'You', true);
     var removeHtml = rowHtml('canRemove', ME, 'You', true);
+    var defs = defaultPermFlags();
     ids.forEach(function (id) {
       if (Number(id) === ME) return;
-      if (state.canSend[id] === undefined) state.canSend[id] = true;
-      if (state.canAdd[id] === undefined) state.canAdd[id] = false;
-      if (state.canRemove[id] === undefined) state.canRemove[id] = false;
+      if (state.canSend[id] === undefined) state.canSend[id] = defs.send;
+      if (state.canAdd[id] === undefined) state.canAdd[id] = defs.add;
+      if (state.canRemove[id] === undefined) state.canRemove[id] = defs.remove;
       var name = state.selected[id].name;
       sendHtml += rowHtml('canSend', id, name, false);
       addHtml += rowHtml('canAdd', id, name, false);
       removeHtml += rowHtml('canRemove', id, name, false);
     });
     if (selectedAudiences().length) {
-      sendHtml += '<p style="margin:4px 0 0;font-size:0.72rem;color:#7a6a90;">Audience members can send by default. Adjust after creating the group if needed.</p>';
+      sendHtml += '<p style="margin:4px 0 0;font-size:0.72rem;color:#7a6a90;">Audience members use the defaults above. Adjust individual people after creating if needed.</p>';
     }
     els.permSend.innerHTML = sendHtml;
     els.permAdd.innerHTML = addHtml;
@@ -1172,9 +1223,10 @@
     } else {
       if (state.composeMode === 'direct') state.selected = {};
       state.selected[id] = { id: id, name: name };
-      state.canSend[id] = true;
-      state.canAdd[id] = false;
-      state.canRemove[id] = false;
+      var defs = defaultPermFlags();
+      state.canSend[id] = defs.send;
+      state.canAdd[id] = defs.add;
+      state.canRemove[id] = defs.remove;
     }
     renderChips();
     renderUsersSelection();
@@ -1230,6 +1282,12 @@
     els.create.disabled = true;
     var body = { memberIds: ids, title: els.groupTitle.value.trim(), audiences: audiences };
     if (state.composeMode === 'group') {
+      var defs = defaultPermFlags();
+      body.defaultPermissions = {
+        canSend: defs.send,
+        canAddMembers: defs.add,
+        canRemoveMembers: defs.remove
+      };
       var sendIds = selectedPermIds('canSend', true);
       if (sendIds) body.canSendUserIds = sendIds;
       body.canAddUserIds = selectedPermIds('canAdd');
@@ -1264,9 +1322,9 @@
       var name = ((m.firstname || '') + ' ' + (m.lastname || '')).trim();
       var tags = [];
       if (m.isCreator) tags.push('Creator');
-      if (m.canSend) tags.push('Can send');
-      if (m.canAddMembers) tags.push('Can add');
-      if (m.canRemoveMembers) tags.push('Can remove');
+      if (m.canSend) tags.push('Can send messages');
+      if (m.canAddMembers) tags.push('Can add members');
+      if (m.canRemoveMembers) tags.push('Can remove members');
       html += '<div class="bg-msg-member-row" data-id="' + m.id + '">' +
         '<div class="bg-msg-avatar">' + esc(initials(name)) + '</div>' +
         '<div class="bg-msg-member-meta">' +
@@ -1274,9 +1332,9 @@
         '<div class="bg-msg-member-tags">' + esc(tags.join(' · ') || 'Member') + '</div>';
       if (perms.canManagePermissions && !m.isCreator) {
         html += '<div class="bg-msg-member-actions">' +
-          '<label><input type="checkbox" class="bg-msg-edit-send" ' + (m.canSend ? 'checked' : '') + '> Send</label>' +
-          '<label><input type="checkbox" class="bg-msg-edit-add" ' + (m.canAddMembers ? 'checked' : '') + '> Add</label>' +
-          '<label><input type="checkbox" class="bg-msg-edit-remove" ' + (m.canRemoveMembers ? 'checked' : '') + '> Remove</label>' +
+          '<label><input type="checkbox" class="bg-msg-edit-send" ' + (m.canSend ? 'checked' : '') + '> Can send messages</label>' +
+          '<label><input type="checkbox" class="bg-msg-edit-add" ' + (m.canAddMembers ? 'checked' : '') + '> Can add members</label>' +
+          '<label><input type="checkbox" class="bg-msg-edit-remove" ' + (m.canRemoveMembers ? 'checked' : '') + '> Can remove members</label>' +
           '<button type="button" class="bg-msg-save-perms">Save</button>' +
           '</div>';
       }
@@ -1286,6 +1344,17 @@
       html += '</div></div>';
     });
     html += '</div>';
+    if (perms.canManagePermissions) {
+      var defs = conv.defaultPermissions || {};
+      html += '<div class="bg-msg-info-section"><h4>Default for new members</h4>' +
+        '<p style="margin:0 0 8px;font-size:0.78rem;color:#7a6a90;">Used when people are added to this group later.</p>' +
+        '<div class="bg-msg-member-actions">' +
+        '<label><input type="checkbox" id="bgMsgInfoDefSend" ' + (defs.canSend !== false ? 'checked' : '') + '> Can send messages</label>' +
+        '<label><input type="checkbox" id="bgMsgInfoDefAdd" ' + (defs.canAddMembers ? 'checked' : '') + '> Can add members</label>' +
+        '<label><input type="checkbox" id="bgMsgInfoDefRemove" ' + (defs.canRemoveMembers ? 'checked' : '') + '> Can remove members</label>' +
+        '<button type="button" id="bgMsgSaveDefaults">Save defaults</button>' +
+        '</div></div>';
+    }
     if (perms.canAddMembers) {
       html += '<div class="bg-msg-info-section"><h4>Add people</h4>' +
         '<div class="bg-msg-search-wrap"><ion-icon name="search"></ion-icon>' +
@@ -1293,6 +1362,26 @@
         '<div id="bgMsgAddResults" style="margin-top:8px;"></div></div>';
     }
     els.infoBody.innerHTML = html;
+
+    var saveDefaults = document.getElementById('bgMsgSaveDefaults');
+    if (saveDefaults) {
+      saveDefaults.addEventListener('click', function () {
+        api('/api/web/messages/conversations/' + state.convId + '/defaults', {
+          method: 'PUT',
+          body: {
+            defaultPermissions: {
+              canSend: !!document.getElementById('bgMsgInfoDefSend').checked,
+              canAddMembers: !!document.getElementById('bgMsgInfoDefAdd').checked,
+              canRemoveMembers: !!document.getElementById('bgMsgInfoDefRemove').checked
+            }
+          }
+        }).then(function (j) {
+          if (!j || !j.ok) { alert((j && j.message) || 'Could not save defaults.'); return; }
+          state.activeConv = j.conversation;
+          renderInfoPanel();
+        });
+      });
+    }
 
     Array.prototype.forEach.call(els.infoBody.querySelectorAll('.bg-msg-save-perms'), function (btn) {
       btn.addEventListener('click', function () {
@@ -1434,6 +1523,20 @@
   if (els.groupTitle) els.groupTitle.addEventListener('input', updateCreateBtn);
   if (els.infoBtn) els.infoBtn.addEventListener('click', openInfoPanel);
   if (els.infoBack) els.infoBack.addEventListener('click', closeInfoPanel);
+  function onDefaultPermChange() {
+    // Apply new defaults to currently selected people (create flow starting point).
+    var defs = defaultPermFlags();
+    Object.keys(state.selected).forEach(function (id) {
+      if (Number(id) === ME) return;
+      state.canSend[id] = defs.send;
+      state.canAdd[id] = defs.add;
+      state.canRemove[id] = defs.remove;
+    });
+    renderPermPickers();
+  }
+  if (els.defSend) els.defSend.addEventListener('change', onDefaultPermChange);
+  if (els.defAdd) els.defAdd.addEventListener('change', onDefaultPermChange);
+  if (els.defRemove) els.defRemove.addEventListener('change', onDefaultPermChange);
   document.addEventListener('change', function (e) {
     if (e.target && e.target.classList && e.target.classList.contains('bg-msg-aud')) {
       updateCreateBtn();

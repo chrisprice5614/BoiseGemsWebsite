@@ -551,25 +551,50 @@
   }
 
   .bg-msg-video-overlay {
-    position: fixed; inset: 0; z-index: 12000; display: none;
-    align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.82); padding: 20px;
+    position: fixed !important; inset: 0 !important; z-index: 200000 !important;
+    display: none !important; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.88); padding: 24px; box-sizing: border-box;
   }
-  .bg-msg-video-overlay.is-open { display: flex; }
+  .bg-msg-video-overlay.is-open { display: flex !important; }
   .bg-msg-video-shell {
-    position: relative; width: min(920px, 96vw); max-height: 90vh;
-    display: flex; align-items: center; justify-content: center;
+    position: relative !important; width: min(960px, 96vw); height: min(80vh, 720px);
+    display: flex !important; align-items: center; justify-content: center;
+    background: #000; border-radius: 14px; overflow: hidden;
   }
-  .bg-msg-video-shell video {
-    width: 100%; max-height: 85vh; background: #000; border-radius: 12px;
+  /* Site styles.css sets `video { position:absolute; height:100% }` — must override. */
+  .bg-msg-video-overlay video,
+  .bg-msg-video-shell video,
+  #bgMsgVideoPlayer {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #000 !important;
+    border-radius: 0 !important;
+    object-fit: contain !important;
+  }
+  .bg-msg-video-status {
+    position: absolute; left: 0; right: 0; bottom: 12px; z-index: 2;
+    color: #fff; text-align: center; font-size: 0.95rem; pointer-events: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
   }
   .bg-msg-video-close {
-    position: absolute; top: -10px; right: -10px; z-index: 2;
-    width: 40px !important; height: 40px !important; border-radius: 999px !important;
-    border: none !important; background: #fff !important; color: #333 !important;
-    font-size: 22px !important; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    position: absolute; top: 10px; right: 10px; z-index: 3;
+    width: 44px !important; height: 44px !important; border-radius: 999px !important;
+    border: none !important; background: #fff !important; color: #222 !important;
+    font-size: 28px !important; line-height: 1 !important; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45); clip-path: none !important;
     display: flex !important; align-items: center; justify-content: center;
   }
+  .bg-msg-dialog-overlay { z-index: 210000 !important; }
   .bg-msg-att-file {
     display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 8px 10px;
     border-radius: 10px; background: rgba(0,0,0,0.06); color: inherit; text-decoration: none; max-width: 260px;
@@ -774,12 +799,14 @@
     </div>
   </div>
 
-  <!-- Video lightbox -->
-  <div class="bg-msg-video-overlay" id="bgMsgVideoOverlay" aria-hidden="true">
-    <div class="bg-msg-video-shell">
-      <button type="button" class="bg-msg-video-close" id="bgMsgVideoClose" aria-label="Close video">&times;</button>
-      <video id="bgMsgVideoPlayer" controls playsinline></video>
-    </div>
+</div>
+
+<!-- Video lightbox mounted outside messenger root so nothing clips it -->
+<div class="bg-msg-video-overlay" id="bgMsgVideoOverlay" aria-hidden="true">
+  <div class="bg-msg-video-shell" id="bgMsgVideoShell">
+    <button type="button" class="bg-msg-video-close" id="bgMsgVideoClose" aria-label="Close video">&times;</button>
+    <video id="bgMsgVideoPlayer" controls playsinline preload="auto"></video>
+    <div class="bg-msg-video-status" id="bgMsgVideoStatus"></div>
   </div>
 </div>
 
@@ -926,8 +953,19 @@
   function msgAlert(message, title) {
     return showMsgDialog({ message: message, title: title || 'Notice' });
   }
-  function msgConfirm(message, title) {
-    return showMsgDialog({ message: message, title: title || 'Please confirm', confirm: true, danger: true, okText: 'Remove' });
+  function msgConfirm(message, title, opts) {
+    opts = opts || {};
+    return showMsgDialog({
+      message: message,
+      title: title || 'Please confirm',
+      confirm: true,
+      danger: opts.danger !== false,
+      okText: opts.okText || 'Confirm',
+      cancelText: opts.cancelText || 'Cancel'
+    });
+  }
+  if (dialogEls.overlay && dialogEls.overlay.parentNode !== document.body) {
+    document.body.appendChild(dialogEls.overlay);
   }
   if (dialogEls.ok) dialogEls.ok.addEventListener('click', function () { closeMsgDialog(true); });
   if (dialogEls.cancel) dialogEls.cancel.addEventListener('click', function () { closeMsgDialog(false); });
@@ -939,25 +977,67 @@
 
   var videoEls = {
     overlay: document.getElementById('bgMsgVideoOverlay'),
+    shell: document.getElementById('bgMsgVideoShell'),
     player: document.getElementById('bgMsgVideoPlayer'),
+    status: document.getElementById('bgMsgVideoStatus'),
     close: document.getElementById('bgMsgVideoClose')
   };
+  if (videoEls.overlay && videoEls.overlay.parentNode !== document.body) {
+    document.body.appendChild(videoEls.overlay);
+  }
+  function setVideoStatus(text) {
+    if (videoEls.status) videoEls.status.textContent = text || '';
+  }
   function openVideoModal(src) {
     if (!videoEls.overlay || !videoEls.player || !src) return;
+    if (videoEls.overlay.parentNode !== document.body) {
+      document.body.appendChild(videoEls.overlay);
+    }
+    setVideoStatus('Loading video…');
+    try { videoEls.player.pause(); } catch (_) {}
+    videoEls.player.removeAttribute('src');
+    videoEls.player.load();
     videoEls.player.src = src;
     videoEls.overlay.classList.add('is-open');
     videoEls.overlay.setAttribute('aria-hidden', 'false');
-    videoEls.player.play().catch(function () {});
+    var playWhenReady = function () {
+      setVideoStatus('');
+      videoEls.player.play().catch(function () {
+        setVideoStatus('Click play to watch.');
+      });
+    };
+    videoEls.player.onloadeddata = playWhenReady;
+    videoEls.player.oncanplay = function () {
+      if (videoEls.status && videoEls.status.textContent === 'Loading video…') setVideoStatus('');
+    };
+    videoEls.player.onerror = function () {
+      setVideoStatus('Could not load this video. Try downloading it or re-uploading.');
+    };
+    // Fallback if events already fired.
+    if (videoEls.player.readyState >= 2) playWhenReady();
   }
   function closeVideoModal() {
     if (!videoEls.overlay || !videoEls.player) return;
     try { videoEls.player.pause(); } catch (_) {}
+    videoEls.player.onloadeddata = null;
+    videoEls.player.oncanplay = null;
+    videoEls.player.onerror = null;
     videoEls.player.removeAttribute('src');
     videoEls.player.load();
+    setVideoStatus('');
     videoEls.overlay.classList.remove('is-open');
     videoEls.overlay.setAttribute('aria-hidden', 'true');
   }
-  if (videoEls.close) videoEls.close.addEventListener('click', closeVideoModal);
+  if (videoEls.close) {
+    videoEls.close.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeVideoModal();
+    });
+  }
+  if (videoEls.shell) {
+    videoEls.shell.addEventListener('click', function (e) { e.stopPropagation(); });
+  }
   if (videoEls.overlay) {
     videoEls.overlay.addEventListener('click', function (e) {
       if (e.target === videoEls.overlay) closeVideoModal();
@@ -1503,19 +1583,30 @@
     var saveDefaults = document.getElementById('bgMsgSaveDefaults');
     if (saveDefaults) {
       saveDefaults.addEventListener('click', function () {
-        api('/api/web/messages/conversations/' + state.convId + '/defaults', {
-          method: 'PUT',
-          body: {
-            defaultPermissions: {
-              canSend: !!document.getElementById('bgMsgInfoDefSend').checked,
-              canAddMembers: !!document.getElementById('bgMsgInfoDefAdd').checked,
-              canRemoveMembers: !!document.getElementById('bgMsgInfoDefRemove').checked
+        showMsgDialog({
+          title: 'Save defaults?',
+          message: 'New members added to this group will get these permissions.',
+          confirm: true,
+          okText: 'Save',
+          cancelText: 'Cancel',
+          danger: false
+        }).then(function (ok) {
+          if (!ok) return;
+          api('/api/web/messages/conversations/' + state.convId + '/defaults', {
+            method: 'PUT',
+            body: {
+              defaultPermissions: {
+                canSend: !!document.getElementById('bgMsgInfoDefSend').checked,
+                canAddMembers: !!document.getElementById('bgMsgInfoDefAdd').checked,
+                canRemoveMembers: !!document.getElementById('bgMsgInfoDefRemove').checked
+              }
             }
-          }
-        }).then(function (j) {
-          if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not save defaults.'); return; }
-          state.activeConv = j.conversation;
-          renderInfoPanel();
+          }).then(function (j) {
+            if (!j || !j.ok) { msgAlert((j && j.message) || 'Could not save defaults.'); return; }
+            state.activeConv = j.conversation;
+            renderInfoPanel();
+            msgAlert('Defaults saved. New members will get these permissions.', 'Saved');
+          });
         });
       });
     }
@@ -1544,7 +1635,7 @@
         var row = btn.closest('.bg-msg-member-row');
         var id = Number(row.dataset.id);
         var name = row.querySelector('.bg-msg-member-name').textContent;
-        msgConfirm('Remove ' + name + ' from this group?', 'Remove member').then(function (ok) {
+        msgConfirm('Remove ' + name + ' from this group?', 'Remove member', { okText: 'Remove', danger: true }).then(function (ok) {
           if (!ok) return;
           fetch('/api/web/messages/conversations/' + state.convId + '/members/' + id, {
             method: 'DELETE', credentials: 'same-origin'

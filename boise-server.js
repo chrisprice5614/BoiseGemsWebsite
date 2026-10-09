@@ -14277,7 +14277,7 @@ app.get("/api/web/messages/attachments/:messageId", webMsgAuth, (req, res) => {
     const m = db.prepare("SELECT * FROM messages WHERE id = ?").get(msgId);
     if (!m || !m.attachment_path) return res.status(404).json({ ok: false, message: "Not found" });
     const uid = Number(req.user.userid);
-    if (!isConversationMember(m.conversation_id, uid)) {
+    if (!isConversationMember(m.conversation_id, uid) && !ensureCreatorMembership(m.conversation_id, uid)) {
       return res.status(403).json({ ok: false, message: "Forbidden" });
     }
     const filePath = path.join(MESSAGE_UPLOAD_DIR, m.attachment_path);

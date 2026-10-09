@@ -25,6 +25,12 @@
       <%- include("includes/neopply-partner-fields") %>
       <label for="code">Verification code</label>
       <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required autofocus>
+      <label style="display:flex;align-items:flex-start;gap:0.6rem;margin-top:1rem;font-weight:normal;cursor:pointer;">
+        <input type="checkbox" name="trust_device" value="on" style="margin-top:0.2rem;width:auto;">
+        <span>Trust this device for 60 days<br>
+          <span style="font-size:0.9em;opacity:0.8;">Skip verification codes on this browser until then.</span>
+        </span>
+      </label>
       <div style="text-align:center;margin-top:1rem;">
         <button type="submit">Verify &amp; sign in</button>
       </div>

@@ -7,6 +7,8 @@ const bcrypt = require("bcrypt");
 
 const LEAD_ADMIN_EMAIL = "chrisprice5614@gmail.com";
 const MFA_TTL_MS = 10 * 60 * 1000;
+const TRUSTED_DEVICE_TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+const TRUST_COOKIE_NAME = "bg_trust";
 const EXPIRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SEASON = 2027;
 const DEFAULT_SEASON_END = "2027-12-31";
@@ -300,6 +302,19 @@ function initRolesTables(db) {
       consumed_at INTEGER,
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS trusted_devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      user_agent TEXT,
+      ip TEXT,
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
+    CREATE INDEX IF NOT EXISTS idx_trusted_devices_expires ON trusted_devices(expires_at);
 
     CREATE TABLE IF NOT EXISTS login_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -881,12 +896,77 @@ function verifyMfaCode(db, userId, code) {
   return true;
 }
 
+function hashTrustToken(rawToken) {
+  return crypto.createHash("sha256").update(String(rawToken || "")).digest("hex");
+}
+
+function trustCookieOptions() {
+  const testSite = String(process.env.test_site || "").trim().toLowerCase() === "true";
+  return {
+    httpOnly: true,
+    secure: !testSite,
+    sameSite: "lax",
+    maxAge: TRUSTED_DEVICE_TTL_MS,
+  };
+}
+
+/** Create a trusted device; returns the raw token to store in cookie / app prefs. */
+function createTrustedDevice(db, userId, req) {
+  const raw = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashTrustToken(raw);
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO trusted_devices (user_id, token_hash, user_agent, ip, created_at, last_used_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    userId,
+    tokenHash,
+    req && req.headers ? String(req.headers["user-agent"] || "").slice(0, 500) : null,
+    clientIp(req),
+    now,
+    now,
+    now + TRUSTED_DEVICE_TTL_MS
+  );
+  return raw;
+}
+
+function isTrustedDevice(db, userId, rawToken) {
+  if (!userId || !rawToken) return false;
+  const row = db.prepare(`
+    SELECT id, expires_at FROM trusted_devices
+    WHERE user_id = ? AND token_hash = ?
+    LIMIT 1
+  `).get(userId, hashTrustToken(rawToken));
+  if (!row) return false;
+  if (Number(row.expires_at) <= Date.now()) {
+    db.prepare("DELETE FROM trusted_devices WHERE id = ?").run(row.id);
+    return false;
+  }
+  db.prepare("UPDATE trusted_devices SET last_used_at = ? WHERE id = ?").run(Date.now(), row.id);
+  return true;
+}
+
+function setTrustedDeviceCookie(res, rawToken) {
+  if (!res || !rawToken) return;
+  res.cookie(TRUST_COOKIE_NAME, rawToken, trustCookieOptions());
+}
+
+function readTrustedDeviceCookie(req) {
+  return req && req.cookies ? String(req.cookies[TRUST_COOKIE_NAME] || "").trim() : "";
+}
+
+function pruneExpiredTrustedDevices(db) {
+  db.prepare("DELETE FROM trusted_devices WHERE expires_at <= ?").run(Date.now());
+}
+
 function runExpiryJob(db) {
   const now = Date.now();
   db.prepare(`
     UPDATE user_role_assignments SET active = 0
     WHERE active = 1 AND ends_at IS NOT NULL AND ends_at < ?
   `).run(now);
+
+  pruneExpiredTrustedDevices(db);
 
   const corpsExpired = db.prepare(`
     SELECT id FROM users
@@ -1031,6 +1111,17 @@ function registerRolesRoutes(app, deps) {
       return res.render("login-mfa", { errors: ["Invalid or expired code. Please try again."], ...partnerView });
     }
     delete req.session.pendingMfaUserId;
+
+    const trust =
+      req.body.trust_device === "on" ||
+      req.body.trust_device === "1" ||
+      req.body.trust_device === "yes" ||
+      req.body.trust_device === "true";
+    if (trust) {
+      const raw = createTrustedDevice(db, user.id, req);
+      setTrustedDeviceCookie(res, raw);
+    }
+
     if (typeof issueLoginToken === "function") {
       return issueLoginToken(req, res, user);
     }
@@ -1463,6 +1554,12 @@ module.exports = {
   revokeAllSessionsForUser,
   createMfaCode,
   verifyMfaCode,
+  createTrustedDevice,
+  isTrustedDevice,
+  setTrustedDeviceCookie,
+  readTrustedDeviceCookie,
+  TRUST_COOKIE_NAME,
+  TRUSTED_DEVICE_TTL_MS,
   runExpiryJob,
   requirePermissionFactory,
   registerRolesRoutes,

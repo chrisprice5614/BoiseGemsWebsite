@@ -129,6 +129,8 @@
     <% 
       const normalizedType = String(event.type || "").toLowerCase();
       const canRsvpType = ["camp", "experience camp", "spring training", "bgi audition", "bgi camp", "other"].includes(normalizedType);
+      const eventCostDollars = Number(event.cost || 0);
+      const eventCostLabel = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(eventCostDollars);
     %>
     <% if (canRsvpType) { %>
       <% if (user) { %>
@@ -137,6 +139,16 @@
         <% } else { %>
           <% if (reservedSelf) { %>
             <p><strong>You have RSVP'd for this event!</strong></p>
+          <% } else if (eventCostDollars > 0) { %>
+            <p style="margin-bottom:10px;"><strong>RSVP fee:</strong> <%= eventCostLabel %> <span style="color:#666;font-weight:400;">(+ 6% if paying by card)</span></p>
+            <form action="/event/<%= event.slug %>/rsvp" method="POST" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+              <button type="submit" name="pay_mode" value="stripe">Pay now &amp; RSVP</button>
+              <button type="submit" name="pay_mode" value="balance" style="background:#60437D;">RSVP &amp; add to account balance</button>
+            </form>
+            <p style="margin-top:8px;font-size:0.9rem;color:#666;max-width:42rem;">
+              Adding to your balance reserves your spot now. You can pay later from the Member Portal
+              (card) or with cash/check through staff.
+            </p>
           <% } else { %>
             <form action="/event/<%= event.slug %>/rsvp" method="POST" style="display:inline;">
               <button type="submit">RSVP</button>

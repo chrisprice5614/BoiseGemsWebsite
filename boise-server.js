@@ -1780,6 +1780,15 @@ function deleteUserAccount(userId, actorId) {
     if (tableExists("forum_posts")) {
       db.prepare("DELETE FROM forum_posts WHERE user_id = ?").run(uid);
     }
+    if (tableExists("trusted_devices")) {
+      db.prepare("DELETE FROM trusted_devices WHERE user_id = ?").run(uid);
+    }
+    if (tableExists("mfa_codes")) {
+      db.prepare("DELETE FROM mfa_codes WHERE user_id = ?").run(uid);
+    }
+    if (tableExists("auth_sessions")) {
+      db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").run(uid);
+    }
 
     const annIds = db.prepare("SELECT id FROM announcements WHERE author_id = ?").all(uid).map(r => r.id);
     if (annIds.length) {
@@ -4089,7 +4098,11 @@ app.post("/login", async (req, res) => {
   if (rolesSystem.userRequiresMfa(db, userInQuestion)) {
     const bypassMfa =
       String(process.env.E2E_BYPASS_MFA || "").trim().toLowerCase() === "true";
-    if (!bypassMfa) {
+    const trustToken = rolesSystem.readTrustedDeviceCookie(req);
+    const deviceTrusted =
+      !bypassMfa &&
+      rolesSystem.isTrustedDevice(db, userInQuestion.id, trustToken);
+    if (!bypassMfa && !deviceTrusted) {
       const code = rolesSystem.createMfaCode(db, userInQuestion.id);
       req.session.pendingMfaUserId = userInQuestion.id;
       try {
@@ -8868,7 +8881,7 @@ app.get("/event/:slug/rsvps-data", mustBeAdmin, (req, res) => {
 });
 
 
-// POST /event/:slug/rsvp  - decides free vs paid
+// POST /event/:slug/rsvp  - free (cost 0), pay now (Stripe), or add fee to account balance
 app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
   const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(req.params.slug);
   if (!event) return res.redirect("/");
@@ -8884,88 +8897,49 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
   }
 
   const amountCents = toCents(event.cost || 0);
-  const eventType = String(event.type || "").toLowerCase();
+  const payMode = String(req.body.pay_mode || "stripe").trim().toLowerCase();
 
-  // Check member contract status
-  const userRow =
-    db
-      .prepare(
-        "SELECT contractedCorps, contractedIndependent, contractedAffiliate FROM users WHERE id = ?"
-      )
-      .get(req.user.userid) || {};
-
-  // Look for any contracted children linked to this parent account
-  const childIds = parentLinks.getChildrenForParent(db, req.user.userid).map((c) => c.id);
-  let childContracts = { anyCorps: 0, anyIndependent: 0, anyAffiliate: 0 };
-  if (childIds.length) {
-    const placeholders = childIds.map(() => "?").join(",");
-    childContracts = db.prepare(`
-        SELECT
-          MAX(COALESCE(contractedCorps, 0))       AS anyCorps,
-          MAX(COALESCE(contractedIndependent, 0)) AS anyIndependent,
-          MAX(COALESCE(contractedAffiliate, 0))   AS anyAffiliate
-        FROM users
-        WHERE id IN (${placeholders})
-        `
-      ).get(...childIds) || childContracts;
-  }
-
-  const isCorpsContracted =
-    !!(userRow.contractedCorps || childContracts.anyCorps);
-  const isIndependentContracted =
-    !!(userRow.contractedIndependent || childContracts.anyIndependent);
-  const isAffiliateContracted =
-    !!(userRow.contractedAffiliate || childContracts.anyAffiliate);
-
-  // RULES:
-  // 1) Corps contracted => free RSVP for "experience camp" and "camp"
-  const corpsFreeTypes = ["experience camp", "camp"];
-
-  // 2) Independent contracted => free RSVP for "BGI Audition" and "BGI Camp"
-  const bgiFreeTypes = ["bgi audition", "bgi camp"];
-
-  // 3) Affiliate contracted => add event types here if needed
-  const affiliateFreeTypes = [];
-
-  let isFreeForThisUser = false;
-  let freeReason = "";
-
-  if (isCorpsContracted && corpsFreeTypes.includes(eventType)) {
-    isFreeForThisUser = true;
-    freeReason =
-      "Contracted corps members (or their parents) do not pay for this camp.";
-  }
-
-  if (isIndependentContracted && bgiFreeTypes.includes(eventType)) {
-    isFreeForThisUser = true;
-    freeReason =
-      "Contracted independent members (or their parents) do not pay for this BGI event.";
-  }
-
-  if (isAffiliateContracted && affiliateFreeTypes.includes(eventType)) {
-    isFreeForThisUser = true;
-    freeReason =
-      "Contracted affiliate members (or their parents) do not pay for this event.";
-  }
-
-  // If user qualifies for free RSVP based on contract + event type
-  if (isFreeForThisUser) {
-    // Mark RSVP as "paid" so they don't get charged later
-    db.prepare(
-      "INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 1)"
-    ).run(req.user.userid, event.id);
-
-    req.session.flashMessage = freeReason || "You're RSVP'd!";
-    return res.redirect(`/event/${event.slug}`);
-  }
-
-  // If event itself is free, just RSVP (unpaid)
+  // If event itself is free, just RSVP
   if (amountCents <= 0) {
     db.prepare(
       "INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 0)"
     ).run(req.user.userid, event.id);
 
     req.session.flashMessage = "You're RSVP'd!";
+    return res.redirect(`/event/${event.slug}`);
+  }
+
+  // Add camp/event fee to account balance and RSVP as unpaid
+  if (payMode === "balance") {
+    const user = db.prepare("SELECT id, owed FROM users WHERE id = ?").get(req.user.userid);
+    if (!user) return res.redirect("/");
+
+    const newOwed = Number(user.owed || 0) + amountCents;
+    db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(newOwed, user.id);
+
+    db.prepare(
+      "INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 0)"
+    ).run(user.id, event.id);
+
+    const feeString = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amountCents / 100);
+
+    db.prepare(`
+      INSERT INTO paymentHistory (title, description, amount, method, date, user_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      `Event RSVP (balance): ${event.title}`,
+      `RSVP fee of ${feeString} added to account balance for ${new Date(event.datetime).toLocaleString("en-US")}.`,
+      amountCents,
+      "Charge",
+      Date.now(),
+      user.id
+    );
+
+    req.session.flashMessage =
+      `You're RSVP'd! ${feeString} was added to your account balance. Pay anytime from Make Payment or with cash/check through staff.`;
     return res.redirect(`/event/${event.slug}`);
   }
 
@@ -11465,6 +11439,7 @@ app.post("/api/mobile/login", async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
+    const deviceTrustToken = String(req.body.deviceTrustToken || "").trim();
     if (!email || !password) return res.status(400).json({ ok: false, message: "Email and password required" });
 
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
@@ -11486,22 +11461,24 @@ app.post("/api/mobile/login", async (req, res) => {
     if (rolesSystem.userRequiresMfa(db, user)) {
       const bypassMfa =
         String(process.env.E2E_BYPASS_MFA || "").trim().toLowerCase() === "true";
-      if (!bypassMfa) {
-      const code = rolesSystem.createMfaCode(db, user.id);
-      try {
-        await sendEmail(
-          user.email,
-          "Boise Gems login verification code",
-          `<h1>Your verification code</h1><p style="font-size:28px;letter-spacing:0.2em;font-weight:bold;">${code}</p><p>This code expires in 10 minutes.</p>`
+      const deviceTrusted =
+        !bypassMfa && rolesSystem.isTrustedDevice(db, user.id, deviceTrustToken);
+      if (!bypassMfa && !deviceTrusted) {
+        const code = rolesSystem.createMfaCode(db, user.id);
+        try {
+          await sendEmail(
+            user.email,
+            "Boise Gems login verification code",
+            `<h1>Your verification code</h1><p style="font-size:28px;letter-spacing:0.2em;font-weight:bold;">${code}</p><p>This code expires in 10 minutes.</p>`
+          );
+        } catch (err) {
+          console.error("mobile MFA email failed:", err);
+        }
+        const mfaToken = jwt.sign(
+          { exp: Math.floor(Date.now() / 1000) + 60 * 10, purpose: "mfa", userid: Number(user.id) },
+          process.env.JWTSECRET
         );
-      } catch (err) {
-        console.error("mobile MFA email failed:", err);
-      }
-      const mfaToken = jwt.sign(
-        { exp: Math.floor(Date.now() / 1000) + 60 * 10, purpose: "mfa", userid: Number(user.id) },
-        process.env.JWTSECRET
-      );
-      return res.json({ ok: true, mfaRequired: true, mfaToken });
+        return res.json({ ok: true, mfaRequired: true, mfaToken });
       }
     }
 
@@ -11535,6 +11512,14 @@ app.post("/api/mobile/login/mfa", (req, res) => {
   try {
     const mfaToken = String(req.body.mfaToken || "");
     const code = String(req.body.code || "").trim();
+    const trustDevice =
+      req.body.trustDevice === true ||
+      req.body.trustDevice === 1 ||
+      req.body.trustDevice === "1" ||
+      req.body.trustDevice === "true" ||
+      req.body.trust_device === "on" ||
+      req.body.trust_device === "1" ||
+      req.body.trust_device === true;
     let decoded;
     try {
       decoded = jwt.verify(mfaToken, process.env.JWTSECRET);
@@ -11551,6 +11536,10 @@ app.post("/api/mobile/login/mfa", (req, res) => {
     if (!rolesSystem.verifyMfaCode(db, user.id, code)) {
       rolesSystem.recordLogin(db, { userId: user.id, email: user.email, success: false, req });
       return res.status(401).json({ ok: false, message: "Invalid or expired code" });
+    }
+    let deviceTrustToken = null;
+    if (trustDevice) {
+      deviceTrustToken = rolesSystem.createTrustedDevice(db, user.id, req);
     }
     const sid = rolesSystem.createAuthSession(db, user.id, req);
     const token = jwt.sign(
@@ -11571,7 +11560,45 @@ app.post("/api/mobile/login/mfa", (req, res) => {
       process.env.JWTSECRET
     );
     rolesSystem.recordLogin(db, { userId: user.id, email: user.email, success: true, req });
-    return res.json({ ok: true, token, user: serializeUser(user) });
+    return res.json({
+      ok: true,
+      token,
+      user: serializeUser(user),
+      ...(deviceTrustToken ? { deviceTrustToken } : {}),
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+app.post("/api/mobile/login/mfa/resend", async (req, res) => {
+  try {
+    const mfaToken = String(req.body.mfaToken || "");
+    let decoded;
+    try {
+      decoded = jwt.verify(mfaToken, process.env.JWTSECRET);
+    } catch {
+      return res.status(401).json({ ok: false, message: "MFA session expired" });
+    }
+    if (decoded.purpose !== "mfa" || !decoded.userid) {
+      return res.status(401).json({ ok: false, message: "Invalid MFA session" });
+    }
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(decoded.userid);
+    if (!user || user.deactivated_at) {
+      return res.status(401).json({ ok: false, message: "Invalid user" });
+    }
+    const code = rolesSystem.createMfaCode(db, user.id);
+    try {
+      await sendEmail(
+        user.email,
+        "Boise Gems login verification code",
+        `<h1>Your verification code</h1><p style="font-size:28px;letter-spacing:0.2em;font-weight:bold;">${code}</p><p>This code expires in 10 minutes.</p>`
+      );
+    } catch (err) {
+      console.error("mobile MFA resend failed:", err);
+      return res.status(500).json({ ok: false, message: "Could not send verification email" });
+    }
+    return res.json({ ok: true, message: "Code resent" });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });
   }

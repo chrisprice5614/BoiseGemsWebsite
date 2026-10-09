@@ -1715,16 +1715,93 @@ function cleanupMessagingForUser(uid) {
   db.prepare("DELETE FROM device_tokens WHERE user_id = ?").run(uid);
 }
 
-function deleteUserAccount(userId, actorId) {
+/** Outstanding balance in cents (owed − paid). Credits do not block deletion. */
+function getOutstandingBalanceCents(userRow) {
+  if (!userRow) return 0;
+  const owed = Number(userRow.owed) || 0;
+  const paid = Number(userRow.paid) || 0;
+  return Math.max(0, owed - paid);
+}
+
+/**
+ * Returns whether a user may delete their account.
+ * Blocks when the account (or a linked child) still owes money.
+ */
+function getAccountDeletionEligibility(userId) {
+  const uid = Number(userId);
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(uid);
+  if (!user) return { ok: false, code: "not_found", message: "User not found." };
+
+  if (Number(user.admin) === 1) {
+    const adminCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE admin = 1").get().c;
+    if (adminCount <= 1) {
+      return {
+        ok: false,
+        code: "last_admin",
+        message: "Cannot delete the last administrator account. Transfer admin access first.",
+      };
+    }
+  }
+
+  const balanceCents = getOutstandingBalanceCents(user);
+  if (balanceCents > 0) {
+    return {
+      ok: false,
+      code: "balance_due",
+      message:
+        "Your account has an outstanding balance and cannot be deleted until it is paid in full. " +
+        "Pay your balance in Payments, then try again. Deleting an account does not cancel amounts you owe.",
+      balanceDollars: balanceCents / 100,
+    };
+  }
+
+  try {
+    if (parentLinks.isParentAccount(user)) {
+      const children = parentLinks.getChildrenForParent(db, uid) || [];
+      for (const child of children) {
+        const childBal = getOutstandingBalanceCents(child);
+        if (childBal > 0) {
+          const name = `${child.firstname || ""} ${child.lastname || ""}`.trim() || "a linked child";
+          return {
+            ok: false,
+            code: "child_balance_due",
+            message:
+              `${name} still has an outstanding balance. Pay that balance before deleting this parent account. ` +
+              "Deleting an account does not cancel amounts owed.",
+            balanceDollars: childBal / 100,
+            childId: child.id,
+          };
+        }
+      }
+    }
+  } catch (_) {}
+
+  return {
+    ok: true,
+    balanceDollars: 0,
+    message: "Account can be deleted.",
+  };
+}
+
+function deleteUserAccount(userId, actorId, options = {}) {
   const uid = Number(userId);
   const actor = Number(actorId);
+  const allowSelf = !!options.allowSelf;
+  const preserveFinancialRecords = !!options.preserveFinancialRecords;
+  const enforceBalance = options.enforceBalance === true || allowSelf;
+
   if (!uid) return { ok: false, message: "Invalid user id." };
-  if (uid === actor) return { ok: false, message: "You cannot delete your own account." };
+  if (uid === actor && !allowSelf) {
+    return { ok: false, message: "You cannot delete your own account from admin tools. Use Account Deletion instead." };
+  }
 
   const target = db.prepare("SELECT * FROM users WHERE id = ?").get(uid);
   if (!target) return { ok: false, message: "User not found." };
 
-  if (Number(target.admin) === 1) {
+  if (enforceBalance) {
+    const eligibility = getAccountDeletionEligibility(uid);
+    if (!eligibility.ok) return eligibility;
+  } else if (Number(target.admin) === 1) {
     const adminCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE admin = 1").get().c;
     if (adminCount <= 1) {
       return { ok: false, message: "Cannot delete the last administrator account." };
@@ -1750,7 +1827,13 @@ function deleteUserAccount(userId, actorId) {
     }
     db.prepare("DELETE FROM formUploads WHERE user_id = ?").run(uid);
 
-    db.prepare("DELETE FROM paymentHistory WHERE user_id = ?").run(uid);
+    // Keep ledger rows for self-service deletion (legal / bookkeeping retention).
+    // Admin force-delete may still remove them.
+    if (preserveFinancialRecords) {
+      db.prepare("UPDATE paymentHistory SET user_id = NULL WHERE user_id = ?").run(uid);
+    } else {
+      db.prepare("DELETE FROM paymentHistory WHERE user_id = ?").run(uid);
+    }
     db.prepare("DELETE FROM contractedMembers WHERE user_id = ?").run(uid);
     db.prepare("DELETE FROM permissions WHERE user_id = ?").run(uid);
     db.prepare("DELETE FROM contractExtension WHERE user_id = ? OR child_id = ? OR extender = ?").run(uid, uid, uid);
@@ -4293,6 +4376,67 @@ app.get('/contact', (req,res) => {
 app.get("/privacy", (req, res) => {
   return res.render("privacy");
 })
+
+// Play Console / App Store: web pathway to request account deletion
+app.get("/account-deletion", (req, res) => {
+  const userId = req.user && req.user.userid ? req.user.userid : null;
+  let eligibility = null;
+  if (userId) {
+    eligibility = getAccountDeletionEligibility(userId);
+  }
+  const flash = req.session.flashMessage || null;
+  delete req.session.flashMessage;
+  return res.render("account-deletion", {
+    loggedIn: !!userId,
+    eligibility,
+    flashMessage: flash,
+  });
+});
+
+app.post("/account-deletion", mustBeLoggedInAny, (req, res) => {
+  const password = String(req.body.password || "");
+  const confirm = String(req.body.confirm || "").trim().toUpperCase();
+  if (confirm !== "DELETE") {
+    req.session.flashMessage = "Type DELETE in the confirmation box to continue.";
+    return res.redirect("/account-deletion");
+  }
+  if (!password) {
+    req.session.flashMessage = "Password is required.";
+    return res.redirect("/account-deletion");
+  }
+
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!user) {
+    req.session.flashMessage = "User not found.";
+    return res.redirect("/account-deletion");
+  }
+
+  const match = bcrypt.compareSync(password, user.password);
+  if (!match) {
+    req.session.flashMessage = "Incorrect password.";
+    return res.redirect("/account-deletion");
+  }
+
+  const result = deleteUserAccount(user.id, user.id, {
+    allowSelf: true,
+    enforceBalance: true,
+    preserveFinancialRecords: true,
+  });
+
+  if (!result.ok) {
+    req.session.flashMessage = result.message;
+    return res.redirect("/account-deletion");
+  }
+
+  try {
+    res.clearCookie("bgcookie", AUTH_COOKIE);
+  } catch (_) {}
+  req.session.destroy(() => {
+    return res.render("message", {
+      message: "Your Boise Gems account has been deleted. We're sorry to see you go.",
+    });
+  });
+});
 
 app.get("/support/issue", mustBeLoggedInAny, (req, res) => {
   let role = "Member";
@@ -11050,7 +11194,7 @@ app.post("/files/folder/:id/notify", mustBeStaffOrAdmin, async (req, res) => {
 // Year view - show sections under Corps/Independent
 app.get("/files/:scope/:year", mustBeContractedForFiles, (req, res) => {
   const scope = (req.params.scope || "").toLowerCase();
-  const year = parseInt(req.params.year, 10) || FILES_MEMBER_YEAR;
+  const year = parseInt(req.params.year, 10) || getCurrentSeasonYear();
 
   if (!["corps", "indoor"].includes(scope)) {
     return res.status(404).render("message", { message: "Unknown file group." });
@@ -11822,6 +11966,63 @@ app.get("/api/mobile/me", mobileAuth, (req, res) => {
   }
 });
 
+// GET /api/mobile/account/deletion-status
+app.get("/api/mobile/account/deletion-status", mobileAuth, (req, res) => {
+  try {
+    const eligibility = getAccountDeletionEligibility(req.user.userid);
+    return res.json({
+      ok: true,
+      canDelete: !!eligibility.ok,
+      code: eligibility.code || null,
+      message: eligibility.message || null,
+      balanceDollars: eligibility.balanceDollars ?? 0,
+    });
+  } catch (e) {
+    console.error("[Mobile API] account deletion-status error:", e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// POST /api/mobile/account/delete
+// Requires current password. Blocks if the account (or linked child) owes a balance.
+app.post("/api/mobile/account/delete", mobileAuth, (req, res) => {
+  try {
+    const password = String(req.body?.password || "");
+    if (!password) {
+      return res.status(400).json({ ok: false, message: "Password is required to delete your account." });
+    }
+
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!user) return res.status(404).json({ ok: false, message: "User not found" });
+
+    const match = bcrypt.compareSync(password, user.password);
+    if (!match) {
+      return res.status(401).json({ ok: false, message: "Incorrect password." });
+    }
+
+    const result = deleteUserAccount(user.id, user.id, {
+      allowSelf: true,
+      enforceBalance: true,
+      preserveFinancialRecords: true,
+    });
+
+    if (!result.ok) {
+      const status = result.code === "balance_due" || result.code === "child_balance_due" ? 409 : 400;
+      return res.status(status).json({
+        ok: false,
+        message: result.message,
+        code: result.code || null,
+        balanceDollars: result.balanceDollars ?? null,
+      });
+    }
+
+    return res.json({ ok: true, message: "Your account has been deleted." });
+  } catch (e) {
+    console.error("[Mobile API] account delete error:", e.message || e);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
 // POST /api/mobile/profile-photo
 app.post("/api/mobile/profile-photo", mobileAuth, (req, res, next) => {
   imageUpload.single("photo")(req, res, (err) => {
@@ -11955,7 +12156,7 @@ app.get("/api/mobile/files", mobileAuth, (req, res) => {
       SELECT * FROM file_folders
       WHERE parent_id IS NULL AND year = ?
       ORDER BY scope
-    `).all(FILES_MEMBER_YEAR);
+    `).all(getCurrentSeasonYear());
     return res.json({ ok: true, roots });
   } catch (e) {
     return res.status(500).json({ ok: false, message: "Server error" });

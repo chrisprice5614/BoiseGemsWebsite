@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Delete Account | Boise Gems</title>
+  <%- include("includes/head") %>
+  <% if (!testSite) { %>
+  <meta name="description" content="Request deletion of your Boise Gems account and associated personal data.">
+  <link rel="canonical" href="https://boisegems.org/account-deletion">
+  <% } %>
+</head>
+<body class="about-page" style="background:#fafafa;">
+<header><%- include("includes/header") %></header>
+
+<main>
+  <section class="about-section" style="margin-top: 24px;">
+    <div class="about-wrap about-prose" style="max-width: 720px;">
+      <h1 style="margin-bottom: 8px;">Delete your account</h1>
+      <p class="muted" style="line-height:1.6; color:#666;">
+        You can request deletion of your Boise Gems account and associated personal data from this page
+        or from the Boise Gems mobile app (Profile → Delete Account).
+      </p>
+
+      <% if (flashMessage) { %>
+      <div style="background:#fde8e8;border:1px solid #e5a0a0;color:#7a1f1f;padding:12px 14px;margin:16px 0;border-radius:4px;">
+        <%= flashMessage %>
+      </div>
+      <% } %>
+
+      <h2>Before you delete</h2>
+      <ul style="line-height:1.75; padding-left: 1.25rem;">
+        <li><strong>Outstanding balances must be paid.</strong> If you (or a linked child on a parent account) still owe tuition or other charges, deletion is blocked until the balance is paid in full. Deleting an account does not cancel amounts you owe under your contract or program agreements.</li>
+        <li>Deletion removes your login, profile, messages, forms, and similar personal account data.</li>
+        <li>We may retain anonymized or de-identified financial records as needed for bookkeeping, tax, and legal obligations.</li>
+      </ul>
+
+      <% if (!loggedIn) { %>
+      <h2>How to request deletion</h2>
+      <ol style="line-height:1.75; padding-left: 1.25rem;">
+        <li><a href="/login">Log in</a> to your Boise Gems account, then return to this page to delete it, or</li>
+        <li>Email <a href="mailto:theboisegems@gmail.com?subject=Account%20deletion%20request">theboisegems@gmail.com</a> from the email on your account with the subject “Account deletion request.” Include your full name. Staff will confirm identity and process the request if your balance is clear.</li>
+      </ol>
+      <p>
+        You can also delete your account in the mobile app under <strong>Profile → Delete Account</strong>.
+      </p>
+      <% } else if (eligibility && !eligibility.ok) { %>
+      <h2>Deletion currently blocked</h2>
+      <p style="line-height:1.6;"><%= eligibility.message %></p>
+      <% if (eligibility.balanceDollars) { %>
+      <p><strong>Amount due:</strong> $<%= Number(eligibility.balanceDollars).toFixed(2) %></p>
+      <% } %>
+      <p>
+        <a href="/member-transactions">View transactions / pay balance</a>
+        · <a href="/contact">Contact us</a>
+      </p>
+      <% } else { %>
+      <h2>Delete my account now</h2>
+      <p style="line-height:1.6; color:#7a1f1f;">
+        This permanently deletes your account. This cannot be undone.
+      </p>
+      <form method="post" action="/account-deletion" style="margin-top: 16px; display:grid; gap:12px; max-width:420px;">
+        <label>
+          <span style="display:block; font-weight:600; margin-bottom:4px;">Password</span>
+          <input type="password" name="password" required autocomplete="current-password"
+                 style="width:100%; padding:10px; border:1px solid #ccc;">
+        </label>
+        <label>
+          <span style="display:block; font-weight:600; margin-bottom:4px;">Type DELETE to confirm</span>
+          <input type="text" name="confirm" required autocomplete="off"
+                 style="width:100%; padding:10px; border:1px solid #ccc;">
+        </label>
+        <button type="submit"
+                style="background:#8b1e2d;color:#fff;border:0;padding:12px 16px;font-weight:700;cursor:pointer;">
+          Permanently delete my account
+        </button>
+      </form>
+      <% } %>
+
+      <p style="margin-top: 28px;">
+        See also our <a href="/privacy#account-deletion">Privacy Policy</a>.
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

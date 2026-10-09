@@ -468,12 +468,16 @@
   .bg-msg-perm-list label {
     display: flex; gap: 8px; align-items: center; font-size: 0.84rem; font-weight: 500; color: #333;
   }
-  .bg-msg-main-title { cursor: pointer; }
-  .bg-msg-main-title.is-group:hover { text-decoration: underline; }
   .bg-msg-info {
-    position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column;
-    background: #faf8fc; animation: bgMsgComposeIn 0.22s ease;
+    position: absolute; inset: 0; z-index: 7; display: none; flex-direction: column;
+    background: #faf8fc;
   }
+  .bg-msg-info:not([hidden]) {
+    display: flex;
+    animation: bgMsgComposeIn 0.22s ease;
+  }
+  .bg-msg-compose[hidden],
+  .bg-msg-info[hidden] { display: none !important; }
   .bg-msg-info-head {
     display: flex; align-items: center; gap: 10px; padding: 14px 16px;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: #fff;
@@ -619,8 +623,8 @@
         <div class="bg-msg-main-head">
           <button type="button" class="bg-msg-icon-btn bg-msg-back-mobile" id="bgMsgBack" aria-label="Back to chats"><ion-icon name="arrow-back"></ion-icon></button>
           <div class="bg-msg-avatar bg-msg-main-avatar" id="bgMsgMainAvatar" hidden></div>
-          <div class="bg-msg-main-title" id="bgMsgTitle" title="Group details">Messages</div>
-          <button type="button" class="bg-msg-icon-btn" id="bgMsgInfoBtn" hidden aria-label="Group details"><ion-icon name="information-circle-outline"></ion-icon></button>
+          <div class="bg-msg-main-title" id="bgMsgTitle">Messages</div>
+          <button type="button" class="bg-msg-icon-btn" id="bgMsgInfoBtn" hidden aria-label="Group details" title="Group details"><ion-icon name="information-circle-outline"></ion-icon></button>
           <button type="button" class="bg-msg-icon-btn" id="bgMsgClose" aria-label="Close messages"><ion-icon name="close"></ion-icon></button>
         </div>
 
@@ -911,7 +915,6 @@
     if (els.composer) els.composer.hidden = !canSend;
     if (els.readonly) els.readonly.hidden = canSend;
     if (els.infoBtn) els.infoBtn.hidden = !isGroup;
-    if (els.title) els.title.classList.toggle('is-group', !!isGroup);
   }
 
   function selectConversation(convId, title) {
@@ -1431,9 +1434,6 @@
   if (els.groupTitle) els.groupTitle.addEventListener('input', updateCreateBtn);
   if (els.infoBtn) els.infoBtn.addEventListener('click', openInfoPanel);
   if (els.infoBack) els.infoBack.addEventListener('click', closeInfoPanel);
-  if (els.title) els.title.addEventListener('click', function () {
-    if (state.activeConv && state.activeConv.type === 'group') openInfoPanel();
-  });
   document.addEventListener('change', function (e) {
     if (e.target && e.target.classList && e.target.classList.contains('bg-msg-aud')) {
       updateCreateBtn();

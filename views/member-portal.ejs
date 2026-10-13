@@ -178,15 +178,7 @@
             <a href="/make-payment" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
           <% } %>
           <% auditionActions.forEach(function(action) { %>
-            <% if (action.unlocked && action.embedHref) { %>
-              <a href="<%= action.embedHref %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
-            <% } else if (action.unlocked && action.url) { %>
-              <a href="<%= action.url %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
-            <% } else if (action.unlocked) { %>
-              <a href="/video-audition/unlocked?program=<%= action.program %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
-            <% } else { %>
-              <a href="<%= action.payHref %>" class="pd-action-btn"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition ($<%= (action.feeCents / 100).toFixed(0) %>)</a>
-            <% } %>
+            <a href="<%= action.url || action.payHref %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
           <% }) %>
           <% if (contracts.length) { %>
             <a class="pd-action-btn pd-action-btn--primary" href="#" onclick="pdShow(document.querySelector('[onclick*=contracts]'),'contracts');return false;"><ion-icon name="document-text"></ion-icon> View Contracts</a>
@@ -398,7 +390,7 @@
     <div class="pd-section" id="pd-sec-audition">
       <div class="pd-section-inner">
         <div class="pd-section-heading">Video Audition</div>
-        <div class="pd-section-sub">Submit a video audition for Boise Gems Drum &amp; Bugle Corps or Independent.</div>
+        <div class="pd-section-sub">Submit a video audition on Neopply for Boise Gems Drum &amp; Bugle Corps or Independent. No application fee on this site.</div>
 
         <div id="va-spots-panel" class="pd-info-card" style="margin-bottom:20px;display:none;">
           <div class="pd-info-label">Corps roster (from contracts)</div>
@@ -419,34 +411,14 @@
           <div class="pd-info-card">
             <div class="pd-info-label"><%= action.label %></div>
             <div class="pd-info-value" style="font-size:1rem;margin-bottom:10px;">
-              <% if (action.unlocked) { %>
-                Unlocked for <%= action.seasonYear %>
-              <% } else { %>
-                $<%= (action.feeCents / 100).toFixed(0) %> application fee (+ 6% processing)
-              <% } %>
+              Open on Neopply — no fee here
             </div>
-            <% if (action.program === 'corps') { %>
             <p style="font-size:0.85rem;color:#666;margin:0 0 12px;line-height:1.5;">
-              Audition through Neopply without leaving the member portal. Your Gems profile can be linked so you do not re-enter basic details.
+              Opens the Boise Gems page on Neopply in a new tab so you can submit your video audition.
             </p>
-            <% } else { %>
-            <p style="font-size:0.85rem;color:#666;margin:0 0 12px;line-height:1.5;">
-              Opens Omnipply in a new tab after you pay the application fee.
-            </p>
-            <% } %>
-            <% if (action.unlocked && action.embedHref) { %>
-              <a href="<%= action.embedHref %>" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
-                <ion-icon name="videocam"></ion-icon> Open <%= action.shortLabel %> Audition
-              </a>
-            <% } else if (action.unlocked && action.url) { %>
-              <a href="<%= action.url %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
-                <ion-icon name="videocam"></ion-icon> Open <%= action.shortLabel %> Audition
-              </a>
-            <% } else { %>
-              <a href="<%= action.payHref %>" class="pd-action-btn" style="width:100%;justify-content:center;">
-                <ion-icon name="card"></ion-icon> Pay &amp; Unlock ($<%= (action.feeCents / 100).toFixed(0) %>)
-              </a>
-            <% } %>
+            <a href="<%= action.url || action.payHref %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
+              <ion-icon name="videocam"></ion-icon> Open <%= action.shortLabel %> Audition
+            </a>
           </div>
           <% }); %>
         </div>

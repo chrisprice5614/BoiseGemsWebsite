@@ -9,7 +9,7 @@ const DEFAULT_JOIN_INDEPENDENT_HTML = `
   <ol style="margin:8px auto 16px; padding-left:20px; max-width:70ch; text-align:left;">
     <li style="margin-bottom:8px;"><strong>Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can keep your info, track RSVPs, and share audition materials.</li>
     <li style="margin-bottom:8px;"><strong>Download Audition Materials</strong> - Log in to the <a href="/login?returnTo=/member-portal">Member Portal</a> and download the packet with warmups, excerpts, and rehearsal guides.</li>
-    <li style="margin-bottom:8px;"><strong>Click "BGI Video Audition"</strong> - In the Member Portal pay the $40 season application fee to unlock Omnipply, then follow the submission instructions on the Video Audition website.</li>
+    <li style="margin-bottom:8px;"><strong>Click "BGI Video Audition"</strong> - In the Member Portal, open the Video Audition link to go to <a href="https://www.neopply.com/org/boise-gems" target="_blank" rel="noopener">Neopply</a> and follow the submission instructions (no fee on this site).</li>
   </ol>
 </section>
 
@@ -30,7 +30,7 @@ const DEFAULT_JOIN_INDEPENDENT_HTML = `
     <ol style="margin:0 0 0 20px;">
       <li style="margin-bottom:8px;"><strong>Create an Account</strong> - Sign up at <a href="/register-member">/register-member</a> so we can associate your submission with your profile.</li>
       <li style="margin-bottom:8px;"><strong>Download Audition Materials</strong> - Log in to the <a href="/login?returnTo=/member-portal">Member Portal</a> and download the packet with warmups, excerpts, and rehearsal guides.</li>
-      <li style="margin-bottom:0;"><strong>Click "BGI Video Audition"</strong> - In the Member Portal, pay the $40 application fee for the current season to unlock the Omnipply video audition link, then follow the submission instructions.</li>
+      <li style="margin-bottom:0;"><strong>Click "BGI Video Audition"</strong> - In the Member Portal, open the Video Audition link to go to <a href="https://www.neopply.com/org/boise-gems" target="_blank" rel="noopener">Neopply</a> and follow the submission instructions (no fee on this site).</li>
     </ol>
   </div>
 

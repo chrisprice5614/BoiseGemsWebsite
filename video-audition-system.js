@@ -1,20 +1,24 @@
 /**
- * Video audition unlocks - pay once per program per season to open audition links.
- * Corps: $30 (Neopply embed) | BGI (independent): $40 (Omnipply)
+ * Video auditions — members go straight to Neopply (no site fee).
+ * https://www.neopply.com/org/boise-gems
  */
 const neopplyPartner = require("./neopply-partner");
+
+const NEOPPLY_ORG_AUDITION_URL =
+  process.env.NEOPPLY_ORG_AUDITION_URL || "https://www.neopply.com/org/boise-gems";
+
 const PROGRAMS = {
   corps: {
     key: "corps",
     label: "Boise Gems Drum & Bugle Corps",
     shortLabel: "Corps",
-    feeCents: 3000,
+    feeCents: 0,
   },
   independent: {
     key: "independent",
     label: "Boise Gems Independent",
     shortLabel: "BGI",
-    feeCents: 4000,
+    feeCents: 0,
   },
 };
 
@@ -148,41 +152,39 @@ function recordNeopplyConsent(db, userId, programKey) {
 }
 
 function getPortalAuditionActions(db, member, seasonYear) {
-  const unlocks = getUnlocksForUser(db, member.id, seasonYear);
-  const section = member.section;
   const actions = [];
 
   if (!member.contractedCorps) {
-    const unlocked = !!unlocks.corps;
     actions.push({
       program: "corps",
       shortLabel: PROGRAMS.corps.shortLabel,
       label: PROGRAMS.corps.label,
-      feeCents: PROGRAMS.corps.feeCents,
-      unlocked,
+      feeCents: 0,
+      unlocked: true,
       seasonYear,
       provider: "neopply",
-      url: unlocked ? "/video-audition/corps" : null,
-      embedHref: unlocked ? "/video-audition/corps" : null,
-      payHref: `/video-audition/pay?program=corps`,
-      hasConsent: hasNeopplyConsent(db, member.id, "corps"),
+      url: NEOPPLY_ORG_AUDITION_URL,
+      embedHref: null,
+      payHref: NEOPPLY_ORG_AUDITION_URL,
+      external: true,
+      hasConsent: true,
     });
   }
 
   if (!member.contractedIndependent) {
-    const unlocked = !!unlocks.independent;
     actions.push({
       program: "independent",
       shortLabel: PROGRAMS.independent.shortLabel,
       label: PROGRAMS.independent.label,
-      feeCents: PROGRAMS.independent.feeCents,
-      unlocked,
+      feeCents: 0,
+      unlocked: true,
       seasonYear,
-      provider: "omnipply",
-      url: unlocked ? getOmnipplyUrl("independent", section) : null,
+      provider: "neopply",
+      url: NEOPPLY_ORG_AUDITION_URL,
       embedHref: null,
-      payHref: `/video-audition/pay?program=independent`,
-      hasConsent: false,
+      payHref: NEOPPLY_ORG_AUDITION_URL,
+      external: true,
+      hasConsent: true,
     });
   }
 
@@ -202,137 +204,13 @@ function registerVideoAuditionRoutes(app, deps) {
     opsSystem,
   } = deps;
 
+  // Legacy pay URLs — no fee; send members to Neopply.
   app.get("/video-audition/pay", mustBeMember, (req, res) => {
-    const program = getProgram(req.query.program);
-    if (!program) {
-      req.session.flashMessage = "Choose Corps or BGI video audition.";
-      return res.redirect("/member-portal");
-    }
-
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/");
-
-    if (program.key === "corps" && member.contractedCorps) {
-      req.session.flashMessage = "You are already contracted with the Corps.";
-      return res.redirect("/member-portal");
-    }
-    if (program.key === "independent" && member.contractedIndependent) {
-      req.session.flashMessage = "You are already contracted with Boise Gems Independent.";
-      return res.redirect("/member-portal");
-    }
-
-    const seasonYear = getCurrentSeasonYear();
-    if (hasUnlock(db, member.id, program.key, seasonYear)) {
-      if (program.key === "corps") return res.redirect("/video-audition/corps");
-      return res.redirect(`/video-audition/unlocked?program=${program.key}`);
-    }
-
-    const feeCents = program.feeCents;
-    const processingFee = Math.round(feeCents * 0.06);
-    const totalCharge = feeCents + processingFee;
-
-    return res.render("video-audition-pay", {
-      member,
-      program,
-      seasonYear,
-      feeCents,
-      processingFee,
-      totalCharge,
-    });
+    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
   });
 
-  app.post("/video-audition/pay", mustBeMember, async (req, res) => {
-    const program = getProgram(req.body.program || req.query.program);
-    if (!program) {
-      req.session.flashMessage = "Choose Corps or BGI video audition.";
-      return res.redirect("/member-portal");
-    }
-
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/");
-
-    if (program.key === "corps" && member.contractedCorps) {
-      return res.redirect("/member-portal");
-    }
-    if (program.key === "independent" && member.contractedIndependent) {
-      return res.redirect("/member-portal");
-    }
-
-    const seasonYear = getCurrentSeasonYear();
-    if (hasUnlock(db, member.id, program.key, seasonYear)) {
-      if (program.key === "corps") return res.redirect("/video-audition/corps");
-      return res.redirect(`/video-audition/unlocked?program=${program.key}`);
-    }
-
-    const feeCents = program.feeCents;
-    const processingFee = Math.round(feeCents * 0.06);
-    const totalCharge = feeCents + processingFee;
-
-    const insert = db.prepare(`
-      INSERT INTO potential_video_audition
-        (user_id, program, season_year, amount, processing_fee, total_charge, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    const result = insert.run(
-      member.id,
-      program.key,
-      seasonYear,
-      feeCents,
-      processingFee,
-      totalCharge,
-      Date.now()
-    );
-    const potentialId = result.lastInsertRowid;
-
-    try {
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        line_items: [
-          {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: `${program.shortLabel} video audition (${seasonYear})`,
-                description: `Unlocks the ${program.label} video audition for the ${seasonYear} season.`,
-              },
-              unit_amount: totalCharge,
-            },
-            quantity: 1,
-          },
-        ],
-        mode: "payment",
-        customer_email: member.email || undefined,
-        success_url: `${process.env.BASEURL}/video-audition/success/${potentialId}`,
-        cancel_url: `${process.env.BASEURL}/video-audition/pay?program=${program.key}`,
-        metadata: {
-          type: "video_audition",
-          program: program.key,
-          season_year: String(seasonYear),
-          user_id: String(member.id),
-          potential_id: String(potentialId),
-        },
-      });
-
-      db.prepare(
-        "UPDATE potential_video_audition SET stripe_session_id = ? WHERE id = ?"
-      ).run(session.id, potentialId);
-
-      return res.redirect(303, session.url);
-    } catch (err) {
-      console.error("Video audition Stripe session error:", err);
-      if (opsSystem) {
-        opsSystem.logFailedPayment(db, {
-          message: "Failed to create Stripe checkout for video audition",
-          detail: err,
-          req,
-          statusCode: 502,
-        });
-        opsSystem.markLogged(res, err);
-      }
-      db.prepare("DELETE FROM potential_video_audition WHERE id = ?").run(potentialId);
-      req.session.flashMessage = "Could not start checkout. Please try again.";
-      return res.redirect(`/video-audition/pay?program=${program.key}`);
-    }
+  app.post("/video-audition/pay", mustBeMember, (req, res) => {
+    return res.redirect(303, NEOPPLY_ORG_AUDITION_URL);
   });
 
   app.get("/video-audition/success/:potentialId", mustBeLoggedIn, async (req, res) => {
@@ -408,18 +286,11 @@ function registerVideoAuditionRoutes(app, deps) {
 
     const member = db.prepare("SELECT * FROM users WHERE id = ?").get(potential.user_id);
     if (member && member.email && sendEmail) {
-      const link =
-        potential.program === "corps"
-          ? `${process.env.BASEURL}/video-audition/corps`
-          : getOmnipplyUrl(potential.program, member.section);
+      const link = NEOPPLY_ORG_AUDITION_URL;
       const html = `
         <p>Hi ${member.firstname},</p>
-        <p>Your ${program ? program.label : "video audition"} application fee for the <strong>${seasonYear}</strong> season is paid.</p>
-        ${
-          link
-            ? `<p><a href="${link}">Open your video audition</a></p>`
-            : `<p>Your portal now shows the unlocked Video Audition button for this program.</p>`
-        }
+        <p>Your ${program ? program.label : "video audition"} for the <strong>${seasonYear}</strong> season is ready.</p>
+        <p><a href="${link}">Open your video audition on Neopply</a></p>
         <p>- Boise Gems Staff</p>
       `;
       try {
@@ -438,42 +309,11 @@ function registerVideoAuditionRoutes(app, deps) {
       }
     }
 
-    return res.redirect(
-      potential.program === "corps"
-        ? "/video-audition/corps"
-        : `/video-audition/unlocked?program=${potential.program}`
-    );
+    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
   });
 
   app.get("/video-audition/corps", mustBeMember, (req, res) => {
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/");
-    if (member.contractedCorps) {
-      req.session.flashMessage = "You are already contracted with the Corps.";
-      return res.redirect("/member-portal");
-    }
-
-    const seasonYear = getCurrentSeasonYear();
-    const unlocked = hasUnlock(db, member.id, "corps", seasonYear);
-    if (!unlocked) {
-      return res.redirect("/video-audition/pay?program=corps");
-    }
-
-    const hasConsent = hasNeopplyConsent(db, member.id, "corps");
-    const accessToken = req.cookies.bgcookie || "";
-    let embedUrl = null;
-    if (hasConsent && accessToken) {
-      embedUrl = neopplyPartner.buildNeopplyCorpsEmbedUrl(member, accessToken, member.section);
-    }
-
-    return res.render("video-audition-corps", {
-      member,
-      seasonYear,
-      unlocked,
-      hasConsent,
-      embedUrl,
-      neopplyPrivacyUrl: process.env.NEOPPLY_PRIVACY_URL || "https://neopply.com/privacy",
-    });
+    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
   });
 
   app.post("/video-audition/corps/consent", mustBeMember, (req, res) => {
@@ -488,11 +328,11 @@ function registerVideoAuditionRoutes(app, deps) {
     const agreed = String(req.body.agree || "").trim().toLowerCase();
     if (agreed !== "yes" && agreed !== "on" && agreed !== "1" && agreed !== "true") {
       req.session.flashMessage = "You must agree before your information can be shared with Neopply.";
-      return res.redirect("/video-audition/corps");
+      return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
     }
 
     recordNeopplyConsent(db, member.id, "corps");
-    return res.redirect("/video-audition/corps");
+    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
   });
 
   app.get("/api/partner/neopply/embed-url", mustBeMember, (req, res) => {
@@ -526,29 +366,12 @@ function registerVideoAuditionRoutes(app, deps) {
   });
 
   app.get("/video-audition/unlocked", mustBeMember, (req, res) => {
-    const program = getProgram(req.query.program) || PROGRAMS.corps;
-    if (program.key === "corps") {
-      return res.redirect("/video-audition/corps");
-    }
-
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/");
-
-    const seasonYear = getCurrentSeasonYear();
-    const unlocked = hasUnlock(db, member.id, program.key, seasonYear);
-    const url = unlocked ? getOmnipplyUrl(program.key, member.section) : null;
-
-    return res.render("video-audition-unlocked", {
-      member,
-      program,
-      seasonYear,
-      unlocked,
-      url,
-    });
+    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
   });
 }
 
 module.exports = {
+  NEOPPLY_ORG_AUDITION_URL,
   PROGRAMS,
   OMNIPPLY_URLS,
   initVideoAudition,

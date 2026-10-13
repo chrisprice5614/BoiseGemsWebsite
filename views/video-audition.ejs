@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title><%= program.shortLabel %> Video Audition - Boise Gems</title>
+  <%- include("includes/head") %>
+  <style>
+    .va-wrap { max-width: 920px; margin: 0 auto; padding: 8px 12px 28px; }
+    .va-hero {
+      text-align: center;
+      margin: 8px 0 18px;
+    }
+    .va-hero h1 { margin: 0 0 6px; }
+    .va-hero p { margin: 0 auto; max-width: 58ch; color: #555; line-height: 1.45; }
+    .va-cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+      margin: 18px 0 8px;
+    }
+    .va-cta .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 220px;
+      text-decoration: none;
+    }
+    .va-note {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #666;
+      margin: 0 0 18px;
+    }
+    .va-section-title {
+      margin: 8px 0 10px;
+      font-size: 1.05rem;
+      color: #4a3263;
+    }
+    .mat-card.is-yours {
+      border-color: var(--primary-color, #7a4db3);
+      box-shadow: 0 0 0 2px rgba(122, 77, 179, 0.18);
+    }
+    .mat-card .yours-tag {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #efe3fb;
+      color: #60437D;
+      font-size: 0.72rem;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    .va-back { text-align: center; margin-top: 22px; }
+  </style>
+</head>
+<body>
+<header><%- include("includes/header") %></header>
+
+<main>
+  <div class="va-wrap">
+    <div class="va-hero">
+      <h1><%= program.shortLabel %> Video Audition</h1>
+      <p>
+        Download the audition materials for <strong><%= program.label %></strong>
+        (<%= seasonYear %>), then submit your video on Neopply. There is no application fee on this site.
+      </p>
+    </div>
+
+    <div class="va-cta">
+      <a class="button" href="<%= neopplyUrl %>" target="_blank" rel="noopener">
+        Audition on Neopply
+      </a>
+      <a class="button" href="/view-materials" style="background:#fff;color:#60437D;border:1px solid #d7c8ea;">
+        All audition materials
+      </a>
+    </div>
+    <p class="va-note">Ready to submit? Use <strong>Audition on Neopply</strong> after you have your packet.</p>
+
+    <h2 class="va-section-title">Audition materials</h2>
+    <div class="materials-grid">
+      <% (materials || []).forEach(function (mat) {
+           const isYours = memberSection && (
+             mat.key === memberSection ||
+             mat.key.indexOf(memberSection) === 0 ||
+             (memberSection.indexOf("drum") >= 0 && mat.key.indexOf("drumline") >= 0) ||
+             (memberSection.indexOf("front") >= 0 && mat.key.indexOf("front ensemble") >= 0)
+           );
+      %>
+        <article class="mat-card<%= isYours ? ' is-yours' : '' %>">
+          <h3 class="mat-title">
+            <%= mat.label %>
+            <% if (isYours) { %><span class="yours-tag">Your section</span><% } %>
+          </h3>
+          <p class="mat-desc">
+            <% if (mat.pdf) { %>
+              Download the current audition packet as a PDF.
+            <% } else { %>
+              Materials for this section will be posted here soon.
+            <% } %>
+          </p>
+          <div class="mat-actions">
+            <% if (mat.pdf) { %>
+              <a class="btn-outline" href="<%= mat.pdf %>" target="_blank" rel="noopener">View PDF</a>
+              <a class="btn-primary" href="<%= mat.pdf %>" download>Download</a>
+            <% } else { %>
+              <button class="btn-disabled" disabled>Coming soon</button>
+            <% } %>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+
+    <div class="va-cta" style="margin-top: 24px;">
+      <a class="button" href="<%= neopplyUrl %>" target="_blank" rel="noopener">
+        Audition on Neopply
+      </a>
+    </div>
+
+    <p class="va-back"><a href="/member-portal">Back to member portal</a></p>
+  </div>
+</main>
+
+<footer><%- include("includes/footer") %></footer>
+</body>
+</html>

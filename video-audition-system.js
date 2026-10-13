@@ -1,5 +1,5 @@
 /**
- * Video auditions — members go straight to Neopply (no site fee).
+ * Video auditions — materials first, then Neopply (no site fee).
  * https://www.neopply.com/org/boise-gems
  */
 const neopplyPartner = require("./neopply-partner");
@@ -13,13 +13,35 @@ const PROGRAMS = {
     label: "Boise Gems Drum & Bugle Corps",
     shortLabel: "Corps",
     feeCents: 0,
+    materialSections: [
+      "brass",
+      "drumline",
+      "guard",
+      "front ensemble",
+      "drum major",
+    ],
   },
   independent: {
     key: "independent",
     label: "Boise Gems Independent",
     shortLabel: "BGI",
     feeCents: 0,
+    materialSections: [
+      "brass",
+      "drumline (independent)",
+      "front ensemble (independent)",
+    ],
   },
+};
+
+const MATERIAL_LABELS = {
+  brass: "Brass",
+  drumline: "Drumline (Battery)",
+  guard: "Color Guard",
+  "front ensemble": "Front Ensemble",
+  "drum major": "Drum Major Audition",
+  "drumline (independent)": "Drumline (Independent)",
+  "front ensemble (independent)": "Front Ensemble (Independent)",
 };
 
 /** Omnipply apply URLs by program + section. Update IDs here when programs change. */
@@ -55,6 +77,27 @@ function getOmnipplyUrl(programKey, section) {
   if (!map) return null;
   const sec = String(section || "").trim().toLowerCase();
   return map[sec] || map.default || null;
+}
+
+function getMaterialsForProgram(db, programKey) {
+  const program = getProgram(programKey) || PROGRAMS.corps;
+  const sections = program.materialSections || [];
+  const rows = db.prepare("SELECT section, pdf FROM materials").all();
+  const bySection = {};
+  for (const r of rows) {
+    const key = String(r.section || "").toLowerCase().trim();
+    if (r.pdf) bySection[key] = r.pdf;
+  }
+  return sections.map((key) => ({
+    key,
+    label: MATERIAL_LABELS[key] || key,
+    pdf: bySection[key] || null,
+  }));
+}
+
+function videoAuditionPagePath(programKey) {
+  const key = normalizeProgram(programKey) || "corps";
+  return `/video-audition?program=${encodeURIComponent(key)}`;
 }
 
 function isVideoAuditionFeeBypassed() {
@@ -163,10 +206,11 @@ function getPortalAuditionActions(db, member, seasonYear) {
       unlocked: true,
       seasonYear,
       provider: "neopply",
-      url: NEOPPLY_ORG_AUDITION_URL,
+      url: videoAuditionPagePath("corps"),
       embedHref: null,
-      payHref: NEOPPLY_ORG_AUDITION_URL,
-      external: true,
+      payHref: videoAuditionPagePath("corps"),
+      neopplyUrl: NEOPPLY_ORG_AUDITION_URL,
+      external: false,
       hasConsent: true,
     });
   }
@@ -180,10 +224,11 @@ function getPortalAuditionActions(db, member, seasonYear) {
       unlocked: true,
       seasonYear,
       provider: "neopply",
-      url: NEOPPLY_ORG_AUDITION_URL,
+      url: videoAuditionPagePath("independent"),
       embedHref: null,
-      payHref: NEOPPLY_ORG_AUDITION_URL,
-      external: true,
+      payHref: videoAuditionPagePath("independent"),
+      neopplyUrl: NEOPPLY_ORG_AUDITION_URL,
+      external: false,
       hasConsent: true,
     });
   }
@@ -204,13 +249,45 @@ function registerVideoAuditionRoutes(app, deps) {
     opsSystem,
   } = deps;
 
-  // Legacy pay URLs — no fee; send members to Neopply.
+  function renderVideoAuditionPage(req, res, programRaw) {
+    const program = getProgram(programRaw) || PROGRAMS.corps;
+    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    if (!member) return res.redirect("/");
+
+    if (program.key === "corps" && member.contractedCorps) {
+      req.session.flashMessage = "You are already contracted with the Corps.";
+      return res.redirect("/member-portal");
+    }
+    if (program.key === "independent" && member.contractedIndependent) {
+      req.session.flashMessage = "You are already contracted with Boise Gems Independent.";
+      return res.redirect("/member-portal");
+    }
+
+    const seasonYear = getCurrentSeasonYear();
+    const materials = getMaterialsForProgram(db, program.key);
+    const memberSection = String(member.section || "").toLowerCase().trim();
+
+    return res.render("video-audition", {
+      member,
+      program,
+      seasonYear,
+      materials,
+      memberSection,
+      neopplyUrl: NEOPPLY_ORG_AUDITION_URL,
+    });
+  }
+
+  app.get("/video-audition", mustBeMember, (req, res) => {
+    return renderVideoAuditionPage(req, res, req.query.program);
+  });
+
+  // Legacy pay URLs — no fee; show materials + Neopply CTA.
   app.get("/video-audition/pay", mustBeMember, (req, res) => {
-    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
+    return res.redirect(302, videoAuditionPagePath(req.query.program));
   });
 
   app.post("/video-audition/pay", mustBeMember, (req, res) => {
-    return res.redirect(303, NEOPPLY_ORG_AUDITION_URL);
+    return res.redirect(303, videoAuditionPagePath(req.body.program || req.query.program));
   });
 
   app.get("/video-audition/success/:potentialId", mustBeLoggedIn, async (req, res) => {
@@ -309,30 +386,15 @@ function registerVideoAuditionRoutes(app, deps) {
       }
     }
 
-    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
+    return res.redirect(302, videoAuditionPagePath(potential.program));
   });
 
   app.get("/video-audition/corps", mustBeMember, (req, res) => {
-    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
+    return renderVideoAuditionPage(req, res, "corps");
   });
 
   app.post("/video-audition/corps/consent", mustBeMember, (req, res) => {
-    const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-    if (!member) return res.redirect("/");
-
-    const seasonYear = getCurrentSeasonYear();
-    if (!hasUnlock(db, member.id, "corps", seasonYear)) {
-      return res.redirect("/video-audition/pay?program=corps");
-    }
-
-    const agreed = String(req.body.agree || "").trim().toLowerCase();
-    if (agreed !== "yes" && agreed !== "on" && agreed !== "1" && agreed !== "true") {
-      req.session.flashMessage = "You must agree before your information can be shared with Neopply.";
-      return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
-    }
-
-    recordNeopplyConsent(db, member.id, "corps");
-    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
+    return res.redirect(302, videoAuditionPagePath("corps"));
   });
 
   app.get("/api/partner/neopply/embed-url", mustBeMember, (req, res) => {
@@ -366,7 +428,7 @@ function registerVideoAuditionRoutes(app, deps) {
   });
 
   app.get("/video-audition/unlocked", mustBeMember, (req, res) => {
-    return res.redirect(302, NEOPPLY_ORG_AUDITION_URL);
+    return res.redirect(302, videoAuditionPagePath(req.query.program));
   });
 }
 
@@ -378,6 +440,8 @@ module.exports = {
   registerVideoAuditionRoutes,
   getProgram,
   getOmnipplyUrl,
+  getMaterialsForProgram,
+  videoAuditionPagePath,
   hasUnlock,
   getUnlocksForUser,
   getPortalAuditionActions,

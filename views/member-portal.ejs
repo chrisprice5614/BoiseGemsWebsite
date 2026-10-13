@@ -178,7 +178,7 @@
             <a href="/make-payment" class="pd-action-btn pd-action-btn--primary"><ion-icon name="card"></ion-icon> Make Payment</a>
           <% } %>
           <% auditionActions.forEach(function(action) { %>
-            <a href="<%= action.url || action.payHref %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
+            <a href="<%= action.url || action.payHref %>" class="pd-action-btn pd-action-btn--primary"><ion-icon name="videocam"></ion-icon> <%= action.shortLabel %> Video Audition</a>
           <% }) %>
           <% if (contracts.length) { %>
             <a class="pd-action-btn pd-action-btn--primary" href="#" onclick="pdShow(document.querySelector('[onclick*=contracts]'),'contracts');return false;"><ion-icon name="document-text"></ion-icon> View Contracts</a>
@@ -390,7 +390,7 @@
     <div class="pd-section" id="pd-sec-audition">
       <div class="pd-section-inner">
         <div class="pd-section-heading">Video Audition</div>
-        <div class="pd-section-sub">Submit a video audition on Neopply for Boise Gems Drum &amp; Bugle Corps or Independent. No application fee on this site.</div>
+        <div class="pd-section-sub">Review audition materials, then continue to Neopply to submit. No application fee on this site.</div>
 
         <div id="va-spots-panel" class="pd-info-card" style="margin-bottom:20px;display:none;">
           <div class="pd-info-label">Corps roster (from contracts)</div>
@@ -411,12 +411,12 @@
           <div class="pd-info-card">
             <div class="pd-info-label"><%= action.label %></div>
             <div class="pd-info-value" style="font-size:1rem;margin-bottom:10px;">
-              Open on Neopply — no fee here
+              Materials + Neopply submit
             </div>
             <p style="font-size:0.85rem;color:#666;margin:0 0 12px;line-height:1.5;">
-              Opens the Boise Gems page on Neopply in a new tab so you can submit your video audition.
+              Opens your audition materials first. From there you can continue with <strong>Audition on Neopply</strong>.
             </p>
-            <a href="<%= action.url || action.payHref %>" target="_blank" rel="noopener" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
+            <a href="<%= action.url || action.payHref %>" class="pd-action-btn pd-action-btn--primary" style="width:100%;justify-content:center;">
               <ion-icon name="videocam"></ion-icon> Open <%= action.shortLabel %> Audition
             </a>
           </div>

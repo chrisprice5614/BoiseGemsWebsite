@@ -8634,12 +8634,26 @@ app.get('/admin/expired-contracts', mustBeAdmin, (req, res) => {
   return res.render('admin-expired-contracts', { extensions: rows });
 });
 
-// Admin - delete a contract extension
-app.post('/admin/contract-extension/:id/delete', mustBeAdmin, (req, res) => {
+// Admin - delete / rescind a contract extension (clears the offer; can re-extend later)
+function rescindContractExtension(req, res, redirectTo) {
   const id = Number(req.params.id);
-  db.prepare('DELETE FROM contractExtension WHERE id = ?').run(id);
-  req.session.flashMessage = 'Contract extension deleted.';
-  return res.redirect('/admin/expired-contracts');
+  const ext = db.prepare("SELECT id FROM contractExtension WHERE id = ?").get(id);
+  if (!ext) {
+    req.session.flashMessage = "That contract extension was already removed.";
+    return res.redirect(redirectTo);
+  }
+  db.prepare("DELETE FROM contractExtension WHERE id = ?").run(id);
+  req.session.flashMessage =
+    "Contract extension rescinded. The member no longer has that offer, and you can extend them again later.";
+  return res.redirect(redirectTo);
+}
+
+app.post("/admin/contract-extension/:id/delete", mustBeAdmin, (req, res) => {
+  return rescindContractExtension(req, res, "/admin/expired-contracts");
+});
+
+app.post("/admin/contract-extension/:id/rescind", mustBeAdmin, (req, res) => {
+  return rescindContractExtension(req, res, "/admin/contract-extensions");
 });
 
 

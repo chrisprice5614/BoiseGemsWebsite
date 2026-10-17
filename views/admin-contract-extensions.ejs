@@ -16,7 +16,8 @@
         <p>
           These are contract extension links that have been issued. The "Signer"
           is the account that logs in and signs; if there is a child, the child
-          name is shown as well.
+          name is shown as well. Use <strong>Rescind</strong> to cancel an offer
+          without signing — you can extend that member again later.
         </p>
         <br/>
 
@@ -70,6 +71,7 @@
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Bypass Fee</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Status</th>
                   <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Created</th>
+                  <th style="border-bottom:1px solid #ccc; padding:6px; text-align:left;">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -81,6 +83,9 @@
                     } else if (ext.season && String(ext.season).includes("affiliate")) {
                       groupLabel = "Affiliate";
                     }
+                    var memberLabel = ext.childFirst
+                      ? (ext.childFirst + " " + ext.childLast)
+                      : (ext.signerFirst + " " + ext.signerLast);
                   %>
                   <tr>
                     <td class="resend-check-cell" style="border-bottom:1px solid #eee; padding:6px; text-align:center; display:none;">
@@ -138,6 +143,16 @@
                       <% } else { %>
                         <em>Unknown</em>
                       <% } %>
+                    </td>
+                    <td style="border-bottom:1px solid #eee; padding:6px; white-space:nowrap;">
+                      <form method="POST" action="/admin/contract-extension/<%= ext.id %>/rescind" style="display:inline-block; margin:0;">
+                        <button type="submit"
+                          style="background:#fdeaea;border:1px solid #e57373;color:#b02020;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:700;"
+                          data-confirm="<%= encodeURIComponent('Rescind the ' + groupLabel + ' contract extension for ' + memberLabel + '? This removes the offer. You can extend them again later.') %>"
+                          onclick="return confirm(decodeURIComponent(this.getAttribute('data-confirm')));">
+                          Rescind
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 <% }); %>

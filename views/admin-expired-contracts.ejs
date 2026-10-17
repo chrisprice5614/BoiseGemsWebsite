@@ -60,7 +60,7 @@
                     <td style="border-bottom:1px solid #eee; padding:6px;">
                       <% const memberId = ext.child_id || ext.user_id; %>
                       <form method="POST" action="/admin/contract-extension/<%= ext.id %>/delete" style="display:inline-block; margin-right:6px;">
-                        <button type="submit" onclick="return confirm('Delete this expired contract extension?')">Delete</button>
+                        <button type="submit" onclick="return confirm('Rescind this expired contract extension? You can extend this member again later.')">Rescind</button>
                       </form>
                       <a href="/extend-contract/<%= memberId %>"><button>Resend (Open Send Page)</button></a>
                     </td>

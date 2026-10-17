@@ -10,3 +10,15 @@ serviceAccount*.json
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# SQLite databases — never commit / deploy local DB to production
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+data.db
+data.db-*
+**/data.db
+**/data.db-*

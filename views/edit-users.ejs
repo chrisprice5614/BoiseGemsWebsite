@@ -284,15 +284,38 @@
                   <p><b>Contracts on file:</b></p>
                   <ul style="margin: 4px 0 0 1em; padding: 0;">
                     <% thisUser.contracts.forEach(function(c) { %>
-                      <li>
+                      <li style="margin-bottom:8px;">
                         Season <%= c.season %> - <%= c.ensemble %>
                         <% if (c.signedContractPath) { %>
-                          - 
+                          -
                           <a href="/admin/contracts/<%= thisUser.id %>/<%= c.id %>" target="_blank" rel="noopener noreferrer">
                             View signed contract
                           </a>
+                          <form
+                            method="POST"
+                            action="/admin/contracts/<%= thisUser.id %>/<%= c.id %>/remove-file"
+                            style="display:inline;"
+                            onsubmit="return confirm('Remove this uploaded contract PDF? The member stays contracted; only the file is cleared so a correct PDF can be uploaded.');"
+                          >
+                            <input type="hidden" name="redirect" value="/edit-users?search=<%= encodeURIComponent(thisUser.email || '') %>" />
+                            <button type="submit" style="margin-left:6px; background:#fce8e6; border:1px solid #d93025; color:#a50e0e; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:0.85em;">
+                              Remove file
+                            </button>
+                          </form>
                         <% } else { %>
-                         - (no file uploaded)
+                          - <span style="color:#888;">(no file uploaded)</span>
+                          <form
+                            method="POST"
+                            action="/admin/contracts/<%= thisUser.id %>/<%= c.id %>/upload-file"
+                            enctype="multipart/form-data"
+                            style="display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center; margin-left:6px;"
+                          >
+                            <input type="hidden" name="redirect" value="/edit-users?search=<%= encodeURIComponent(thisUser.email || '') %>" />
+                            <input type="file" name="signed_contract" accept="application/pdf,.pdf" required style="max-width:220px;" />
+                            <button type="submit" style="background:#e6f4ea; border:1px solid #34a853; color:#1e6e2e; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:0.85em;">
+                              Upload PDF
+                            </button>
+                          </form>
                         <% } %>
                       </li>
                     <% }); %>

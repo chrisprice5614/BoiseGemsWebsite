@@ -6087,7 +6087,145 @@ app.get("/admin/contracts/:userId/:contractId", mustBeAdmin, (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
+function deleteSignedContractFile(signedContractPath) {
+  if (!signedContractPath) return;
+  const abs = path.resolve(__dirname, signedContractPath);
+  const root = path.resolve(__dirname, "private", "pdf");
+  if (abs !== root && !abs.startsWith(root + path.sep)) return;
+  tryDeleteFile(abs);
+}
 
+function redirectAfterContractFileAdmin(req, res, fallback) {
+  const fromBody = String(req.body.redirect || "").trim();
+  if (fromBody.startsWith("/") && !fromBody.startsWith("//")) {
+    return res.redirect(fromBody);
+  }
+  const referer = String(req.get("Referer") || "");
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      if (u.origin === `${req.protocol}://${req.get("host")}`) {
+        return res.redirect(u.pathname + u.search);
+      }
+    } catch (_) {}
+  }
+  return res.redirect(fallback || "/edit-users");
+}
+
+// Admin - remove uploaded signed contract PDF only (keeps contractedMembers row / status)
+app.post("/admin/contracts/:userId/:contractId/remove-file", mustBeAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const contractId = Number(req.params.contractId);
+
+  const row = db.prepare(
+    `
+    SELECT cm.*, u.firstname, u.lastname, u.email
+    FROM contractedMembers cm
+    JOIN users u ON cm.user_id = u.id
+    WHERE cm.id = ? AND cm.user_id = ?
+    `
+  ).get(contractId, userId);
+
+  if (!row) {
+    req.session.flashMessage = "Contract not found.";
+    return redirectAfterContractFileAdmin(req, res, "/edit-users");
+  }
+
+  if (!row.signedContractPath) {
+    req.session.flashMessage = "That contract has no uploaded file to remove.";
+    return redirectAfterContractFileAdmin(
+      req,
+      res,
+      `/edit-users?search=${encodeURIComponent(row.email || "")}`
+    );
+  }
+
+  const oldPath = row.signedContractPath;
+  deleteSignedContractFile(oldPath);
+  db.prepare("UPDATE contractedMembers SET signedContractPath = NULL WHERE id = ? AND user_id = ?")
+    .run(contractId, userId);
+
+  rolesSystem.writeAudit(db, req, "contract_change", {
+    targetType: "contract",
+    targetId: String(contractId),
+    meta: {
+      action: "remove_signed_contract_file",
+      userId,
+      season: row.season,
+      ensemble: row.ensemble,
+      removedPath: oldPath,
+    },
+  });
+
+  req.session.flashMessage =
+    `Removed uploaded contract file for ${row.firstname} ${row.lastname} (${row.ensemble || row.season}). Membership/contract status was not changed.`;
+  return redirectAfterContractFileAdmin(
+    req,
+    res,
+    `/edit-users?search=${encodeURIComponent(row.email || "")}`
+  );
+});
+
+// Admin - upload / replace signed contract PDF for an existing contractedMembers row
+app.post(
+  "/admin/contracts/:userId/:contractId/upload-file",
+  mustBeAdmin,
+  pdfUploadSecure.single("signed_contract"),
+  (req, res) => {
+    const userId = Number(req.params.userId);
+    const contractId = Number(req.params.contractId);
+
+    const row = db.prepare(
+      `
+      SELECT cm.*, u.firstname, u.lastname, u.email
+      FROM contractedMembers cm
+      JOIN users u ON cm.user_id = u.id
+      WHERE cm.id = ? AND cm.user_id = ?
+      `
+    ).get(contractId, userId);
+
+    if (!row) {
+      req.session.flashMessage = "Contract not found.";
+      return redirectAfterContractFileAdmin(req, res, "/edit-users");
+    }
+
+    if (!req.file) {
+      req.session.flashMessage = "Please choose a PDF to upload.";
+      return redirectAfterContractFileAdmin(
+        req,
+        res,
+        `/edit-users?search=${encodeURIComponent(row.email || "")}`
+      );
+    }
+
+    const newPath = path.join("private", "pdf", req.file.filename);
+    if (row.signedContractPath) {
+      deleteSignedContractFile(row.signedContractPath);
+    }
+    db.prepare("UPDATE contractedMembers SET signedContractPath = ? WHERE id = ? AND user_id = ?")
+      .run(newPath, contractId, userId);
+
+    rolesSystem.writeAudit(db, req, "contract_change", {
+      targetType: "contract",
+      targetId: String(contractId),
+      meta: {
+        action: "upload_signed_contract_file",
+        userId,
+        season: row.season,
+        ensemble: row.ensemble,
+        path: newPath,
+      },
+    });
+
+    req.session.flashMessage =
+      `Uploaded signed contract file for ${row.firstname} ${row.lastname} (${row.ensemble || row.season}).`;
+    return redirectAfterContractFileAdmin(
+      req,
+      res,
+      `/edit-users?search=${encodeURIComponent(row.email || "")}`
+    );
+  }
+);
 
 app.get("/send-message/:id", mustBeAdmin, (req,res) => {
   const sendId = req.params.id;

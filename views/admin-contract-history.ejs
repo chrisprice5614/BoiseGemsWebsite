@@ -99,8 +99,37 @@
                       <% } %>
                     </td>
                     <td style="border-bottom:1px solid #eee; padding:6px;">
+                      <% 
+                        var historyRedirect = '/admin/contract-history?year=' + encodeURIComponent(selectedYear)
+                          + (ensemble ? '&ensemble=' + encodeURIComponent(ensemble) : '')
+                          + (q ? '&q=' + encodeURIComponent(q) : '');
+                      %>
                       <% if (c.signedContractPath) { %>
                         <a href="/admin/contracts/<%= c.user_id %>/<%= c.contract_id %>" target="_blank" rel="noopener">View PDF</a>
+                        <span style="color:#ccc;"> · </span>
+                        <form
+                          method="POST"
+                          action="/admin/contracts/<%= c.user_id %>/<%= c.contract_id %>/remove-file"
+                          style="display:inline;"
+                          onsubmit="return confirm('Remove this uploaded contract PDF? The member stays contracted; only the file is cleared so a correct PDF can be uploaded.');"
+                        >
+                          <input type="hidden" name="redirect" value="<%= historyRedirect %>" />
+                          <button type="submit" style="background:none;border:none;padding:0;color:#a50e0e;cursor:pointer;text-decoration:underline;font:inherit;">
+                            Remove file
+                          </button>
+                        </form>
+                        <span style="color:#ccc;"> · </span>
+                      <% } else { %>
+                        <form
+                          method="POST"
+                          action="/admin/contracts/<%= c.user_id %>/<%= c.contract_id %>/upload-file"
+                          enctype="multipart/form-data"
+                          style="display:inline-flex; flex-wrap:wrap; gap:4px; align-items:center; margin-right:6px;"
+                        >
+                          <input type="hidden" name="redirect" value="<%= historyRedirect %>" />
+                          <input type="file" name="signed_contract" accept="application/pdf,.pdf" required style="max-width:160px;" />
+                          <button type="submit" style="padding:2px 8px; border-radius:4px; cursor:pointer; font-size:0.85em;">Upload PDF</button>
+                        </form>
                         <span style="color:#ccc;"> · </span>
                       <% } %>
                       <a href="/edit-users?search=<%= encodeURIComponent(c.email || '') %>">User</a>

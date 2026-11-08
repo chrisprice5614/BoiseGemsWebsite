@@ -14,6 +14,9 @@
 <main>
   <div style="max-width: 900px; margin: 16px auto; padding: 16px;">
     <h1>Chris Payment</h1>
+    <% if (typeof user !== "undefined" && user && user.email && user.email.toLowerCase() === "chris@chrispricemusic.net") { %>
+      <p style="margin:0 0 12px;"><a href="/admin/stripe-reconcile">Stripe vs Website Reconcile →</a></p>
+    <% } %>
 
     <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
       <p style="padding: 8px; border-radius: 8px; background: #ffe5e5; border:1px solid #ffcccc;">

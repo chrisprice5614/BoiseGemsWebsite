@@ -430,6 +430,9 @@
           <% if (user && user.email && (user.email.toLowerCase() === "austinmoldenhauer@gmail.com" || user.email.toLowerCase() === "chris@chrispricemusic.net")) { %>
           <a href="/admin/chris-payment" class="pd-action-btn" style="background:#fff3cd;border:1px solid #ffc107;color:#5a4000;"><ion-icon name="card"></ion-icon> Chris Payment</a>
           <% } %>
+          <% if (user && user.email && user.email.toLowerCase() === "chris@chrispricemusic.net") { %>
+          <a href="/admin/stripe-reconcile" class="pd-action-btn" style="background:#e8f0fe;border:1px solid #4285f4;color:#174ea6;"><ion-icon name="git-compare"></ion-icon> Stripe Reconcile</a>
+          <% } %>
         </div>
 
         <div class="form-panel" style="max-width:560px;margin-top:24px;">

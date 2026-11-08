@@ -2420,6 +2420,394 @@ function mustBeChrisPaymentViewer(req, res, next) {
   return res.redirect("/");
 }
 
+/** Stripe payment reconcile / audit tools — Chris only. */
+function mustBeChrisOnly(req, res, next) {
+  if (!req.user) return res.redirect("/login");
+  const email = (req.user.email || "").toLowerCase();
+  if (email === "chris@chrispricemusic.net") return next();
+  return res.redirect("/");
+}
+
+async function stripeListAll(listFn, params = {}) {
+  const out = [];
+  let starting_after;
+  for (;;) {
+    const page = await listFn({
+      ...params,
+      limit: 100,
+      ...(starting_after ? { starting_after } : {}),
+    });
+    const data = page.data || [];
+    out.push(...data);
+    if (!page.has_more || !data.length) break;
+    starting_after = data[data.length - 1].id;
+  }
+  return out;
+}
+
+function parseReconcileRange(query) {
+  const now = new Date();
+  const defaultEnd = now;
+  const defaultStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const parseDay = (raw, fallback) => {
+    const s = String(raw || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return fallback;
+    const d = new Date(s + "T00:00:00");
+    return Number.isFinite(d.getTime()) ? d : fallback;
+  };
+
+  let start = parseDay(query.start, defaultStart);
+  let end = parseDay(query.end, defaultEnd);
+  // Inclusive end-of-day for the selected end date
+  const endExclusive = new Date(end);
+  endExclusive.setHours(23, 59, 59, 999);
+
+  if (endExclusive.getTime() < start.getTime()) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+    endExclusive.setTime(end.getTime());
+    endExclusive.setHours(23, 59, 59, 999);
+  }
+
+  // Cap range to 366 days to keep Stripe API volume reasonable
+  const maxMs = 366 * 24 * 60 * 60 * 1000;
+  if (endExclusive.getTime() - start.getTime() > maxMs) {
+    start = new Date(endExclusive.getTime() - maxMs);
+  }
+
+  const toYmd = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  return {
+    startMs: start.getTime(),
+    endMs: endExclusive.getTime(),
+    startUnix: Math.floor(start.getTime() / 1000),
+    endUnix: Math.floor(endExclusive.getTime() / 1000),
+    startYmd: toYmd(start),
+    endYmd: toYmd(endExclusive),
+  };
+}
+
+function centsToUsd(cents) {
+  return Number(cents || 0) / 100;
+}
+
+function amountsLikelyMatch(stripeCents, localCents) {
+  const s = Math.round(Number(stripeCents) || 0);
+  const l = Math.round(Number(localCents) || 0);
+  if (!s || !l) return false;
+  if (s === l) return true;
+  // Site often stores tuition/donation base without the ~6% processing fee Stripe charged
+  if (Math.abs(s - Math.round(l * 1.06)) <= 2) return true;
+  if (Math.abs(l - Math.round(s / 1.06)) <= 2) return true;
+  // 3% Chris share style edge cases / slight rounding
+  if (Math.abs(s - l) <= 3) return true;
+  return false;
+}
+
+async function buildStripeSiteReconcile(range) {
+  const createdFilter = { gte: range.startUnix, lte: range.endUnix };
+
+  const [sessions, paymentIntents, charges] = await Promise.all([
+    stripeListAll(stripe.checkout.sessions.list.bind(stripe.checkout.sessions), {
+      created: createdFilter,
+    }),
+    stripeListAll(stripe.paymentIntents.list.bind(stripe.paymentIntents), {
+      created: createdFilter,
+    }),
+    stripeListAll(stripe.charges.list.bind(stripe.charges), {
+      created: createdFilter,
+    }),
+  ]);
+
+  const paidSessions = sessions.filter(
+    (s) => s.payment_status === "paid" || s.status === "complete"
+  );
+  const succeededPIs = paymentIntents.filter((pi) => pi.status === "succeeded");
+  const succeededCharges = charges.filter(
+    (c) => c.status === "succeeded" || c.paid === true
+  );
+
+  // Prefer one row per payment_intent (fallback to charge id)
+  const stripeByKey = new Map();
+  for (const pi of succeededPIs) {
+    const email =
+      (pi.receipt_email ||
+        pi.charges?.data?.[0]?.billing_details?.email ||
+        pi.charges?.data?.[0]?.receipt_email ||
+        "") || "";
+    stripeByKey.set(pi.id, {
+      key: pi.id,
+      kind: "payment_intent",
+      id: pi.id,
+      amount: pi.amount_received || pi.amount || 0,
+      currency: pi.currency || "usd",
+      created: (pi.created || 0) * 1000,
+      email: String(email || "").toLowerCase(),
+      description: pi.description || "",
+      sessionId: null,
+      chargeId: null,
+    });
+  }
+  for (const ch of succeededCharges) {
+    const piId = typeof ch.payment_intent === "string" ? ch.payment_intent : ch.payment_intent?.id;
+    const key = piId || ch.id;
+    const email = String(
+      ch.billing_details?.email || ch.receipt_email || ""
+    ).toLowerCase();
+    const existing = stripeByKey.get(key);
+    if (existing) {
+      if (!existing.email && email) existing.email = email;
+      if (!existing.description && ch.description) existing.description = ch.description;
+      existing.chargeId = ch.id;
+      continue;
+    }
+    stripeByKey.set(key, {
+      key,
+      kind: piId ? "payment_intent" : "charge",
+      id: key,
+      amount: ch.amount || 0,
+      currency: ch.currency || "usd",
+      created: (ch.created || 0) * 1000,
+      email,
+      description: ch.description || "",
+      sessionId: null,
+      chargeId: ch.id,
+    });
+  }
+  for (const sess of paidSessions) {
+    const piId =
+      typeof sess.payment_intent === "string"
+        ? sess.payment_intent
+        : sess.payment_intent?.id;
+    const key = piId || `session:${sess.id}`;
+    const email = String(
+      sess.customer_details?.email || sess.customer_email || ""
+    ).toLowerCase();
+    const existing = stripeByKey.get(key);
+    if (existing) {
+      existing.sessionId = sess.id;
+      if (!existing.email && email) existing.email = email;
+      if (!existing.description && sess.metadata) {
+        existing.description = Object.values(sess.metadata).filter(Boolean).join(" · ");
+      }
+      continue;
+    }
+    stripeByKey.set(key, {
+      key,
+      kind: "checkout_session",
+      id: piId || sess.id,
+      amount: sess.amount_total || 0,
+      currency: sess.currency || "usd",
+      created: (sess.created || 0) * 1000,
+      email,
+      description: sess.metadata
+        ? Object.values(sess.metadata).filter(Boolean).join(" · ")
+        : "",
+      sessionId: sess.id,
+      chargeId: null,
+    });
+  }
+
+  const stripeRows = Array.from(stripeByKey.values()).sort(
+    (a, b) => b.created - a.created
+  );
+
+  const localPayments = db
+    .prepare(
+      `
+      SELECT p.id, p.title, p.description, p.amount, p.method, p.date, p.user_id,
+             u.firstname, u.lastname, u.email
+      FROM paymentHistory p
+      LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.date >= ? AND p.date <= ?
+        AND LOWER(COALESCE(p.method, '')) LIKE '%stripe%'
+      ORDER BY p.date DESC
+    `
+    )
+    .all(range.startMs, range.endMs)
+    .map((p) => ({
+      source: "paymentHistory",
+      id: p.id,
+      label: p.title || "Payment",
+      detail: p.description || "",
+      amount: p.amount || 0,
+      created: p.date || 0,
+      email: String(p.email || "").toLowerCase(),
+      name: [p.firstname, p.lastname].filter(Boolean).join(" "),
+      method: p.method,
+      stripeSessionId: null,
+      stripePaymentIntentId: null,
+      userId: p.user_id,
+    }));
+
+  let localDonations = [];
+  try {
+    localDonations = db
+      .prepare(
+        `
+        SELECT id, email, name, amount, processing_fee, total_charged, stripe_session_id, created_at
+        FROM donations
+        WHERE created_at >= ? AND created_at <= ?
+        ORDER BY created_at DESC
+      `
+      )
+      .all(range.startMs, range.endMs)
+      .map((d) => ({
+        source: "donations",
+        id: d.id,
+        label: `Donation by ${d.name || d.email || "donor"}`,
+        detail: `Base $${centsToUsd(d.amount).toFixed(2)} + fee $${centsToUsd(d.processing_fee).toFixed(2)}`,
+        amount: d.total_charged || d.amount || 0,
+        created: d.created_at || 0,
+        email: String(d.email || "").toLowerCase(),
+        name: d.name || "",
+        method: "Stripe",
+        stripeSessionId: d.stripe_session_id || null,
+        stripePaymentIntentId: null,
+        userId: null,
+      }));
+  } catch (_) {}
+
+  let localMerch = [];
+  try {
+    localMerch = db
+      .prepare(
+        `
+        SELECT id, email, name, total_cents, stripe_session_id, stripe_payment_intent_id, created_at
+        FROM merch_orders
+        WHERE created_at >= ? AND created_at <= ?
+        ORDER BY created_at DESC
+      `
+      )
+      .all(range.startMs, range.endMs)
+      .map((o) => ({
+        source: "merch_orders",
+        id: o.id,
+        label: `Store order #${o.id}`,
+        detail: o.name || o.email || "",
+        amount: o.total_cents || 0,
+        created: o.created_at || 0,
+        email: String(o.email || "").toLowerCase(),
+        name: o.name || "",
+        method: "Stripe",
+        stripeSessionId: o.stripe_session_id || null,
+        stripePaymentIntentId: o.stripe_payment_intent_id || null,
+        userId: null,
+      }));
+  } catch (_) {}
+
+  const localRows = [...localPayments, ...localDonations, ...localMerch].sort(
+    (a, b) => b.created - a.created
+  );
+
+  const usedLocal = new Set();
+  const matched = [];
+  const stripeOnly = [];
+
+  const TIME_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+  function localKey(row) {
+    return `${row.source}:${row.id}`;
+  }
+
+  for (const s of stripeRows) {
+    let best = null;
+    let bestScore = -1;
+    let matchHow = "";
+
+    for (const local of localRows) {
+      const lk = localKey(local);
+      if (usedLocal.has(lk)) continue;
+
+      let score = 0;
+      let how = "";
+
+      if (
+        s.id &&
+        local.stripePaymentIntentId &&
+        s.id === local.stripePaymentIntentId
+      ) {
+        score = 100;
+        how = "payment_intent id";
+      } else if (
+        s.sessionId &&
+        local.stripeSessionId &&
+        s.sessionId === local.stripeSessionId
+      ) {
+        score = 95;
+        how = "checkout session id";
+      } else {
+        const timeOk =
+          Math.abs((local.created || 0) - (s.created || 0)) <= TIME_WINDOW_MS;
+        const amtOk = amountsLikelyMatch(s.amount, local.amount);
+        const emailOk =
+          s.email && local.email && s.email === local.email;
+
+        if (timeOk && amtOk && emailOk) {
+          score = 80;
+          how = "amount + email + time";
+        } else if (timeOk && amtOk) {
+          score = 60;
+          how = "amount + time";
+        } else if (amtOk && emailOk) {
+          score = 50;
+          how = "amount + email";
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = local;
+        matchHow = how;
+      }
+    }
+
+    if (best && bestScore >= 50) {
+      usedLocal.add(localKey(best));
+      matched.push({ stripe: s, local: best, how: matchHow, score: bestScore });
+    } else {
+      stripeOnly.push(s);
+    }
+  }
+
+  const siteOnly = localRows.filter((r) => !usedLocal.has(localKey(r)));
+
+  const sum = (rows, pick) =>
+    rows.reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
+
+  return {
+    range,
+    stripeCount: stripeRows.length,
+    localCount: localRows.length,
+    matched,
+    stripeOnly,
+    siteOnly,
+    totals: {
+      stripeCents: sum(stripeRows, (r) => r.amount),
+      localCents: sum(localRows, (r) => r.amount),
+      matchedStripeCents: sum(matched, (r) => r.stripe.amount),
+      matchedLocalCents: sum(matched, (r) => r.local.amount),
+      stripeOnlyCents: sum(stripeOnly, (r) => r.amount),
+      siteOnlyCents: sum(siteOnly, (r) => r.amount),
+    },
+    rawCounts: {
+      checkoutSessions: paidSessions.length,
+      paymentIntents: succeededPIs.length,
+      charges: succeededCharges.length,
+      paymentHistory: localPayments.length,
+      donations: localDonations.length,
+      merchOrders: localMerch.length,
+    },
+  };
+}
+
 
 function generateCode(length = 4){
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890'
@@ -8115,6 +8503,31 @@ app.get("/admin/chris-payment", mustBeChrisPaymentViewer, (req, res) => {
     totalOwedCents: summary.total_owed || 0,
     history,
     canRecordPayment,
+  });
+});
+
+// Chris-only: compare Stripe payments to site records (paymentHistory / donations / merch)
+app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
+  const range = parseReconcileRange(req.query || {});
+  let report = null;
+  let error = null;
+
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error("STRIPE_SECRET_KEY is not configured.");
+    }
+    report = await buildStripeSiteReconcile(range);
+  } catch (err) {
+    console.error("Stripe reconcile failed:", err);
+    error = err && err.message ? err.message : String(err);
+  }
+
+  return res.render("admin-stripe-reconcile", {
+    range,
+    report,
+    error,
+    start: range.startYmd,
+    end: range.endYmd,
   });
 });
 

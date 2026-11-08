@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Stripe Reconcile - Boise Gems</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <%- include("includes/head") %>
+  <style>
+    .sr-wrap { max-width: 1100px; margin: 16px auto; padding: 16px; }
+    .sr-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 16px 0 24px; }
+    .sr-card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fafafa; }
+    .sr-card strong { display: block; font-size: 1.25rem; margin-top: 4px; }
+    .sr-warn { background: #fff3cd; border-color: #ffc107; }
+    .sr-bad { background: #fce8e6; border-color: #d93025; }
+    .sr-ok { background: #e6f4ea; border-color: #34a853; }
+    .sr-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    .sr-table th, .sr-table td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; vertical-align: top; }
+    .sr-table th { border-bottom: 1px solid #ccc; }
+    .sr-muted { color: #666; font-size: 0.85em; }
+    .sr-section { margin: 28px 0; }
+    .sr-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 16px 0; }
+    .sr-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+    .sr-filters input { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+
+<main>
+  <div class="sr-wrap">
+    <p style="margin:0 0 8px;"><a href="/admin-portal#pd-sec-system">&larr; Admin Portal</a></p>
+    <h1>Stripe vs Website Reconcile</h1>
+    <p class="sr-muted">
+      Visible only to chris@chrispricemusic.net. Pulls Stripe Checkout Sessions, PaymentIntents, and Charges
+      in the date range and compares them to site Stripe records (payment history, donations, store orders).
+      Tuition rows often store the base amount while Stripe charged base + fee — those still count as a match.
+    </p>
+
+    <form method="GET" action="/admin/stripe-reconcile" class="sr-filters">
+      <label>
+        Start
+        <input type="date" name="start" value="<%= start %>" required />
+      </label>
+      <label>
+        End
+        <input type="date" name="end" value="<%= end %>" required />
+      </label>
+      <button type="submit">Compare</button>
+    </form>
+
+    <% if (error) { %>
+      <div class="sr-card sr-bad">
+        <div>Could not load Stripe comparison</div>
+        <strong style="font-size:1rem;"><%= error %></strong>
+      </div>
+    <% } else if (report) { %>
+      <% const t = report.totals; %>
+      <% const money = (c) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((c || 0) / 100); %>
+      <% const when = (ms) => ms ? new Date(ms).toLocaleString() : '-'; %>
+
+      <div class="sr-summary">
+        <div class="sr-card">
+          Stripe payments
+          <strong><%= report.stripeCount %></strong>
+          <span class="sr-muted"><%= money(t.stripeCents) %></span>
+        </div>
+        <div class="sr-card">
+          Website Stripe records
+          <strong><%= report.localCount %></strong>
+          <span class="sr-muted"><%= money(t.localCents) %></span>
+        </div>
+        <div class="sr-card sr-ok">
+          Matched
+          <strong><%= report.matched.length %></strong>
+          <span class="sr-muted"><%= money(t.matchedStripeCents) %></span>
+        </div>
+        <div class="sr-card <%= report.stripeOnly.length ? 'sr-bad' : 'sr-ok' %>">
+          In Stripe, not on site
+          <strong><%= report.stripeOnly.length %></strong>
+          <span class="sr-muted"><%= money(t.stripeOnlyCents) %></span>
+        </div>
+        <div class="sr-card <%= report.siteOnly.length ? 'sr-warn' : 'sr-ok' %>">
+          On site, not in Stripe
+          <strong><%= report.siteOnly.length %></strong>
+          <span class="sr-muted"><%= money(t.siteOnlyCents) %></span>
+        </div>
+      </div>
+
+      <p class="sr-muted">
+        Stripe raw: <%= report.rawCounts.checkoutSessions %> paid sessions,
+        <%= report.rawCounts.paymentIntents %> succeeded payment intents,
+        <%= report.rawCounts.charges %> succeeded charges.
+        Site: <%= report.rawCounts.paymentHistory %> paymentHistory,
+        <%= report.rawCounts.donations %> donations,
+        <%= report.rawCounts.merchOrders %> merch orders.
+      </p>
+
+      <div class="sr-section">
+        <h2>In Stripe, missing / unmatched on website (<%= report.stripeOnly.length %>)</h2>
+        <% if (!report.stripeOnly.length) { %>
+          <p>None — every Stripe payment in range matched a site record.</p>
+        <% } else { %>
+          <div style="overflow-x:auto;">
+            <table class="sr-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Amount</th>
+                  <th>Email</th>
+                  <th>Stripe ID</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% report.stripeOnly.forEach(function(s) { %>
+                  <tr>
+                    <td><%= when(s.created) %></td>
+                    <td><%= money(s.amount) %></td>
+                    <td><%= s.email || '-' %></td>
+                    <td>
+                      <code><%= s.id %></code>
+                      <% if (s.sessionId) { %><div class="sr-muted">session <%= s.sessionId %></div><% } %>
+                    </td>
+                    <td><%= s.description || s.kind %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="sr-section">
+        <h2>On website as Stripe, missing / unmatched in Stripe (<%= report.siteOnly.length %>)</h2>
+        <% if (!report.siteOnly.length) { %>
+          <p>None — every site Stripe record in range matched a Stripe payment.</p>
+        <% } else { %>
+          <div style="overflow-x:auto;">
+            <table class="sr-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Amount</th>
+                  <th>Source</th>
+                  <th>Who</th>
+                  <th>Label</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% report.siteOnly.forEach(function(r) { %>
+                  <tr>
+                    <td><%= when(r.created) %></td>
+                    <td><%= money(r.amount) %></td>
+                    <td><%= r.source %> #<%= r.id %></td>
+                    <td>
+                      <%= r.name || '-' %>
+                      <div class="sr-muted"><%= r.email || '' %></div>
+                      <% if (r.userId) { %>
+                        <div><a href="/transaction-edit/<%= r.userId %>">User transactions</a></div>
+                      <% } %>
+                    </td>
+                    <td>
+                      <%= r.label %>
+                      <div class="sr-muted"><%= r.detail %></div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="sr-section">
+        <h2>Matched (<%= report.matched.length %>)</h2>
+        <% if (!report.matched.length) { %>
+          <p>No matches in this range.</p>
+        <% } else { %>
+          <div style="overflow-x:auto;">
+            <table class="sr-table">
+              <thead>
+                <tr>
+                  <th>Stripe</th>
+                  <th>Website</th>
+                  <th>Match</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% report.matched.forEach(function(m) { %>
+                  <tr>
+                    <td>
+                      <%= money(m.stripe.amount) %> · <%= when(m.stripe.created) %>
+                      <div class="sr-muted"><%= m.stripe.email || '-' %></div>
+                      <div class="sr-muted"><code><%= m.stripe.id %></code></div>
+                    </td>
+                    <td>
+                      <%= money(m.local.amount) %> · <%= when(m.local.created) %>
+                      <div class="sr-muted"><%= m.local.source %> #<%= m.local.id %> — <%= m.local.label %></div>
+                      <div class="sr-muted"><%= m.local.email || m.local.name || '' %></div>
+                    </td>
+                    <td><%= m.how %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

@@ -5551,7 +5551,19 @@ app.post(
         mode: "payment",
         success_url: `${process.env.BASEURL}/sign-contract/success/${potentialPaymentId}`,
         cancel_url: `${process.env.BASEURL}/sign-contract/${contractExtension.id}`,
-      })
+        metadata: {
+          kind: "contract",
+          potential_id: String(potentialPaymentId),
+          contract_id: String(contractExtension.id),
+          ensemble: String(ensemble),
+        },
+      });
+
+      try {
+        db.prepare(
+          "UPDATE potential_payment SET stripe_session_id = ?, kind = ? WHERE id = ?"
+        ).run(sessionObj.id, "contract", potentialPaymentId);
+      } catch (_) {}
 
       return res.redirect(303, sessionObj.url);
     } catch (err) {
@@ -7926,14 +7938,15 @@ app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
 
   // Save the potential payment (store tuition and processing fee separately)
   const insertPotential = db.prepare(
-    "INSERT INTO potential_payment (child_id, parent_id, amount, processing_fee, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO potential_payment (child_id, parent_id, amount, processing_fee, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)"
   );
   const result = insertPotential.run(
     child.id,
     req.user.userid,
     tuitionAmount,
     processingFee,
-    Date.now()
+    Date.now(),
+    "pay_behalf"
   );
 
   const potentialPaymentId = result.lastInsertRowid;
@@ -7957,8 +7970,20 @@ app.post("/pay-behalf/:id", mustBeParent, (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/pay-behalf/success/${potentialPaymentId}`,
       cancel_url: `${process.env.BASEURL}/pay-behalf/${child.id}`,
+      metadata: {
+        kind: "pay_behalf",
+        potential_id: String(potentialPaymentId),
+        child_id: String(child.id),
+        parent_id: String(req.user.userid),
+      },
     })
     .then((session) => {
+      try {
+        db.prepare("UPDATE potential_payment SET stripe_session_id = ? WHERE id = ?").run(
+          session.id,
+          potentialPaymentId
+        );
+      } catch (_) {}
       res.redirect(303, session.url);
     })
     .catch((err) => {
@@ -8079,9 +8104,15 @@ app.post("/make-payment", mustBeLoggedIn, (req, res) => {
 
   // Save the potential payment
   const insertPotential = db.prepare(
-    "INSERT INTO potential_payment (user_id, amount, processing_fee, created_at) VALUES (?, ?, ?, ?)"
+    "INSERT INTO potential_payment (user_id, amount, processing_fee, created_at, kind) VALUES (?, ?, ?, ?, ?)"
   );
-  const result = insertPotential.run(user.id, tuitionAmount, processingFee, Date.now());
+  const result = insertPotential.run(
+    user.id,
+    tuitionAmount,
+    processingFee,
+    Date.now(),
+    "make_payment"
+  );
   const potentialPaymentId = result.lastInsertRowid;
 
   // Create a Stripe Checkout Session
@@ -8103,8 +8134,19 @@ app.post("/make-payment", mustBeLoggedIn, (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/make-payment/success/${potentialPaymentId}`,
       cancel_url: `${process.env.BASEURL}/make-payment`,
+      metadata: {
+        kind: "make_payment",
+        potential_id: String(potentialPaymentId),
+        user_id: String(user.id),
+      },
     })
     .then((session) => {
+      try {
+        db.prepare("UPDATE potential_payment SET stripe_session_id = ? WHERE id = ?").run(
+          session.id,
+          potentialPaymentId
+        );
+      } catch (_) {}
       res.redirect(303, session.url);
     })
     .catch((err) => {
@@ -8682,7 +8724,11 @@ app.post("/donate", async (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
       cancel_url: `${process.env.BASEURL}/donate`,
-    })
+      metadata: {
+        kind: "donation",
+        potential_id: String(potentialId),
+      },
+    });
 
     // store the stripe session id for reference
     const updateSession = db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?");
@@ -9006,6 +9052,12 @@ app.post("/donate/feed-the-corps", async (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
       cancel_url: `${process.env.BASEURL}/donate`,
+      metadata: {
+        kind: "donation",
+        potential_id: String(potentialId),
+        donation_type: "feed_the_corps",
+        tier: String(tier || ""),
+      },
     });
 
     db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?").run(session.id, potentialId);
@@ -9085,6 +9137,11 @@ app.post("/donate/onetime", async (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/donate/success/${potentialId}`,
       cancel_url: `${process.env.BASEURL}/donate`,
+      metadata: {
+        kind: "donation",
+        potential_id: String(potentialId),
+        donation_type: "one_time",
+      },
     });
 
     db.prepare("UPDATE potential_donation SET stripe_session_id = ? WHERE id = ?").run(session.id, potentialId);
@@ -10003,7 +10060,13 @@ app.post("/event/:slug/rsvp", mustBeLoggedIn, async (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/event/${event.slug}/rsvp/success/${potentialId}`,
       cancel_url: `${process.env.BASEURL}/event/${event.slug}`,
-    })
+      metadata: {
+        kind: "event_rsvp",
+        potential_id: String(potentialId),
+        event_id: String(event.id),
+        user_id: String(req.user.userid),
+      },
+    });
 
     db.prepare("UPDATE potential_event_rsvp SET stripe_session_id = ? WHERE id = ?")
       .run(sessionObj.id, potentialId);
@@ -15541,4 +15604,15 @@ app.use((err, req, res, next) => {
   renderErrorPage(res, code, detail);
 });
 
-app.listen(TEST_SITE ? 2319 : 2023)
+app.listen(TEST_SITE ? 2319 : 2023);
+
+// Recover Stripe payments if the browser never hit success_url (no dashboard webhooks needed).
+stripePaymentFinalize.startStripeRecoveryPoller(db, stripe, {
+  addChrisShare,
+  sendEmail,
+  MasterEmail,
+  silent: true,
+  markUserContracted,
+  finalizeMerchOrder: merchSystem.finalizeMerchOrder,
+  getSiteSettings,
+});

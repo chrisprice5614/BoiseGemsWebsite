@@ -429,6 +429,135 @@ function stripeIdsFromSession(session) {
   };
 }
 
+function findDonationPotentialForSession(db, session) {
+  const meta = session?.metadata || {};
+  const potentialId = Number(meta.potential_id || meta.potentialId || 0);
+  if (potentialId) {
+    const row = db.prepare("SELECT * FROM potential_donation WHERE id = ?").get(potentialId);
+    if (row) return row;
+  }
+  if (session?.id) {
+    const row = db
+      .prepare("SELECT * FROM potential_donation WHERE stripe_session_id = ?")
+      .get(session.id);
+    if (row) return row;
+  }
+  const fromUrl = parseSuccessUrl(session?.success_url || "");
+  if (fromUrl.kind === "donation" && fromUrl.potentialId) {
+    return db.prepare("SELECT * FROM potential_donation WHERE id = ?").get(fromUrl.potentialId) || null;
+  }
+  return null;
+}
+
+function finalizeDonationPotential(db, potential, deps, stripeMeta = {}) {
+  if (!potential) return { ok: false, error: "Missing donation potential." };
+  const existing = findPaymentByStripeIds(db, stripeMeta);
+  if (existing) {
+    try {
+      db.prepare("DELETE FROM potential_donation WHERE id = ?").run(potential.id);
+    } catch (_) {}
+    return { ok: true, already: true, paymentId: existing.id };
+  }
+  if (stripeMeta.sessionId) {
+    const don = db
+      .prepare("SELECT id FROM donations WHERE stripe_session_id = ?")
+      .get(stripeMeta.sessionId);
+    if (don) {
+      try {
+        db.prepare("DELETE FROM potential_donation WHERE id = ?").run(potential.id);
+      } catch (_) {}
+      return { ok: true, already: true, donationId: don.id };
+    }
+  }
+
+  const paidAt = stripeMeta.paidAt || Date.now();
+  const donationId = db
+    .prepare(
+      `
+      INSERT INTO donations
+        (email, name, message, amount, processing_fee, total_charged, stripe_session_id, created_at, user_id, tier, donation_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    )
+    .run(
+      potential.email,
+      potential.name,
+      potential.message || "",
+      potential.amount,
+      potential.processing_fee || 0,
+      potential.total_charge,
+      stripeMeta.sessionId || potential.stripe_session_id || null,
+      paidAt,
+      potential.user_id || null,
+      potential.tier || null,
+      potential.donation_type || "one_time"
+    ).lastInsertRowid;
+
+  if (typeof deps.addChrisShare === "function") {
+    deps.addChrisShare(
+      potential.total_charge,
+      `Donation of ${money(potential.amount)} (processing fee ${money(potential.processing_fee || 0)}, total charged ${money(potential.total_charge)})`,
+      paidAt
+    );
+  }
+
+  let paymentId;
+  try {
+    paymentId = insertStripePaymentHistory(db, {
+      title: `Donation by ${potential.name}`,
+      description: `Donation of ${money(potential.amount)} (processing fee ${money(
+        potential.processing_fee || 0
+      )}, total charged ${money(potential.total_charge)}). Message: ${potential.message || "-"}`,
+      amountCents: potential.total_charge,
+      userId: potential.user_id || null,
+      paymentIntentId: stripeMeta.paymentIntentId,
+      sessionId: stripeMeta.sessionId || potential.stripe_session_id,
+      paidAt,
+    }).lastInsertRowid;
+  } catch (err) {
+    const again = findPaymentByStripeIds(db, stripeMeta);
+    if (again) {
+      try {
+        db.prepare("DELETE FROM potential_donation WHERE id = ?").run(potential.id);
+      } catch (_) {}
+      return { ok: true, already: true, paymentId: again.id, donationId };
+    }
+    throw err;
+  }
+
+  try {
+    db.prepare("DELETE FROM potential_donation WHERE id = ?").run(potential.id);
+  } catch (_) {}
+
+  return {
+    ok: true,
+    already: false,
+    paymentId,
+    donationId,
+    amountCents: potential.total_charge,
+  };
+}
+
+function findEventRsvpPotentialForSession(db, session) {
+  const meta = session?.metadata || {};
+  const potentialId = Number(meta.potential_id || meta.potentialId || 0);
+  if (potentialId) {
+    const row = db.prepare("SELECT * FROM potential_event_rsvp WHERE id = ?").get(potentialId);
+    if (row) return row;
+  }
+  if (session?.id) {
+    const row = db
+      .prepare("SELECT * FROM potential_event_rsvp WHERE stripe_session_id = ?")
+      .get(session.id);
+    if (row) return row;
+  }
+  const fromUrl = parseSuccessUrl(session?.success_url || "");
+  if (fromUrl.kind === "event_rsvp" && fromUrl.potentialId) {
+    return db.prepare("SELECT * FROM potential_event_rsvp WHERE id = ?").get(fromUrl.potentialId) || null;
+  }
+  return null;
+}
+
 async function handleCheckoutSessionCompleted(db, session, deps) {
   if (!session || (session.payment_status && session.payment_status !== "paid" && session.status !== "complete")) {
     return { ok: false, error: "Session not paid." };
@@ -438,11 +567,68 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
   const already = findPaymentByStripeIds(db, stripeMeta);
   if (already) return { ok: true, already: true, paymentId: already.id };
 
-  const kind = String(session.metadata?.kind || "");
+  const classified = classifyStripeCheckout(session, []);
+  const kind = String(session.metadata?.kind || classified.kind || "");
 
-  // Merch / donations have their own tables — leave those alone here if marked
-  if (kind === "donation" || kind === "merch" || kind === "fan_subscribe" || kind === "event_rsvp") {
+  // Event RSVP — finalize leftover potential or match event from success URL / line items
+  if (kind === "event_rsvp") {
+    const pot = findEventRsvpPotentialForSession(db, session);
+    if (pot) {
+      return backfillEventRsvpFromStripe(
+        db,
+        {
+          userId: pot.user_id,
+          eventId: pot.event_id,
+          stripeAmountCents: pot.total_charge || session.amount_total || 0,
+          paymentIntentId: stripeMeta.paymentIntentId,
+          sessionId: stripeMeta.sessionId,
+          paidAt: stripeMeta.paidAt,
+          potentialId: pot.id,
+        },
+        deps
+      );
+    }
+    const eventHit = findEventForStripeRow(db, {
+      guessedPotentialId: classified.potentialId,
+      sessionId: session.id,
+      successUrl: session.success_url,
+      lineItems: [],
+    });
+    // Without a user we can't safely RSVP — leave for manual reconcile
+    return {
+      ok: false,
+      error: "Paid event RSVP with no leftover potential; needs manual reconcile.",
+      stripeMeta,
+      eventId: eventHit?.event?.id || null,
+    };
+  }
+
+  if (kind === "merch" || kind === "fan_subscribe") {
     return { ok: true, skipped: true, reason: kind };
+  }
+
+  if (kind === "donation") {
+    const pot = findDonationPotentialForSession(db, session);
+    if (pot) {
+      return finalizeDonationPotential(db, pot, deps, stripeMeta);
+    }
+    // No leftover potential — still record a donation row so money isn't invisible
+    return backfillDonationFromStripe(
+      db,
+      {
+        stripeAmountCents: session.amount_total || 0,
+        paymentIntentId: stripeMeta.paymentIntentId,
+        sessionId: stripeMeta.sessionId,
+        paidAt: stripeMeta.paidAt,
+        email: session.customer_details?.email || session.customer_email || "",
+        name:
+          session.customer_details?.name ||
+          session.customer_email ||
+          "Donor",
+        message: "Recorded by Stripe recovery poller",
+      },
+      deps
+    );
   }
 
   const potential = findPotentialForSession(db, session);
@@ -451,7 +637,7 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
   }
 
   // No potential left — try to credit a member by email for tuition-like checkouts
-  if (kind === "make_payment" || kind === "pay_behalf" || !kind) {
+  if (kind === "make_payment" || kind === "pay_behalf" || kind === "unknown" || !kind) {
     const email = String(
       session.customer_details?.email || session.customer_email || ""
     )
@@ -470,7 +656,24 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
             paymentIntentId: stripeMeta.paymentIntentId,
             sessionId: stripeMeta.sessionId,
             paidAt: stripeMeta.paidAt,
-            note: `auto webhook ${session.id}`,
+            note: `auto recovery ${session.id}`,
+            parentId: null,
+          },
+          deps
+        );
+      }
+      // Parent email paying for child: only if metadata/kind says pay_behalf with child id
+      if (user && (user.parent || kind === "pay_behalf") && session.metadata?.child_id) {
+        return backfillTuitionFromStripe(
+          db,
+          {
+            userId: Number(session.metadata.child_id),
+            stripeAmountCents: session.amount_total || 0,
+            paymentIntentId: stripeMeta.paymentIntentId,
+            sessionId: stripeMeta.sessionId,
+            paidAt: stripeMeta.paidAt,
+            note: `auto recovery ${session.id}`,
+            parentId: user.id,
           },
           deps
         );
@@ -483,6 +686,164 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
     error: "No potential_payment row and could not auto-match a member. Needs manual backfill.",
     stripeMeta,
   };
+}
+
+/**
+ * Poll Stripe for recently paid Checkout Sessions and finalize any the site missed
+ * (e.g. success_url never loaded). No webhook / dashboard access required.
+ */
+async function pollAndRecoverPaidCheckouts(db, stripe, deps, options = {}) {
+  ensureStripePaymentColumns(db);
+  const lookbackHours = Math.max(1, Number(options.lookbackHours) || 48);
+  const sinceUnix = Math.floor(Date.now() / 1000) - lookbackHours * 3600;
+  const summary = {
+    checkedPotentials: 0,
+    checkedSessions: 0,
+    recovered: 0,
+    already: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  async function trySession(session, source) {
+    if (!session) return;
+    if (session.payment_status !== "paid" && session.status !== "complete") return;
+    try {
+      const result = await handleCheckoutSessionCompleted(db, session, deps);
+      if (result?.already) summary.already += 1;
+      else if (result?.skipped) summary.skipped += 1;
+      else if (result?.ok) {
+        summary.recovered += 1;
+        console.log(
+          `[stripe-recover] finalized ${session.id} via ${source}` +
+            (result.eventTitle ? ` (RSVP ${result.eventTitle})` : "")
+        );
+      } else {
+        summary.failed += 1;
+        if (result?.error) summary.errors.push(`${session.id}: ${result.error}`);
+      }
+    } catch (err) {
+      summary.failed += 1;
+      summary.errors.push(`${session.id}: ${err.message || err}`);
+      console.error("[stripe-recover] finalize failed:", session.id, err.message || err);
+    }
+  }
+
+  // 1) Leftover potential rows that still have a Stripe session id
+  const openSessions = [];
+  try {
+    openSessions.push(
+      ...db
+        .prepare(
+          "SELECT stripe_session_id AS sid FROM potential_payment WHERE stripe_session_id IS NOT NULL AND TRIM(stripe_session_id) <> ''"
+        )
+        .all()
+        .map((r) => r.sid)
+    );
+  } catch (_) {}
+  try {
+    openSessions.push(
+      ...db
+        .prepare(
+          "SELECT stripe_session_id AS sid FROM potential_event_rsvp WHERE stripe_session_id IS NOT NULL AND TRIM(stripe_session_id) <> ''"
+        )
+        .all()
+        .map((r) => r.sid)
+    );
+  } catch (_) {}
+  try {
+    openSessions.push(
+      ...db
+        .prepare(
+          "SELECT stripe_session_id AS sid FROM potential_donation WHERE stripe_session_id IS NOT NULL AND TRIM(stripe_session_id) <> ''"
+        )
+        .all()
+        .map((r) => r.sid)
+    );
+  } catch (_) {}
+
+  const uniqueOpen = [...new Set(openSessions.filter(Boolean))];
+  for (const sid of uniqueOpen) {
+    summary.checkedPotentials += 1;
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sid);
+      await trySession(session, "potential");
+    } catch (err) {
+      summary.failed += 1;
+      summary.errors.push(`${sid}: ${err.message || err}`);
+    }
+  }
+
+  // 2) Recent paid Checkout Sessions from Stripe API
+  let starting_after;
+  for (;;) {
+    const page = await stripe.checkout.sessions.list({
+      limit: 100,
+      created: { gte: sinceUnix },
+      ...(starting_after ? { starting_after } : {}),
+    });
+    const data = page.data || [];
+    for (const session of data) {
+      summary.checkedSessions += 1;
+      const ids = stripeIdsFromSession(session);
+      if (findPaymentByStripeIds(db, ids)) {
+        summary.already += 1;
+        continue;
+      }
+      await trySession(session, "list");
+    }
+    if (!page.has_more || !data.length) break;
+    starting_after = data[data.length - 1].id;
+  }
+
+  return summary;
+}
+
+function startStripeRecoveryPoller(db, stripe, deps, options = {}) {
+  const enabled =
+    String(process.env.STRIPE_RECOVERY_POLLER || "true").trim().toLowerCase() !== "false";
+  if (!enabled) {
+    console.log("[stripe-recover] poller disabled (STRIPE_RECOVERY_POLLER=false)");
+    return null;
+  }
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.log("[stripe-recover] poller skipped — no STRIPE_SECRET_KEY");
+    return null;
+  }
+
+  const intervalMs = Math.max(
+    60 * 1000,
+    Number(options.intervalMs || process.env.STRIPE_RECOVERY_INTERVAL_MS || 5 * 60 * 1000)
+  );
+  const lookbackHours = Number(options.lookbackHours || process.env.STRIPE_RECOVERY_LOOKBACK_HOURS || 48);
+
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const summary = await pollAndRecoverPaidCheckouts(db, stripe, deps, { lookbackHours });
+      if (summary.recovered > 0 || summary.failed > 0) {
+        console.log(
+          `[stripe-recover] potentials=${summary.checkedPotentials} sessions=${summary.checkedSessions} recovered=${summary.recovered} already=${summary.already} failed=${summary.failed}`
+        );
+      }
+    } catch (err) {
+      console.error("[stripe-recover] poll failed:", err.message || err);
+    } finally {
+      running = false;
+    }
+  };
+
+  // First run shortly after boot, then on interval
+  setTimeout(tick, 20 * 1000);
+  const handle = setInterval(tick, intervalMs);
+  if (handle.unref) handle.unref();
+  console.log(
+    `[stripe-recover] poller started (every ${Math.round(intervalMs / 1000)}s, lookback ${lookbackHours}h)`
+  );
+  return handle;
 }
 
 function parseSuccessUrl(url) {
@@ -1032,6 +1393,8 @@ module.exports = {
   finalizeContractPotential,
   backfillTuitionFromStripe,
   backfillDonationFromStripe,
+  finalizeDonationPotential,
+  findDonationPotentialForSession,
   backfillVideoAuditionFromStripe,
   backfillEventRsvpFromStripe,
   findEventForStripeRow,
@@ -1042,4 +1405,6 @@ module.exports = {
   classifyStripeCheckout,
   parseSuccessUrl,
   applyReconcilePayment,
+  pollAndRecoverPaidCheckouts,
+  startStripeRecoveryPoller,
 };

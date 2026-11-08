@@ -27,7 +27,11 @@
       border-radius: 10px;
       padding: 14px;
       margin: 14px 0;
-      background: #fff;
+      background: #fff8f7;
+    }
+    .sr-pay--ok {
+      border-color: #34a853;
+      background: #e6f4ea;
     }
     .sr-pay h3 { margin: 0 0 8px; }
     .sr-actions label { display: block; margin: 6px 0; }
@@ -95,7 +99,7 @@
           <span class="sr-muted"><%= money(t.localCents) %></span>
         </div>
         <div class="sr-card sr-ok">
-          Matched
+          Reconciled
           <strong><%= report.matched.length %></strong>
           <span class="sr-muted"><%= money(t.matchedStripeCents) %></span>
         </div>
@@ -336,39 +340,30 @@
         <% } %>
       </div>
 
-      <div class="sr-section">
-        <h2>Matched (<%= report.matched.length %>)</h2>
+      <div class="sr-section" id="matched">
+        <h2>Reconciled / matched (<%= report.matched.length %>)</h2>
         <% if (!report.matched.length) { %>
           <p>No matches in this range.</p>
         <% } else { %>
-          <div style="overflow-x:auto;">
-            <table class="sr-table">
-              <thead>
-                <tr>
-                  <th>Stripe</th>
-                  <th>Website</th>
-                  <th>Match</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% report.matched.forEach(function(m) { %>
-                  <tr>
-                    <td>
-                      <%= money(m.stripe.amount) %> · <%= when(m.stripe.created) %>
-                      <div class="sr-muted"><%= m.stripe.email || '-' %></div>
-                      <div class="sr-muted"><code><%= m.stripe.id %></code></div>
-                    </td>
-                    <td>
-                      <%= money(m.local.amount) %> · <%= when(m.local.created) %>
-                      <div class="sr-muted"><%= m.local.source %> #<%= m.local.id %> — <%= m.local.label %></div>
-                      <div class="sr-muted"><%= m.local.email || m.local.name || '' %></div>
-                    </td>
-                    <td><%= m.how %></td>
-                  </tr>
-                <% }) %>
-              </tbody>
-            </table>
-          </div>
+          <% report.matched.forEach(function(m) { %>
+            <div class="sr-pay sr-pay--ok">
+              <h3><%= money(m.stripe.amount) %> · <%= when(m.stripe.created) %></h3>
+              <p style="margin:4px 0;">
+                <strong>Stripe:</strong> <%= m.stripe.email || '-' %>
+                · <code><%= m.stripe.id %></code>
+              </p>
+              <p style="margin:4px 0;">
+                <strong>Website:</strong>
+                <%= m.local.source %> #<%= m.local.id %> — <%= m.local.label %>
+                · <%= money(m.local.amount) %>
+                <% if (m.local.name || m.local.email) { %>
+                  · <%= m.local.name || '' %><% if (m.local.userId) { %> (#<%= m.local.userId %>)<% } %>
+                  <%= m.local.email ? ' · ' + m.local.email : '' %>
+                <% } %>
+              </p>
+              <p class="sr-muted" style="margin:4px 0;">Match: <%= m.how %></p>
+            </div>
+          <% }) %>
         <% } %>
       </div>
     <% } %>

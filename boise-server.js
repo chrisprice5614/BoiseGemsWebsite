@@ -8768,9 +8768,8 @@ app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
 app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
   const start = String(req.body.start || "").trim();
   const end = String(req.body.end || "").trim();
-  const redirectTo =
-    `/admin/stripe-reconcile?start=${encodeURIComponent(start || "")}&end=${encodeURIComponent(end || "")}` +
-    "#stripe-only";
+  const baseRedirect =
+    `/admin/stripe-reconcile?start=${encodeURIComponent(start || "")}&end=${encodeURIComponent(end || "")}`;
 
   try {
     stripePaymentFinalize.ensureStripePaymentColumns(db);
@@ -8788,7 +8787,7 @@ app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
     if (!result || !result.ok) {
       req.session.flashMessage =
         result?.error || "Could not apply that Stripe payment.";
-      return res.redirect(redirectTo);
+      return res.redirect(baseRedirect + "#stripe-only");
     }
 
     if (result.already) {
@@ -8809,9 +8808,10 @@ app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
     console.error("Stripe reconcile apply failed:", err);
     req.session.flashMessage =
       "Apply failed: " + (err && err.message ? err.message : String(err));
+    return res.redirect(baseRedirect + "#stripe-only");
   }
 
-  return res.redirect(redirectTo);
+  return res.redirect(baseRedirect + "#matched");
 });
 
 app.post("/admin/chris-payment/pay", mustBeChrisPaymentViewer, (req, res) => {

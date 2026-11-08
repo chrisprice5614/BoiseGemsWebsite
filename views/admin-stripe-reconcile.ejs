@@ -13,6 +13,7 @@
     .sr-warn { background: #fff3cd; border-color: #ffc107; }
     .sr-bad { background: #fce8e6; border-color: #d93025; }
     .sr-ok { background: #e6f4ea; border-color: #34a853; }
+    .sr-info { background: #e8f0fe; border-color: #4285f4; }
     .sr-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
     .sr-table th, .sr-table td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; vertical-align: top; }
     .sr-table th { border-bottom: 1px solid #ccc; }
@@ -21,6 +22,19 @@
     .sr-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 16px 0; }
     .sr-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
     .sr-filters input { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+    .sr-pay {
+      border: 1px solid #d93025;
+      border-radius: 10px;
+      padding: 14px;
+      margin: 14px 0;
+      background: #fff;
+    }
+    .sr-pay h3 { margin: 0 0 8px; }
+    .sr-actions label { display: block; margin: 6px 0; }
+    .sr-actions select, .sr-actions input[type="text"], .sr-actions input[type="number"] {
+      padding: 6px 8px; border-radius: 6px; border: 1px solid #ccc; min-width: 220px;
+    }
+    .sr-flash { padding: 10px 12px; border-radius: 8px; background: #e6f4ea; border: 1px solid #34a853; margin: 12px 0; }
   </style>
 </head>
 <body>
@@ -32,11 +46,24 @@
   <div class="sr-wrap">
     <p style="margin:0 0 8px;"><a href="/admin-portal#pd-sec-system">&larr; Admin Portal</a></p>
     <h1>Stripe vs Website Reconcile</h1>
+
+    <div class="sr-card sr-info" style="margin:12px 0;">
+      <strong style="font-size:1rem;">Did the money go through?</strong>
+      <p style="margin:8px 0 0;">
+        Yes. Rows on this page come from <code>succeeded</code> Stripe PaymentIntents / paid Checkout Sessions.
+        A <code>payment_intent</code> id (starts with <code>pi_</code>) with succeeded status means Stripe successfully charged the card.
+        The usual failure was our site only recording the payment when the browser hit the success URL — if that page never loaded, Stripe kept the money and the website never wrote the balance/unlock.
+      </p>
+    </div>
+
     <p class="sr-muted">
-      Visible only to chris@chrispricemusic.net. Pulls Stripe Checkout Sessions, PaymentIntents, and Charges
-      in the date range and compares them to site Stripe records (payment history, donations, store orders).
-      Tuition rows often store the base amount while Stripe charged base + fee — those still count as a match.
+      Visible only to chris@chrispricemusic.net. For each unmatched Stripe payment below, confirm what it was and apply it.
+      Applies use the original Stripe timestamp, credit Chris Payment 3%, and do <em>not</em> write audit-log entries.
     </p>
+
+    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+      <div class="sr-flash"><%= flashMessage %></div>
+    <% } %>
 
     <form method="GET" action="/admin/stripe-reconcile" class="sr-filters">
       <label>
@@ -59,6 +86,7 @@
       <% const t = report.totals; %>
       <% const money = (c) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((c || 0) / 100); %>
       <% const when = (ms) => ms ? new Date(ms).toLocaleString() : '-'; %>
+      <% const seasonYear = typeof currentSeasonYear !== 'undefined' ? currentSeasonYear : new Date().getFullYear(); %>
 
       <div class="sr-summary">
         <div class="sr-card">
@@ -88,47 +116,143 @@
         </div>
       </div>
 
-      <p class="sr-muted">
-        Stripe raw: <%= report.rawCounts.checkoutSessions %> paid sessions,
-        <%= report.rawCounts.paymentIntents %> succeeded payment intents,
-        <%= report.rawCounts.charges %> succeeded charges.
-        Site: <%= report.rawCounts.paymentHistory %> paymentHistory,
-        <%= report.rawCounts.donations %> donations,
-        <%= report.rawCounts.merchOrders %> merch orders.
-      </p>
-
-      <div class="sr-section">
-        <h2>In Stripe, missing / unmatched on website (<%= report.stripeOnly.length %>)</h2>
+      <div class="sr-section" id="stripe-only">
+        <h2>Fix unmatched Stripe payments (<%= report.stripeOnly.length %>)</h2>
         <% if (!report.stripeOnly.length) { %>
           <p>None — every Stripe payment in range matched a site record.</p>
         <% } else { %>
-          <div style="overflow-x:auto;">
-            <table class="sr-table">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Amount</th>
-                  <th>Email</th>
-                  <th>Stripe ID</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% report.stripeOnly.forEach(function(s) { %>
-                  <tr>
-                    <td><%= when(s.created) %></td>
-                    <td><%= money(s.amount) %></td>
-                    <td><%= s.email || '-' %></td>
-                    <td>
-                      <code><%= s.id %></code>
-                      <% if (s.sessionId) { %><div class="sr-muted">session <%= s.sessionId %></div><% } %>
-                    </td>
-                    <td><%= s.description || s.kind %></td>
-                  </tr>
-                <% }) %>
-              </tbody>
-            </table>
-          </div>
+          <p class="sr-muted">
+            Review each one. If it was a performer or parent tuition payment, pick the correct member balance.
+            If it was a donation (or neither parent nor performer), choose Donation — that records it without changing member balances.
+            Unlocks (video audition) and store orders are applied when the checkout intent matches.
+          </p>
+
+          <% report.stripeOnly.forEach(function(s, idx) {
+            const suggested = s.suggestedAction || 'donation';
+            const defaultUserId = (s.matchedUser && !s.matchedUser.isParent)
+              ? s.matchedUser.id
+              : (s.children && s.children[0] ? s.children[0].id : (s.matchedUser ? s.matchedUser.id : ''));
+            const defaultParentId = (s.matchedUser && s.matchedUser.isParent) ? s.matchedUser.id : '';
+          %>
+            <div class="sr-pay" id="pay-<%= idx %>">
+              <h3><%= money(s.amount) %> · <%= when(s.created) %></h3>
+              <p style="margin:4px 0;">
+                <strong>Email:</strong> <%= s.email || '(none on Stripe)' %>
+                <% if (s.matchedUser) { %>
+                  · matched site user
+                  <strong><%= s.matchedUser.name %></strong>
+                  (<%= s.matchedUser.isParent ? 'parent' : 'member' %>,
+                  owed <%= money(s.matchedUser.owed) %>)
+                <% } else { %>
+                  · <span style="color:#a50e0e;">no matching site user by email</span>
+                <% } %>
+              </p>
+              <p class="sr-muted" style="margin:4px 0;">
+                Stripe id <code><%= s.id %></code>
+                <% if (s.sessionId) { %> · session <code><%= s.sessionId %></code><% } %>
+                · guessed: <strong><%= s.guessedKind || 'unknown' %></strong>
+                <% if (s.guessedPotentialId) { %> · potential #<%= s.guessedPotentialId %><% } %>
+              </p>
+              <% if (s.description) { %><p style="margin:4px 0;"><%= s.description %></p><% } %>
+              <% if (s.lineItems && s.lineItems.length) { %>
+                <ul style="margin:6px 0 6px 1.2em;">
+                  <% s.lineItems.forEach(function(li) { %>
+                    <li><%= li.name %> — <%= money(li.amount) %></li>
+                  <% }) %>
+                </ul>
+              <% } %>
+              <% if (s.successUrl) { %>
+                <p class="sr-muted">success_url: <code style="word-break:break-all;"><%= s.successUrl %></code></p>
+              <% } %>
+              <% if (s.leftoverPotential) { %>
+                <p class="sr-ok sr-card" style="display:inline-block;">Leftover potential_payment #<%= s.leftoverPotential.id %> still in DB (can finalize exactly).</p>
+              <% } %>
+              <% if (s.leftoverVideo) { %>
+                <p class="sr-ok sr-card" style="display:inline-block;">Leftover video audition potential #<%= s.leftoverVideo.id %> (<%= s.leftoverVideo.program %>).</p>
+              <% } %>
+              <% if (s.leftoverMerch) { %>
+                <p class="sr-ok sr-card" style="display:inline-block;">Leftover store checkout #<%= s.leftoverMerch.id %> for <%= s.leftoverMerch.name || s.leftoverMerch.email %>.</p>
+              <% } %>
+              <% if (s.children && s.children.length) { %>
+                <p><strong>Linked children:</strong>
+                  <% s.children.forEach(function(c) { %>
+                    <%= c.firstname %> <%= c.lastname %> (owed <%= money(c.owed) %>)<%= c !== s.children[s.children.length-1] ? '; ' : '' %>
+                  <% }) %>
+                </p>
+              <% } %>
+
+              <form method="POST" action="/admin/stripe-reconcile/apply" class="sr-actions"
+                    onsubmit="return confirm('Apply this Stripe payment to the website as selected? This updates balances/unlocks and Chris Payment, using the original Stripe time.');">
+                <input type="hidden" name="start" value="<%= start %>" />
+                <input type="hidden" name="end" value="<%= end %>" />
+                <input type="hidden" name="payment_intent_id" value="<%= String(s.id || '').indexOf('pi_') === 0 ? s.id : '' %>" />
+                <input type="hidden" name="session_id" value="<%= s.sessionId || '' %>" />
+                <input type="hidden" name="paid_at" value="<%= s.created || '' %>" />
+                <input type="hidden" name="stripe_amount_cents" value="<%= s.amount || 0 %>" />
+                <input type="hidden" name="email" value="<%= s.email || '' %>" />
+                <input type="hidden" name="name" value="<%= s.matchedUser ? s.matchedUser.name : (s.email || '') %>" />
+                <input type="hidden" name="potential_id" value="<%= (s.leftoverPotential && s.leftoverPotential.id) || (s.leftoverVideo && s.leftoverVideo.id) || (s.leftoverMerch && s.leftoverMerch.id) || s.guessedPotentialId || '' %>" />
+
+                <label>
+                  What is this payment?
+                  <select name="action" required onchange="srToggle(this)">
+                    <option value="tuition" <%= suggested === 'tuition' ? 'selected' : '' %>>Performer tuition / balance payment</option>
+                    <option value="pay_behalf" <%= suggested === 'pay_behalf' ? 'selected' : '' %>>Parent payment for a child</option>
+                    <option value="donation" <%= suggested === 'donation' ? 'selected' : '' %>>Donation / neither (no member balance)</option>
+                    <option value="video_audition" <%= suggested === 'video_audition' ? 'selected' : '' %>>Video audition unlock</option>
+                    <option value="merch" <%= suggested === 'merch' ? 'selected' : '' %>>Store order</option>
+                    <option value="contract" <%= suggested === 'contract' ? 'selected' : '' %>>Contract down payment</option>
+                  </select>
+                </label>
+
+                <div class="sr-field-user" style="<%= (suggested === 'donation' || suggested === 'merch') ? 'display:none;' : '' %>">
+                  <label>
+                    Member / child user id to credit
+                    <input type="number" name="user_id" value="<%= defaultUserId %>" placeholder="user id" />
+                  </label>
+                  <% if (s.children && s.children.length) { %>
+                    <label>
+                      Or pick linked child
+                      <select onchange="this.form.user_id.value=this.value;">
+                        <option value="">—</option>
+                        <% s.children.forEach(function(c) { %>
+                          <option value="<%= c.id %>" <%= String(defaultUserId) === String(c.id) ? 'selected' : '' %>>
+                            <%= c.firstname %> <%= c.lastname %> (<%= money(c.owed) %> owed)
+                          </option>
+                        <% }) %>
+                      </select>
+                    </label>
+                  <% } %>
+                </div>
+
+                <div class="sr-field-parent" style="<%= suggested === 'pay_behalf' ? '' : 'display:none;' %>">
+                  <label>
+                    Parent user id
+                    <input type="number" name="parent_id" value="<%= defaultParentId %>" placeholder="parent user id" />
+                  </label>
+                </div>
+
+                <div class="sr-field-audition" style="<%= suggested === 'video_audition' ? '' : 'display:none;' %>">
+                  <label>
+                    Program
+                    <select name="program">
+                      <option value="corps" <%= (s.leftoverVideo && s.leftoverVideo.program === 'corps') ? 'selected' : '' %>>Corps</option>
+                      <option value="independent" <%= (s.leftoverVideo && s.leftoverVideo.program === 'independent') ? 'selected' : '' %>>Independent / BGI</option>
+                    </select>
+                  </label>
+                  <label>
+                    Season year
+                    <input type="number" name="season_year" value="<%= (s.leftoverVideo && s.leftoverVideo.season_year) || seasonYear %>" />
+                  </label>
+                </div>
+
+                <p class="sr-muted">
+                  Will apply at Stripe time <%= when(s.created) %>, credit Chris 3% of the base amount, and skip audit history / receipt emails.
+                </p>
+                <button type="submit">Confirm &amp; apply this payment</button>
+              </form>
+            </div>
+          <% }) %>
         <% } %>
       </div>
 
@@ -215,5 +339,20 @@
 <footer>
   <%- include("includes/footer") %>
 </footer>
+<script>
+  function srToggle(sel) {
+    var form = sel.form;
+    var action = sel.value;
+    form.querySelectorAll('.sr-field-user').forEach(function(el) {
+      el.style.display = (action === 'donation' || action === 'merch') ? 'none' : '';
+    });
+    form.querySelectorAll('.sr-field-parent').forEach(function(el) {
+      el.style.display = action === 'pay_behalf' ? '' : 'none';
+    });
+    form.querySelectorAll('.sr-field-audition').forEach(function(el) {
+      el.style.display = action === 'video_audition' ? '' : 'none';
+    });
+  }
+</script>
 </body>
 </html>

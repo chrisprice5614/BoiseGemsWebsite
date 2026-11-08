@@ -1293,4 +1293,5 @@ module.exports = {
   getProductSizeLabels,
   registerMerchRoutes,
   productImageUrl,
+  finalizeMerchOrder,
 };

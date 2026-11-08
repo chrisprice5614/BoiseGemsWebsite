@@ -39,9 +39,15 @@ const rolesSystem = require("./roles-system");
 const partnerAuth = require("./partner-auth");
 const neopplyPartner = partnerAuth; // alias for video-audition embeds / older names
 const videoAuditionSystem = require("./video-audition-system");
+const stripePaymentFinalize = require("./stripe-payment-finalize");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 opsSystem.initOps(db);
+try {
+  stripePaymentFinalize.ensureStripePaymentColumns(db);
+} catch (err) {
+  console.error("ensureStripePaymentColumns failed:", err.message);
+}
 
 // When true, we will attempt to automatically send Chris's 3% share
 // to his connected Stripe account using Stripe Connect. When false,
@@ -1974,13 +1980,15 @@ function deletePressKitImageRecord(row) {
   db.prepare("DELETE FROM press_kit_images WHERE id = ?").run(row.id);
 }
 
-function addChrisShare(baseAmountCents, source) {
+function addChrisShare(baseAmountCents, source, paidAt = null) {
   ////ADD THIS TO EVERY TRANSACTION!!!
   if (!baseAmountCents || baseAmountCents <= 0) return;
 
   // Chris gets 3% of the base amount (half of the 6% fee)
   const chrisCut = Math.round(baseAmountCents * 0.03);
   if (!chrisCut) return;
+
+  const at = Number(paidAt) > 0 ? Number(paidAt) : Date.now();
 
   db.prepare(`
     UPDATE chrisPayment
@@ -1992,7 +2000,7 @@ function addChrisShare(baseAmountCents, source) {
     INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
     VALUES (?, ?, 'credit', ?, ?)
   `).run(
-    Date.now(),
+    at,
     chrisCut,
     `3% share from ${source || "transaction"}`,
     source || ""
@@ -2511,12 +2519,139 @@ function amountsLikelyMatch(stripeCents, localCents) {
   return false;
 }
 
+function summarizeLineItems(session) {
+  const data = session?.line_items?.data || [];
+  return data.map((li) => ({
+    name: li.description || li.price?.product?.name || "Item",
+    amount: li.amount_total || li.amount_subtotal || 0,
+  }));
+}
+
+function enrichStripeRowSuggestions(row) {
+  const email = String(row.email || "").toLowerCase();
+  let matchedUser = null;
+  let children = [];
+  if (email) {
+    matchedUser =
+      db
+        .prepare(
+          `
+          SELECT id, firstname, lastname, email, parent, owed, paid,
+                 contractedCorps, contractedIndependent, contractedAffiliate
+          FROM users WHERE lower(email) = ? LIMIT 1
+        `
+        )
+        .get(email) || null;
+    if (matchedUser) {
+      matchedUser.isParent = !!parentLinks.isParentAccount(matchedUser) || !!matchedUser.parent;
+      if (matchedUser.isParent) {
+        children = (parentLinks.getChildrenForParent(db, matchedUser.id) || []).map((c) => ({
+          id: c.id,
+          firstname: c.firstname,
+          lastname: c.lastname,
+          email: c.email,
+          owed: c.owed,
+        }));
+      }
+    }
+  }
+
+  let leftoverPotential = null;
+  let leftoverVideo = null;
+  let leftoverMerch = null;
+  let leftoverDonation = null;
+  const potId = Number(row.guessedPotentialId) || 0;
+
+  if (potId && (row.guessedKind === "make_payment" || row.guessedKind === "pay_behalf" || row.guessedKind === "contract")) {
+    leftoverPotential = db.prepare("SELECT * FROM potential_payment WHERE id = ?").get(potId) || null;
+  }
+  if (row.sessionId) {
+    leftoverPotential =
+      leftoverPotential ||
+      db.prepare("SELECT * FROM potential_payment WHERE stripe_session_id = ?").get(row.sessionId) ||
+      null;
+  }
+  if (potId && row.guessedKind === "video_audition") {
+    try {
+      leftoverVideo =
+        db.prepare("SELECT * FROM potential_video_audition WHERE id = ?").get(potId) || null;
+    } catch (_) {}
+  }
+  if (row.sessionId) {
+    try {
+      leftoverVideo =
+        leftoverVideo ||
+        db
+          .prepare("SELECT * FROM potential_video_audition WHERE stripe_session_id = ?")
+          .get(row.sessionId) ||
+        null;
+    } catch (_) {}
+  }
+  if (potId && row.guessedKind === "merch") {
+    leftoverMerch =
+      db.prepare("SELECT * FROM merch_potential_orders WHERE id = ?").get(potId) || null;
+  }
+  if (row.id && String(row.id).startsWith("pi_")) {
+    leftoverMerch =
+      leftoverMerch ||
+      db
+        .prepare("SELECT * FROM merch_potential_orders WHERE stripe_payment_intent_id = ?")
+        .get(row.id) ||
+      null;
+  }
+  if (potId && row.guessedKind === "donation") {
+    leftoverDonation =
+      db.prepare("SELECT * FROM potential_donation WHERE id = ?").get(potId) || null;
+  }
+
+  let suggestedAction = "donation";
+  if (row.guessedKind === "video_audition" || leftoverVideo) suggestedAction = "video_audition";
+  else if (row.guessedKind === "merch" || leftoverMerch) suggestedAction = "merch";
+  else if (row.guessedKind === "contract" || (leftoverPotential && leftoverPotential.contract_id)) {
+    suggestedAction = "contract";
+  } else if (row.guessedKind === "pay_behalf" || (matchedUser && matchedUser.isParent)) {
+    suggestedAction = "pay_behalf";
+  } else if (
+    row.guessedKind === "make_payment" ||
+    (matchedUser && !matchedUser.isParent) ||
+    leftoverPotential
+  ) {
+    suggestedAction = "tuition";
+  } else if (row.guessedKind === "donation" || row.guessedKind === "event_rsvp" || row.guessedKind === "fan_subscribe") {
+    suggestedAction = "donation";
+  } else if (!matchedUser) {
+    suggestedAction = "donation";
+  }
+
+  row.matchedUser = matchedUser
+    ? {
+        id: matchedUser.id,
+        name: `${matchedUser.firstname || ""} ${matchedUser.lastname || ""}`.trim(),
+        email: matchedUser.email,
+        isParent: !!matchedUser.isParent,
+        owed: matchedUser.owed || 0,
+      }
+    : null;
+  row.children = children;
+  row.leftoverPotential = leftoverPotential;
+  row.leftoverVideo = leftoverVideo;
+  row.leftoverMerch = leftoverMerch
+    ? { id: leftoverMerch.id, email: leftoverMerch.email, name: leftoverMerch.name, total: leftoverMerch.total_cents }
+    : null;
+  row.leftoverDonation = leftoverDonation
+    ? { id: leftoverDonation.id, email: leftoverDonation.email, name: leftoverDonation.name }
+    : null;
+  row.suggestedAction = suggestedAction;
+  return row;
+}
+
 async function buildStripeSiteReconcile(range) {
   const createdFilter = { gte: range.startUnix, lte: range.endUnix };
 
   const [sessions, paymentIntents, charges] = await Promise.all([
     stripeListAll(stripe.checkout.sessions.list.bind(stripe.checkout.sessions), {
       created: createdFilter,
+      expand: ["data.line_items"],
     }),
     stripeListAll(stripe.paymentIntents.list.bind(stripe.paymentIntents), {
       created: createdFilter,
@@ -2553,6 +2688,12 @@ async function buildStripeSiteReconcile(range) {
       description: pi.description || "",
       sessionId: null,
       chargeId: null,
+      successUrl: null,
+      lineItems: [],
+      metadata: pi.metadata || {},
+      guessedKind: "unknown",
+      guessedPotentialId: null,
+      status: pi.status,
     });
   }
   for (const ch of succeededCharges) {
@@ -2579,6 +2720,12 @@ async function buildStripeSiteReconcile(range) {
       description: ch.description || "",
       sessionId: null,
       chargeId: ch.id,
+      successUrl: null,
+      lineItems: [],
+      metadata: ch.metadata || {},
+      guessedKind: "unknown",
+      guessedPotentialId: null,
+      status: ch.status,
     });
   }
   for (const sess of paidSessions) {
@@ -2590,12 +2737,24 @@ async function buildStripeSiteReconcile(range) {
     const email = String(
       sess.customer_details?.email || sess.customer_email || ""
     ).toLowerCase();
+    const lineItems = summarizeLineItems(sess);
+    const classified = stripePaymentFinalize.classifyStripeCheckout(
+      sess,
+      lineItems.map((li) => li.name)
+    );
+    const lineDesc = lineItems.map((li) => li.name).filter(Boolean).join(" · ");
     const existing = stripeByKey.get(key);
     if (existing) {
       existing.sessionId = sess.id;
+      existing.successUrl = sess.success_url || null;
+      existing.lineItems = lineItems;
+      existing.metadata = { ...(existing.metadata || {}), ...(sess.metadata || {}) };
+      existing.guessedKind = classified.kind || existing.guessedKind;
+      existing.guessedPotentialId = classified.potentialId || existing.guessedPotentialId;
       if (!existing.email && email) existing.email = email;
-      if (!existing.description && sess.metadata) {
-        existing.description = Object.values(sess.metadata).filter(Boolean).join(" · ");
+      if (!existing.description && lineDesc) existing.description = lineDesc;
+      else if (lineDesc && existing.description && !existing.description.includes(lineDesc)) {
+        existing.description = `${existing.description} · ${lineDesc}`;
       }
       continue;
     }
@@ -2607,45 +2766,65 @@ async function buildStripeSiteReconcile(range) {
       currency: sess.currency || "usd",
       created: (sess.created || 0) * 1000,
       email,
-      description: sess.metadata
+      description: lineDesc || (sess.metadata
         ? Object.values(sess.metadata).filter(Boolean).join(" · ")
-        : "",
+        : ""),
       sessionId: sess.id,
       chargeId: null,
+      successUrl: sess.success_url || null,
+      lineItems,
+      metadata: sess.metadata || {},
+      guessedKind: classified.kind || "unknown",
+      guessedPotentialId: classified.potentialId || null,
+      status: sess.payment_status || sess.status,
     });
+  }
+
+  // Merch PaymentIntents often have potential_order_id metadata and no checkout session
+  for (const row of stripeByKey.values()) {
+    if (row.metadata && row.metadata.potential_order_id && row.guessedKind === "unknown") {
+      row.guessedKind = "merch";
+      row.guessedPotentialId = Number(row.metadata.potential_order_id) || null;
+    }
   }
 
   const stripeRows = Array.from(stripeByKey.values()).sort(
     (a, b) => b.created - a.created
   );
 
-  const localPayments = db
-    .prepare(
+  let localPayments = [];
+  try {
+    localPayments = db
+      .prepare(
+        `
+        SELECT p.id, p.title, p.description, p.amount, p.method, p.date, p.user_id,
+               p.stripe_payment_intent_id, p.stripe_session_id,
+               u.firstname, u.lastname, u.email
+        FROM paymentHistory p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.date >= ? AND p.date <= ?
+          AND LOWER(COALESCE(p.method, '')) LIKE '%stripe%'
+        ORDER BY p.date DESC
       `
-      SELECT p.id, p.title, p.description, p.amount, p.method, p.date, p.user_id,
-             u.firstname, u.lastname, u.email
-      FROM paymentHistory p
-      LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.date >= ? AND p.date <= ?
-        AND LOWER(COALESCE(p.method, '')) LIKE '%stripe%'
-      ORDER BY p.date DESC
-    `
-    )
-    .all(range.startMs, range.endMs)
-    .map((p) => ({
-      source: "paymentHistory",
-      id: p.id,
-      label: p.title || "Payment",
-      detail: p.description || "",
-      amount: p.amount || 0,
-      created: p.date || 0,
-      email: String(p.email || "").toLowerCase(),
-      name: [p.firstname, p.lastname].filter(Boolean).join(" "),
-      method: p.method,
-      stripeSessionId: null,
-      stripePaymentIntentId: null,
-      userId: p.user_id,
-    }));
+      )
+      .all(range.startMs, range.endMs)
+      .map((p) => ({
+        source: "paymentHistory",
+        id: p.id,
+        label: p.title || "Payment",
+        detail: p.description || "",
+        amount: p.amount || 0,
+        created: p.date || 0,
+        email: String(p.email || "").toLowerCase(),
+        name: [p.firstname, p.lastname].filter(Boolean).join(" "),
+        method: p.method,
+        stripeSessionId: p.stripe_session_id || null,
+        stripePaymentIntentId: p.stripe_payment_intent_id || null,
+        userId: p.user_id,
+      }));
+  } catch (err) {
+    console.error("Reconcile paymentHistory query failed:", err.message);
+  }
 
   let localDonations = [];
   try {
@@ -2773,7 +2952,7 @@ async function buildStripeSiteReconcile(range) {
       usedLocal.add(localKey(best));
       matched.push({ stripe: s, local: best, how: matchHow, score: bestScore });
     } else {
-      stripeOnly.push(s);
+      stripeOnly.push(enrichStripeRowSuggestions(s));
     }
   }
 
@@ -8516,6 +8695,7 @@ app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
     if (!process.env.STRIPE_SECRET_KEY) {
       throw new Error("STRIPE_SECRET_KEY is not configured.");
     }
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
     report = await buildStripeSiteReconcile(range);
   } catch (err) {
     console.error("Stripe reconcile failed:", err);
@@ -8528,7 +8708,56 @@ app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
     error,
     start: range.startYmd,
     end: range.endYmd,
+    currentSeasonYear: getCurrentSeasonYear(),
   });
+});
+
+// Chris-only: apply an unmatched Stripe payment onto the website (no audit log)
+app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
+  const start = String(req.body.start || "").trim();
+  const end = String(req.body.end || "").trim();
+  const redirectTo =
+    `/admin/stripe-reconcile?start=${encodeURIComponent(start || "")}&end=${encodeURIComponent(end || "")}` +
+    "#stripe-only";
+
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+    const noopEmail = () => {};
+    const result = stripePaymentFinalize.applyReconcilePayment(db, req.body, {
+      addChrisShare,
+      sendEmail: noopEmail,
+      MasterEmail: null,
+      silent: true,
+      markUserContracted,
+      finalizeMerchOrder: merchSystem.finalizeMerchOrder,
+      getSiteSettings,
+    });
+
+    if (!result || !result.ok) {
+      req.session.flashMessage =
+        result?.error || "Could not apply that Stripe payment.";
+      return res.redirect(redirectTo);
+    }
+
+    if (result.already) {
+      req.session.flashMessage =
+        "That Stripe payment was already recorded on the site.";
+    } else if (result.orderId) {
+      req.session.flashMessage = `Store order #${result.orderId} recorded from Stripe.`;
+    } else if (result.donationId) {
+      req.session.flashMessage =
+        "Donation recorded from Stripe (no member balance change). Chris share applied.";
+    } else {
+      req.session.flashMessage =
+        "Stripe payment recorded on the website. Balance/unlock updated and Chris share applied.";
+    }
+  } catch (err) {
+    console.error("Stripe reconcile apply failed:", err);
+    req.session.flashMessage =
+      "Apply failed: " + (err && err.message ? err.message : String(err));
+  }
+
+  return res.redirect(redirectTo);
 });
 
 app.post("/admin/chris-payment/pay", mustBeChrisPaymentViewer, (req, res) => {

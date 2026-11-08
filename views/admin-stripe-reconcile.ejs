@@ -56,11 +56,6 @@
       </p>
     </div>
 
-    <p class="sr-muted">
-      Visible only to chris@chrispricemusic.net. For each unmatched Stripe payment below, confirm what it was and apply it.
-      Applies use the original Stripe timestamp, credit Chris Payment 3%, and do <em>not</em> write audit-log entries.
-    </p>
-
     <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
       <div class="sr-flash"><%= flashMessage %></div>
     <% } %>
@@ -121,26 +116,34 @@
         <% if (!report.stripeOnly.length) { %>
           <p>None — every Stripe payment in range matched a site record.</p>
         <% } else { %>
-          <p class="sr-muted">
-            Review each one. If it was a performer or parent tuition payment, pick the correct member balance.
-            If it was a donation (or neither parent nor performer), choose Donation — that records it without changing member balances.
-            Unlocks (video audition) and store orders are applied when the checkout intent matches.
-          </p>
-
+          <% const eventOptions = typeof eventsForSelect !== 'undefined' && eventsForSelect ? eventsForSelect : []; %>
           <% report.stripeOnly.forEach(function(s, idx) {
             const suggested = s.suggestedAction || 'donation';
             const defaultUserId = (s.matchedUser && !s.matchedUser.isParent)
               ? s.matchedUser.id
               : (s.children && s.children[0] ? s.children[0].id : (s.matchedUser ? s.matchedUser.id : ''));
             const defaultParentId = (s.matchedUser && s.matchedUser.isParent) ? s.matchedUser.id : '';
+            const defaultUserName = (function() {
+              if (s.matchedUser && String(s.matchedUser.id) === String(defaultUserId)) return s.matchedUser.name;
+              if (s.children) {
+                for (var i = 0; i < s.children.length; i++) {
+                  if (String(s.children[i].id) === String(defaultUserId)) {
+                    return (s.children[i].firstname || '') + ' ' + (s.children[i].lastname || '');
+                  }
+                }
+              }
+              return '';
+            })();
+            const parentName = s.matchedUser && s.matchedUser.isParent ? s.matchedUser.name : '';
+            const hideUser = suggested === 'donation' || suggested === 'merch';
           %>
             <div class="sr-pay" id="pay-<%= idx %>">
               <h3><%= money(s.amount) %> · <%= when(s.created) %></h3>
               <p style="margin:4px 0;">
                 <strong>Email:</strong> <%= s.email || '(none on Stripe)' %>
                 <% if (s.matchedUser) { %>
-                  · matched site user
-                  <strong><%= s.matchedUser.name %></strong>
+                  · matched
+                  <strong>#<%= s.matchedUser.id %> <%= s.matchedUser.name %></strong>
                   (<%= s.matchedUser.isParent ? 'parent' : 'member' %>,
                   owed <%= money(s.matchedUser.owed) %>)
                 <% } else { %>
@@ -161,6 +164,12 @@
                   <% }) %>
                 </ul>
               <% } %>
+              <% if (s.matchedEvent) { %>
+                <p class="sr-ok sr-card" style="display:inline-block;">
+                  Matched event: <strong>#<%= s.matchedEvent.id %> <%= s.matchedEvent.title %></strong>
+                  <% if (s.matchedEvent.slug) { %> (<code><%= s.matchedEvent.slug %></code>)<% } %>
+                </p>
+              <% } %>
               <% if (s.successUrl) { %>
                 <p class="sr-muted">success_url: <code style="word-break:break-all;"><%= s.successUrl %></code></p>
               <% } %>
@@ -173,16 +182,19 @@
               <% if (s.leftoverMerch) { %>
                 <p class="sr-ok sr-card" style="display:inline-block;">Leftover store checkout #<%= s.leftoverMerch.id %> for <%= s.leftoverMerch.name || s.leftoverMerch.email %>.</p>
               <% } %>
+              <% if (s.leftoverEventRsvp) { %>
+                <p class="sr-ok sr-card" style="display:inline-block;">Leftover event RSVP potential #<%= s.leftoverEventRsvp.id %>.</p>
+              <% } %>
               <% if (s.children && s.children.length) { %>
                 <p><strong>Linked children:</strong>
                   <% s.children.forEach(function(c) { %>
-                    <%= c.firstname %> <%= c.lastname %> (owed <%= money(c.owed) %>)<%= c !== s.children[s.children.length-1] ? '; ' : '' %>
+                    #<%= c.id %> <%= c.firstname %> <%= c.lastname %> (owed <%= money(c.owed) %>)<%= c !== s.children[s.children.length-1] ? '; ' : '' %>
                   <% }) %>
                 </p>
               <% } %>
 
               <form method="POST" action="/admin/stripe-reconcile/apply" class="sr-actions"
-                    onsubmit="return confirm('Apply this Stripe payment to the website as selected? This updates balances/unlocks and Chris Payment, using the original Stripe time.');">
+                    onsubmit="return confirm('Apply this Stripe payment as selected?');">
                 <input type="hidden" name="start" value="<%= start %>" />
                 <input type="hidden" name="end" value="<%= end %>" />
                 <input type="hidden" name="payment_intent_id" value="<%= String(s.id || '').indexOf('pi_') === 0 ? s.id : '' %>" />
@@ -191,11 +203,12 @@
                 <input type="hidden" name="stripe_amount_cents" value="<%= s.amount || 0 %>" />
                 <input type="hidden" name="email" value="<%= s.email || '' %>" />
                 <input type="hidden" name="name" value="<%= s.matchedUser ? s.matchedUser.name : (s.email || '') %>" />
-                <input type="hidden" name="potential_id" value="<%= (s.leftoverPotential && s.leftoverPotential.id) || (s.leftoverVideo && s.leftoverVideo.id) || (s.leftoverMerch && s.leftoverMerch.id) || s.guessedPotentialId || '' %>" />
+                <input type="hidden" name="potential_id" value="<%= (s.leftoverPotential && s.leftoverPotential.id) || (s.leftoverVideo && s.leftoverVideo.id) || (s.leftoverMerch && s.leftoverMerch.id) || (s.leftoverEventRsvp && s.leftoverEventRsvp.id) || s.guessedPotentialId || '' %>" />
 
                 <label>
                   What is this payment?
                   <select name="action" required onchange="srToggle(this)">
+                    <option value="event_rsvp" <%= suggested === 'event_rsvp' ? 'selected' : '' %>>Event RSVP (e.g. callback audition)</option>
                     <option value="tuition" <%= suggested === 'tuition' ? 'selected' : '' %>>Performer tuition / balance payment</option>
                     <option value="pay_behalf" <%= suggested === 'pay_behalf' ? 'selected' : '' %>>Parent payment for a child</option>
                     <option value="donation" <%= suggested === 'donation' ? 'selected' : '' %>>Donation / neither (no member balance)</option>
@@ -205,30 +218,59 @@
                   </select>
                 </label>
 
-                <div class="sr-field-user" style="<%= (suggested === 'donation' || suggested === 'merch') ? 'display:none;' : '' %>">
+                <div class="sr-field-user" style="<%= hideUser ? 'display:none;' : '' %>">
                   <label>
-                    Member / child user id to credit
-                    <input type="number" name="user_id" value="<%= defaultUserId %>" placeholder="user id" />
-                  </label>
-                  <% if (s.children && s.children.length) { %>
-                    <label>
-                      Or pick linked child
-                      <select onchange="this.form.user_id.value=this.value;">
-                        <option value="">—</option>
-                        <% s.children.forEach(function(c) { %>
-                          <option value="<%= c.id %>" <%= String(defaultUserId) === String(c.id) ? 'selected' : '' %>>
-                            <%= c.firstname %> <%= c.lastname %> (<%= money(c.owed) %> owed)
+                    Member / child to credit
+                    <% if ((s.matchedUser && !s.matchedUser.isParent) || (s.children && s.children.length)) { %>
+                      <select name="user_id_pick" onchange="if (this.value) this.form.user_id.value=this.value;">
+                        <option value="">— pick —</option>
+                        <% if (s.matchedUser && !s.matchedUser.isParent) { %>
+                          <option value="<%= s.matchedUser.id %>" <%= String(defaultUserId) === String(s.matchedUser.id) ? 'selected' : '' %>>
+                            #<%= s.matchedUser.id %> <%= s.matchedUser.name %>
                           </option>
-                        <% }) %>
+                        <% } %>
+                        <% if (s.children && s.children.length) { %>
+                          <% s.children.forEach(function(c) { %>
+                            <option value="<%= c.id %>" <%= String(defaultUserId) === String(c.id) ? 'selected' : '' %>>
+                              #<%= c.id %> <%= c.firstname %> <%= c.lastname %> (<%= money(c.owed) %> owed)
+                            </option>
+                          <% }) %>
+                        <% } %>
                       </select>
-                    </label>
-                  <% } %>
+                    <% } %>
+                    <input type="number" name="user_id" value="<%= defaultUserId %>" placeholder="user id" style="margin-top:6px;" />
+                    <% if (defaultUserId && defaultUserName) { %>
+                      <span class="sr-muted">Selected: #<%= defaultUserId %> <%= defaultUserName %></span>
+                    <% } %>
+                  </label>
                 </div>
 
                 <div class="sr-field-parent" style="<%= suggested === 'pay_behalf' ? '' : 'display:none;' %>">
                   <label>
-                    Parent user id
+                    Parent
                     <input type="number" name="parent_id" value="<%= defaultParentId %>" placeholder="parent user id" />
+                    <% if (defaultParentId && parentName) { %>
+                      <span class="sr-muted">#<%= defaultParentId %> <%= parentName %></span>
+                    <% } %>
+                  </label>
+                </div>
+
+                <div class="sr-field-event" style="<%= suggested === 'event_rsvp' ? '' : 'display:none;' %>">
+                  <label>
+                    Event
+                    <select name="event_id" <%= suggested === 'event_rsvp' ? 'required' : '' %>>
+                      <option value="">— pick event —</option>
+                      <% if (s.matchedEvent) { %>
+                        <option value="<%= s.matchedEvent.id %>" selected>
+                          #<%= s.matchedEvent.id %> <%= s.matchedEvent.title %>
+                        </option>
+                      <% } %>
+                      <% eventOptions.forEach(function(ev) {
+                        if (s.matchedEvent && Number(ev.id) === Number(s.matchedEvent.id)) return;
+                      %>
+                        <option value="<%= ev.id %>">#<%= ev.id %> <%= ev.title %></option>
+                      <% }) %>
+                    </select>
                   </label>
                 </div>
 
@@ -246,9 +288,6 @@
                   </label>
                 </div>
 
-                <p class="sr-muted">
-                  Will apply at Stripe time <%= when(s.created) %>, credit Chris 3% of the base amount, and skip audit history / receipt emails.
-                </p>
                 <button type="submit">Confirm &amp; apply this payment</button>
               </form>
             </div>
@@ -351,6 +390,11 @@
     });
     form.querySelectorAll('.sr-field-audition').forEach(function(el) {
       el.style.display = action === 'video_audition' ? '' : 'none';
+    });
+    form.querySelectorAll('.sr-field-event').forEach(function(el) {
+      el.style.display = action === 'event_rsvp' ? '' : 'none';
+      var eventSelect = el.querySelector('select[name="event_id"]');
+      if (eventSelect) eventSelect.required = action === 'event_rsvp';
     });
   }
 </script>

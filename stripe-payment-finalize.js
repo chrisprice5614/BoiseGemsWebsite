@@ -518,12 +518,152 @@ function classifyStripeCheckout(session, lineItemNames = []) {
   if (fromUrl.kind) return fromUrl;
 
   const blob = `${lineItemNames.join(" ")} ${session?.description || ""}`.toLowerCase();
+  // RSVP line items look like "RSVP: BGI Callback Audition" — check before "audition"
+  if (/\brsvp\b/.test(blob) || /^rsvp\s*:/.test(blob.trim())) {
+    return { kind: "event_rsvp", potentialId: null };
+  }
   if (blob.includes("donation") || blob.includes("donate")) return { kind: "donation", potentialId: null };
-  if (blob.includes("audition")) return { kind: "video_audition", potentialId: null };
+  if (
+    blob.includes("video audition") ||
+    blob.includes("audition unlock") ||
+    blob.includes("audition application")
+  ) {
+    return { kind: "video_audition", potentialId: null };
+  }
   if (blob.includes("contract") || blob.includes("down payment")) return { kind: "contract", potentialId: null };
   if (blob.includes("tuition") || blob.includes("payment for tuition")) return { kind: "make_payment", potentialId: null };
   if (blob.includes("store") || blob.includes("merch")) return { kind: "merch", potentialId: null };
   return { kind: "unknown", potentialId: null };
+}
+
+function findEventForStripeRow(db, {
+  guessedPotentialId,
+  sessionId,
+  successUrl,
+  lineItems,
+} = {}) {
+  const potId = Number(guessedPotentialId) || 0;
+  let potential = null;
+  if (potId) {
+    potential = db.prepare("SELECT * FROM potential_event_rsvp WHERE id = ?").get(potId) || null;
+  }
+  if (!potential && sessionId) {
+    potential =
+      db.prepare("SELECT * FROM potential_event_rsvp WHERE stripe_session_id = ?").get(sessionId) ||
+      null;
+  }
+  if (potential) {
+    const event = db.prepare("SELECT * FROM events WHERE id = ?").get(potential.event_id);
+    if (event) return { event, potential };
+  }
+
+  const slugMatch = String(successUrl || "").match(/\/event\/([^/?#]+)\/rsvp\/success/i);
+  if (slugMatch) {
+    const event = db.prepare("SELECT * FROM events WHERE slug = ?").get(decodeURIComponent(slugMatch[1]));
+    if (event) return { event, potential: null };
+  }
+
+  for (const li of lineItems || []) {
+    const name = String(li.name || "").trim();
+    const m = name.match(/^RSVP:\s*(.+)$/i);
+    if (!m) continue;
+    const title = m[1].trim();
+    let event =
+      db.prepare("SELECT * FROM events WHERE title = ? COLLATE NOCASE LIMIT 1").get(title) || null;
+    if (!event) {
+      event =
+        db
+          .prepare(
+            `
+            SELECT * FROM events
+            WHERE title LIKE ? COLLATE NOCASE
+            ORDER BY datetime DESC
+            LIMIT 1
+          `
+          )
+          .get(`%${title}%`) || null;
+    }
+    if (event) return { event, potential: null, matchedTitle: title };
+  }
+  return null;
+}
+
+function backfillEventRsvpFromStripe(db, {
+  userId,
+  eventId,
+  stripeAmountCents,
+  paymentIntentId,
+  sessionId,
+  paidAt,
+  potentialId,
+}, deps) {
+  const existing = findPaymentByStripeIds(db, { paymentIntentId, sessionId });
+  if (existing) return { ok: true, already: true, paymentId: existing.id };
+
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+  if (!user) return { ok: false, error: "User not found for event RSVP." };
+  const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId);
+  if (!event) return { ok: false, error: "Event not found for RSVP." };
+
+  const total = Math.round(Number(stripeAmountCents) || 0);
+  if (total <= 0) return { ok: false, error: "Invalid RSVP amount." };
+
+  const existingRsvp = db
+    .prepare("SELECT * FROM rsvp WHERE user_id = ? AND event_id = ?")
+    .get(user.id, event.id);
+  if (existingRsvp) {
+    db.prepare("UPDATE rsvp SET paid = 1 WHERE id = ?").run(existingRsvp.id);
+  } else {
+    db.prepare("INSERT INTO rsvp (user_id, event_id, paid) VALUES (?, ?, 1)").run(
+      user.id,
+      event.id
+    );
+  }
+
+  if (typeof deps.addChrisShare === "function") {
+    deps.addChrisShare(
+      total,
+      `$${ (total / 100).toFixed(2) } RSVP for ${event.title} by userID ${user.id}`,
+      paidAt || null
+    );
+  }
+
+  let paymentId;
+  try {
+    paymentId = insertStripePaymentHistory(db, {
+      title: `Event RSVP: ${event.title}`,
+      description: `RSVP fee collected (${money(total)}). Recorded from Stripe reconcile.`,
+      amountCents: total,
+      userId: user.id,
+      paymentIntentId,
+      sessionId,
+      paidAt,
+    }).lastInsertRowid;
+  } catch (err) {
+    const again = findPaymentByStripeIds(db, { paymentIntentId, sessionId });
+    if (again) return { ok: true, already: true, paymentId: again.id };
+    throw err;
+  }
+
+  if (potentialId) {
+    try {
+      db.prepare("DELETE FROM potential_event_rsvp WHERE id = ?").run(Number(potentialId));
+    } catch (_) {}
+  } else if (sessionId) {
+    try {
+      db.prepare("DELETE FROM potential_event_rsvp WHERE stripe_session_id = ?").run(sessionId);
+    } catch (_) {}
+  }
+
+  return {
+    ok: true,
+    already: false,
+    paymentId,
+    userId: user.id,
+    eventId: event.id,
+    eventTitle: event.title,
+    amountCents: total,
+  };
 }
 
 function backfillDonationFromStripe(db, {
@@ -799,6 +939,26 @@ function applyReconcilePayment(db, body, deps) {
     );
   }
 
+  if (action === "event_rsvp") {
+    const userId = Number(body.user_id);
+    const eventId = Number(body.event_id);
+    if (!userId) return { ok: false, error: "Pick the member for this RSVP." };
+    if (!eventId) return { ok: false, error: "Pick the event this RSVP belongs to." };
+    return backfillEventRsvpFromStripe(
+      db,
+      {
+        userId,
+        eventId,
+        stripeAmountCents,
+        paymentIntentId,
+        sessionId,
+        paidAt,
+        potentialId: Number(body.potential_id) || null,
+      },
+      silentDeps
+    );
+  }
+
   if (action === "merch") {
     if (typeof deps.finalizeMerchOrder !== "function") {
       return { ok: false, error: "Merch finalize helper unavailable." };
@@ -873,6 +1033,8 @@ module.exports = {
   backfillTuitionFromStripe,
   backfillDonationFromStripe,
   backfillVideoAuditionFromStripe,
+  backfillEventRsvpFromStripe,
+  findEventForStripeRow,
   findPotentialForSession,
   handleCheckoutSessionCompleted,
   stripeIdsFromSession,

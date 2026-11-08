@@ -2560,6 +2560,8 @@ function enrichStripeRowSuggestions(row) {
   let leftoverVideo = null;
   let leftoverMerch = null;
   let leftoverDonation = null;
+  let matchedEvent = null;
+  let leftoverEventRsvp = null;
   const potId = Number(row.guessedPotentialId) || 0;
 
   if (potId && (row.guessedKind === "make_payment" || row.guessedKind === "pay_behalf" || row.guessedKind === "contract")) {
@@ -2604,8 +2606,39 @@ function enrichStripeRowSuggestions(row) {
       db.prepare("SELECT * FROM potential_donation WHERE id = ?").get(potId) || null;
   }
 
+  const eventHit = stripePaymentFinalize.findEventForStripeRow(db, {
+    guessedPotentialId: row.guessedPotentialId,
+    sessionId: row.sessionId,
+    successUrl: row.successUrl,
+    lineItems: row.lineItems,
+  });
+  if (eventHit && eventHit.event) {
+    matchedEvent = {
+      id: eventHit.event.id,
+      title: eventHit.event.title,
+      slug: eventHit.event.slug,
+      datetime: eventHit.event.datetime,
+    };
+    leftoverEventRsvp = eventHit.potential || null;
+    if (leftoverEventRsvp && leftoverEventRsvp.user_id && !matchedUser) {
+      matchedUser =
+        db
+          .prepare(
+            `
+            SELECT id, firstname, lastname, email, parent, owed, paid
+            FROM users WHERE id = ?
+          `
+          )
+          .get(leftoverEventRsvp.user_id) || null;
+      if (matchedUser) {
+        matchedUser.isParent = !!parentLinks.isParentAccount(matchedUser) || !!matchedUser.parent;
+      }
+    }
+  }
+
   let suggestedAction = "donation";
-  if (row.guessedKind === "video_audition" || leftoverVideo) suggestedAction = "video_audition";
+  if (row.guessedKind === "event_rsvp" || matchedEvent) suggestedAction = "event_rsvp";
+  else if (row.guessedKind === "video_audition" || leftoverVideo) suggestedAction = "video_audition";
   else if (row.guessedKind === "merch" || leftoverMerch) suggestedAction = "merch";
   else if (row.guessedKind === "contract" || (leftoverPotential && leftoverPotential.contract_id)) {
     suggestedAction = "contract";
@@ -2617,7 +2650,7 @@ function enrichStripeRowSuggestions(row) {
     leftoverPotential
   ) {
     suggestedAction = "tuition";
-  } else if (row.guessedKind === "donation" || row.guessedKind === "event_rsvp" || row.guessedKind === "fan_subscribe") {
+  } else if (row.guessedKind === "donation" || row.guessedKind === "fan_subscribe") {
     suggestedAction = "donation";
   } else if (!matchedUser) {
     suggestedAction = "donation";
@@ -2626,6 +2659,8 @@ function enrichStripeRowSuggestions(row) {
   row.matchedUser = matchedUser
     ? {
         id: matchedUser.id,
+        firstname: matchedUser.firstname || "",
+        lastname: matchedUser.lastname || "",
         name: `${matchedUser.firstname || ""} ${matchedUser.lastname || ""}`.trim(),
         email: matchedUser.email,
         isParent: !!matchedUser.isParent,
@@ -2641,6 +2676,8 @@ function enrichStripeRowSuggestions(row) {
   row.leftoverDonation = leftoverDonation
     ? { id: leftoverDonation.id, email: leftoverDonation.email, name: leftoverDonation.name }
     : null;
+  row.matchedEvent = matchedEvent;
+  row.leftoverEventRsvp = leftoverEventRsvp;
   row.suggestedAction = suggestedAction;
   return row;
 }
@@ -8702,6 +8739,20 @@ app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
     error = err && err.message ? err.message : String(err);
   }
 
+  let eventsForSelect = [];
+  try {
+    eventsForSelect = db
+      .prepare(
+        `
+        SELECT id, title, slug, datetime
+        FROM events
+        ORDER BY datetime DESC
+        LIMIT 80
+      `
+      )
+      .all();
+  } catch (_) {}
+
   return res.render("admin-stripe-reconcile", {
     range,
     report,
@@ -8709,6 +8760,7 @@ app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
     start: range.startYmd,
     end: range.endYmd,
     currentSeasonYear: getCurrentSeasonYear(),
+    eventsForSelect,
   });
 });
 
@@ -8747,6 +8799,8 @@ app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
     } else if (result.donationId) {
       req.session.flashMessage =
         "Donation recorded from Stripe (no member balance change). Chris share applied.";
+    } else if (result.eventTitle) {
+      req.session.flashMessage = `RSVP recorded for “${result.eventTitle}”.`;
     } else {
       req.session.flashMessage =
         "Stripe payment recorded on the website. Balance/unlock updated and Chris share applied.";

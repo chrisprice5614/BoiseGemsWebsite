@@ -3104,6 +3104,9 @@ async function buildStripeSiteReconcile(range) {
   const pendingChrisOnly = matched
     .filter((m) => m.needsChrisAction)
     .map((m) => m.stripe);
+  const missingChrisCount =
+    pendingChrisOnly.length +
+    pendingStripe.filter((s) => s.needsChrisAction).length;
 
   const sum = (rows, pick) =>
     rows.reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
@@ -3117,6 +3120,7 @@ async function buildStripeSiteReconcile(range) {
     stripeOnly: pendingStripe,
     stripeOnlyAll: stripeOnly,
     pendingChrisOnly,
+    missingChrisCount,
     excludedOffsiteStripe,
     siteOnly,
     totals: {

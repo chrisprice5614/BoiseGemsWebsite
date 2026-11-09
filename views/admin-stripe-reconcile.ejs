@@ -87,6 +87,13 @@
       <% const when = (ms) => ms ? new Date(ms).toLocaleString() : '-'; %>
       <% const seasonYear = typeof currentSeasonYear !== 'undefined' ? currentSeasonYear : new Date().getFullYear(); %>
 
+      <% const missingChris = Number(report.missingChrisCount) || 0; %>
+      <div class="sr-card <%= missingChris ? 'sr-bad' : 'sr-ok' %>" style="margin:0 0 16px;">
+        <strong style="font-size:1rem;">Missing Chris Payments</strong>
+        <strong style="font-size:1.6rem;"><%= missingChris %></strong>
+        <span class="sr-muted">website Stripe checkouts with no Chris credit within ±1 minute of the payment time</span>
+      </div>
+
       <div class="sr-summary">
         <div class="sr-card">
           From boisegems.org
@@ -123,6 +130,7 @@
       <p class="sr-muted" style="margin:0 0 16px;">
         Only Stripe checkouts with success/cancel URLs on <code>boisegems.org</code> (or store PaymentIntents with site <code>potential_order_id</code>) are reconciled.
         Jackets / Payment Links / Dashboard charges are listed under “Ignored” and never auto-applied to balances.
+        Chris Payment matching uses Stripe ids when present, otherwise a <strong>±1 minute</strong> date/time window only.
       </p>
 
       <% const eventOptions = typeof eventsForSelect !== 'undefined' && eventsForSelect ? eventsForSelect : []; %>

@@ -143,10 +143,14 @@ function saveReconcileDecision(db, {
   );
 }
 
+/** ±1 minute error range for Chris Payment date/time matching. */
+const CHRIS_SHARE_TIME_WINDOW_MS = 60 * 1000;
+
 /**
  * Find an existing Chris Payment credit for this Stripe payment.
- * Prefer Stripe ids; otherwise match by date/time only (~1 minute).
- * Amount is intentionally ignored — duplicates from double-finalize share the same timestamp.
+ * Prefer Stripe ids; otherwise match by date/time only within ±1 minute.
+ * Time matches are existence checks (not exclusive) to avoid false "missing" flags
+ * after duplicate-time cleanup or near-simultaneous payments.
  */
 function findChrisShareForStripe(
   db,
@@ -173,7 +177,7 @@ function findChrisShareForStripe(
           "SELECT * FROM chrisPaymentHistory WHERE stripe_payment_intent_id = ? AND type = 'credit' LIMIT 1"
         )
         .get(String(paymentIntentId));
-      if (row && !isUsed(row)) return markUsed(row);
+      if (row) return markUsed(row);
     } catch (_) {}
   }
   if (sessionId) {
@@ -183,7 +187,7 @@ function findChrisShareForStripe(
           "SELECT * FROM chrisPaymentHistory WHERE stripe_session_id = ? AND type = 'credit' LIMIT 1"
         )
         .get(String(sessionId));
-      if (row && !isUsed(row)) return markUsed(row);
+      if (row) return markUsed(row);
     } catch (_) {}
   }
 
@@ -194,7 +198,8 @@ function findChrisShareForStripe(
         .filter((t) => t > 0)
     ),
   ];
-  const window = Number(windowMs) > 0 ? Number(windowMs) : 60 * 1000;
+  const window =
+    Number(windowMs) > 0 ? Number(windowMs) : CHRIS_SHARE_TIME_WINDOW_MS;
   if (!times.length) return null;
 
   let best = null;
@@ -202,6 +207,7 @@ function findChrisShareForStripe(
 
   for (const at of times) {
     try {
+      // Date/time only within ±1 minute — do not filter by amount or "already used"
       const rows = db
         .prepare(
           `
@@ -209,27 +215,20 @@ function findChrisShareForStripe(
           WHERE type = 'credit'
             AND created_at BETWEEN ? AND ?
           ORDER BY ABS(created_at - ?) ASC
-          LIMIT 25
+          LIMIT 10
         `
         )
         .all(at - window, at + window, at);
 
       for (const row of rows) {
-        if (isUsed(row)) continue;
-        const rowPi = row.stripe_payment_intent_id
-          ? String(row.stripe_payment_intent_id)
-          : "";
-        const rowSid = row.stripe_session_id ? String(row.stripe_session_id) : "";
-        if (rowPi && (!paymentIntentId || rowPi !== String(paymentIntentId))) continue;
-        if (rowSid && sessionId && rowSid !== String(sessionId)) continue;
-        if (rowSid && !sessionId && !(paymentIntentId && rowPi === String(paymentIntentId))) {
-          continue;
-        }
-
         const delta = Math.abs((Number(row.created_at) || 0) - at);
-        if (delta < bestDelta) {
+        if (delta > window) continue;
+        // Prefer an unused row when available, but still accept a used one so we
+        // don't falsely claim Chris Payment is missing.
+        const score = delta + (isUsed(row) ? window + 1 : 0);
+        if (score < bestDelta) {
           best = row;
-          bestDelta = delta;
+          bestDelta = score;
         }
       }
     } catch (_) {}
@@ -237,8 +236,18 @@ function findChrisShareForStripe(
 
   if (!best) return null;
 
+  let nearest = Infinity;
+  for (const at of times) {
+    nearest = Math.min(nearest, Math.abs((Number(best.created_at) || 0) - at));
+  }
+  if (nearest > window) return null;
+
   try {
-    if (paymentIntentId || sessionId) {
+    if (
+      (paymentIntentId || sessionId) &&
+      !best.stripe_payment_intent_id &&
+      !best.stripe_session_id
+    ) {
       db.prepare(
         `
         UPDATE chrisPaymentHistory
@@ -2053,8 +2062,18 @@ function attachReconcileDecisionState(db, row, opts = {}) {
     : row.amount || 0;
   const expectedChris = Math.round(chrisBase * 0.03);
 
-  // Match by Stripe id, else by date/time only (~1 min)
-  const aroundTimes = [row.created, opts.localCreated, row.localCreated]
+  const alreadyOnAccount = findPaymentByStripeIds(db, {
+    paymentIntentId: piId,
+    sessionId: row.sessionId,
+  });
+
+  // Match by Stripe id, else by date/time only (±1 minute error range)
+  const aroundTimes = [
+    row.created,
+    opts.localCreated,
+    row.localCreated,
+    alreadyOnAccount?.date,
+  ]
     .map((t) => Number(t) || 0)
     .filter((t) => t > 0);
 
@@ -2062,13 +2081,8 @@ function attachReconcileDecisionState(db, row, opts = {}) {
     paymentIntentId: piId,
     sessionId: row.sessionId,
     aroundTimes,
-    windowMs: opts.windowMs || 60 * 1000,
+    windowMs: opts.windowMs || CHRIS_SHARE_TIME_WINDOW_MS,
     usedIds: opts.usedChrisIds || null,
-  });
-
-  const alreadyOnAccount = findPaymentByStripeIds(db, {
-    paymentIntentId: piId,
-    sessionId: row.sessionId,
   });
 
   row.reconcileKey = key;

@@ -25,12 +25,211 @@ function ensureStripePaymentColumns(db) {
     db.prepare("ALTER TABLE potential_payment ADD COLUMN kind TEXT").run();
   }
 
+  try {
+    const chrisCols = db.prepare("PRAGMA table_info(chrisPaymentHistory)").all().map((c) => c.name);
+    if (!chrisCols.includes("stripe_payment_intent_id")) {
+      db.prepare("ALTER TABLE chrisPaymentHistory ADD COLUMN stripe_payment_intent_id TEXT").run();
+    }
+    if (!chrisCols.includes("stripe_session_id")) {
+      db.prepare("ALTER TABLE chrisPaymentHistory ADD COLUMN stripe_session_id TEXT").run();
+    }
+  } catch (_) {}
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS stripe_reconcile_decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stripe_key TEXT NOT NULL,
+      payment_intent_id TEXT,
+      session_id TEXT,
+      action_type TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      user_id INTEGER,
+      parent_id INTEGER,
+      amount_cents INTEGER,
+      note TEXT,
+      decided_at INTEGER NOT NULL,
+      UNIQUE(stripe_key, action_type)
+    )
+  `).run();
+
   db.prepare(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_paymentHistory_stripe_pi ON paymentHistory(stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL"
   ).run();
   db.prepare(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_paymentHistory_stripe_session ON paymentHistory(stripe_session_id) WHERE stripe_session_id IS NOT NULL"
   ).run();
+}
+
+function stripeReconcileKey({ paymentIntentId, sessionId, id } = {}) {
+  if (paymentIntentId && String(paymentIntentId).startsWith("pi_")) return String(paymentIntentId);
+  if (id && String(id).startsWith("pi_")) return String(id);
+  if (sessionId) return `session:${sessionId}`;
+  if (id) return String(id);
+  return null;
+}
+
+function getReconcileDecision(db, stripeKey, actionType) {
+  if (!stripeKey) return null;
+  return (
+    db
+      .prepare(
+        "SELECT * FROM stripe_reconcile_decisions WHERE stripe_key = ? AND action_type = ?"
+      )
+      .get(stripeKey, actionType) || null
+  );
+}
+
+function saveReconcileDecision(db, {
+  stripeKey,
+  paymentIntentId,
+  sessionId,
+  actionType,
+  decision,
+  userId = null,
+  parentId = null,
+  amountCents = null,
+  note = null,
+}) {
+  const now = Date.now();
+  db.prepare(
+    `
+    INSERT INTO stripe_reconcile_decisions
+      (stripe_key, payment_intent_id, session_id, action_type, decision, user_id, parent_id, amount_cents, note, decided_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(stripe_key, action_type) DO UPDATE SET
+      decision = excluded.decision,
+      user_id = excluded.user_id,
+      parent_id = excluded.parent_id,
+      amount_cents = excluded.amount_cents,
+      note = excluded.note,
+      decided_at = excluded.decided_at,
+      payment_intent_id = excluded.payment_intent_id,
+      session_id = excluded.session_id
+  `
+  ).run(
+    stripeKey,
+    paymentIntentId || null,
+    sessionId || null,
+    actionType,
+    decision,
+    userId,
+    parentId,
+    amountCents,
+    note,
+    now
+  );
+}
+
+function findChrisShareForStripe(
+  db,
+  { paymentIntentId, sessionId, amountCents, aroundMs, windowMs } = {}
+) {
+  if (paymentIntentId) {
+    try {
+      const row = db
+        .prepare(
+          "SELECT * FROM chrisPaymentHistory WHERE stripe_payment_intent_id = ? AND type = 'credit' LIMIT 1"
+        )
+        .get(String(paymentIntentId));
+      if (row) return row;
+    } catch (_) {}
+  }
+  if (sessionId) {
+    try {
+      const row = db
+        .prepare(
+          "SELECT * FROM chrisPaymentHistory WHERE stripe_session_id = ? AND type = 'credit' LIMIT 1"
+        )
+        .get(String(sessionId));
+      if (row) return row;
+    } catch (_) {}
+  }
+
+  // Legacy rows (before Stripe ids were stored): match expected 3% cut near the paid time
+  const expected = Math.round(Number(amountCents) || 0);
+  const at = Number(aroundMs) || 0;
+  if (expected > 0 && at > 0) {
+    const window = Number(windowMs) > 0 ? Number(windowMs) : 3 * 24 * 60 * 60 * 1000;
+    try {
+      const row = db
+        .prepare(
+          `
+          SELECT * FROM chrisPaymentHistory
+          WHERE type = 'credit'
+            AND amount = ?
+            AND created_at BETWEEN ? AND ?
+            AND (stripe_payment_intent_id IS NULL OR stripe_payment_intent_id = '')
+            AND (stripe_session_id IS NULL OR stripe_session_id = '')
+          ORDER BY ABS(created_at - ?) ASC
+          LIMIT 1
+        `
+        )
+        .get(expected, at - window, at + window, at);
+      if (row) {
+        // Backfill Stripe ids so future reconciles don't re-prompt
+        try {
+          if (paymentIntentId || sessionId) {
+            db.prepare(
+              `
+              UPDATE chrisPaymentHistory
+              SET stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, ?),
+                  stripe_session_id = COALESCE(stripe_session_id, ?)
+              WHERE id = ?
+            `
+            ).run(paymentIntentId || null, sessionId || null, row.id);
+          }
+        } catch (_) {}
+        return row;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+function recordChrisShareWithStripe(db, {
+  baseAmountCents,
+  source,
+  paidAt,
+  paymentIntentId,
+  sessionId,
+}) {
+  const base = Math.round(Number(baseAmountCents) || 0);
+  if (base <= 0) return { ok: false, error: "Invalid Chris share base amount." };
+  const existing = findChrisShareForStripe(db, { paymentIntentId, sessionId });
+  if (existing) return { ok: true, already: true, chrisCut: existing.amount };
+
+  const chrisCut = Math.round(base * 0.03);
+  if (!chrisCut) return { ok: true, already: false, chrisCut: 0 };
+
+  const at = Number(paidAt) > 0 ? Number(paidAt) : Date.now();
+  db.prepare("UPDATE chrisPayment SET total_owed = total_owed + ? WHERE id = 1").run(chrisCut);
+
+  const chrisCols = db.prepare("PRAGMA table_info(chrisPaymentHistory)").all().map((c) => c.name);
+  if (chrisCols.includes("stripe_payment_intent_id")) {
+    db.prepare(
+      `
+      INSERT INTO chrisPaymentHistory
+        (created_at, amount, type, note, source, stripe_payment_intent_id, stripe_session_id)
+      VALUES (?, ?, 'credit', ?, ?, ?, ?)
+    `
+    ).run(
+      at,
+      chrisCut,
+      `3% share from ${source || "transaction"}`,
+      source || "",
+      paymentIntentId || null,
+      sessionId || null
+    );
+  } else {
+    db.prepare(
+      `
+      INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
+      VALUES (?, ?, 'credit', ?, ?)
+    `
+    ).run(at, chrisCut, `3% share from ${source || "transaction"}`, source || "");
+  }
+
+  return { ok: true, already: false, chrisCut };
 }
 
 function findPaymentByStripeIds(db, { paymentIntentId, sessionId } = {}) {
@@ -150,8 +349,11 @@ function finalizeTuitionPotential(db, potential, deps, stripeMeta = {}) {
     chrisNote = description;
   }
 
-  if (typeof addChrisShare === "function") {
-    addChrisShare(paid, chrisNote, stripeMeta.paidAt || null);
+  if (!deps.skipChrisShare && typeof addChrisShare === "function") {
+    addChrisShare(paid, chrisNote, stripeMeta.paidAt || null, {
+      paymentIntentId: stripeMeta.paymentIntentId,
+      sessionId: stripeMeta.sessionId,
+    });
   }
 
   let paymentId;
@@ -194,7 +396,15 @@ function finalizeTuitionPotential(db, potential, deps, stripeMeta = {}) {
   maybeSendEmail(deps, emailTo, "Payment Received!", emailBody);
   maybeSendEmail(deps, MasterEmail, "Payment Received!", emailBody);
 
-  return { ok: true, already: false, paymentId, userId: user.id, amountCents: paid };
+  return {
+    ok: true,
+    already: false,
+    paymentId,
+    userId: user.id,
+    amountCents: paid,
+    chrisBaseCents: paid,
+    chrisNote,
+  };
 }
 
 /**
@@ -258,11 +468,15 @@ function finalizeContractPotential(db, potential, deps, stripeMeta = {}) {
     db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(remainingOwed, user.id);
   }
 
-  if (typeof addChrisShare === "function") {
+  if (!deps.skipChrisShare && typeof addChrisShare === "function") {
     addChrisShare(
       downPayment,
       `Contract down payment for ${ensemble} (user ${user.id})`,
-      stripeMeta.paidAt || null
+      stripeMeta.paidAt || null,
+      {
+        paymentIntentId: stripeMeta.paymentIntentId,
+        sessionId: stripeMeta.sessionId,
+      }
     );
   }
 
@@ -493,11 +707,15 @@ function finalizeDonationPotential(db, potential, deps, stripeMeta = {}) {
       potential.donation_type || "one_time"
     ).lastInsertRowid;
 
-  if (typeof deps.addChrisShare === "function") {
+  if (!deps.skipChrisShare && typeof deps.addChrisShare === "function") {
     deps.addChrisShare(
       potential.total_charge,
       `Donation of ${money(potential.amount)} (processing fee ${money(potential.processing_fee || 0)}, total charged ${money(potential.total_charge)})`,
-      paidAt
+      paidAt,
+      {
+        paymentIntentId: stripeMeta.paymentIntentId,
+        sessionId: stripeMeta.sessionId || potential.stripe_session_id,
+      }
     );
   }
 
@@ -981,11 +1199,12 @@ function backfillEventRsvpFromStripe(db, {
     );
   }
 
-  if (typeof deps.addChrisShare === "function") {
+  if (!deps.skipChrisShare && typeof deps.addChrisShare === "function") {
     deps.addChrisShare(
       total,
       `$${ (total / 100).toFixed(2) } RSVP for ${event.title} by userID ${user.id}`,
-      paidAt || null
+      paidAt || null,
+      { paymentIntentId, sessionId }
     );
   }
 
@@ -1024,6 +1243,8 @@ function backfillEventRsvpFromStripe(db, {
     eventId: event.id,
     eventTitle: event.title,
     amountCents: total,
+    chrisBaseCents: total,
+    chrisNote: `$${ (total / 100).toFixed(2) } RSVP for ${event.title} by userID ${user.id}`,
   };
 }
 
@@ -1086,8 +1307,11 @@ function backfillDonationFromStripe(db, {
       paidAt || Date.now()
     ).lastInsertRowid;
 
-  if (typeof deps.addChrisShare === "function") {
-    deps.addChrisShare(total, `Donation of ${money(base)} (reconcile)`, paidAt || null);
+  if (!deps.skipChrisShare && typeof deps.addChrisShare === "function") {
+    deps.addChrisShare(total, `Donation of ${money(base)} (reconcile)`, paidAt || null, {
+      paymentIntentId,
+      sessionId,
+    });
   }
 
   let paymentId = null;
@@ -1107,7 +1331,15 @@ function backfillDonationFromStripe(db, {
     throw err;
   }
 
-  return { ok: true, already: false, paymentId, donationId, amountCents: total };
+  return {
+    ok: true,
+    already: false,
+    paymentId,
+    donationId,
+    amountCents: total,
+    chrisBaseCents: total,
+    chrisNote: `Donation of ${money(base)} (reconcile)`,
+  };
 }
 
 function backfillVideoAuditionFromStripe(db, {
@@ -1164,11 +1396,12 @@ function backfillVideoAuditionFromStripe(db, {
     } catch (_) {}
   }
 
-  if (typeof deps.addChrisShare === "function") {
+  if (!deps.skipChrisShare && typeof deps.addChrisShare === "function") {
     deps.addChrisShare(
       amount,
       `Video audition unlock (${prog} ${season})`,
-      paidAt || null
+      paidAt || null,
+      { paymentIntentId, sessionId }
     );
   }
 
@@ -1189,7 +1422,15 @@ function backfillVideoAuditionFromStripe(db, {
     throw err;
   }
 
-  return { ok: true, already: false, paymentId, userId: user.id, amountCents: amount };
+  return {
+    ok: true,
+    already: false,
+    paymentId,
+    userId: user.id,
+    amountCents: amount,
+    chrisBaseCents: amount,
+    chrisNote: `Video audition unlock (${prog} ${season})`,
+  };
 }
 
 /**
@@ -1364,7 +1605,8 @@ function applyReconcilePayment(db, body, deps) {
     const orderId = deps.finalizeMerchOrder(
       db,
       potential,
-      (amt, src) => deps.addChrisShare(amt, src, paidAt),
+      (amt, src) =>
+        deps.addChrisShare(amt, src, paidAt, { paymentIntentId, sessionId }),
       typeof deps.sendEmail === "function" ? deps.sendEmail : () => {},
       deps.getSiteSettings
     );
@@ -1383,6 +1625,244 @@ function applyReconcilePayment(db, body, deps) {
   }
 
   return { ok: false, error: `Unknown action: ${action}` };
+}
+
+/**
+ * Separate accept/deny for account credit vs Chris Payment share.
+ * Accept/deny removes that prompt from the reconcile queue.
+ */
+function applyReconcileDecision(db, body, deps = {}) {
+  ensureStripePaymentColumns(db);
+
+  const decision = String(body.decision || "").trim().toLowerCase(); // accept | deny
+  const scope = String(body.scope || "").trim().toLowerCase(); // account | chris
+  const paymentIntentId = String(body.payment_intent_id || "").trim() || null;
+  const sessionId = String(body.session_id || "").trim() || null;
+  const paidAt = Number(body.paid_at) || Date.now();
+  const stripeAmountCents = Math.round(Number(body.stripe_amount_cents) || 0);
+  const stripeKey = stripeReconcileKey({
+    paymentIntentId,
+    sessionId,
+    id: body.stripe_id,
+  });
+
+  if (!stripeKey) return { ok: false, error: "Missing Stripe payment id." };
+  if (decision !== "accept" && decision !== "deny") {
+    return { ok: false, error: "Decision must be accept or deny." };
+  }
+  if (scope !== "account" && scope !== "chris") {
+    return { ok: false, error: "Scope must be account or chris." };
+  }
+
+  const existingDecision = getReconcileDecision(db, stripeKey, scope);
+  if (existingDecision) {
+    return {
+      ok: true,
+      already: true,
+      message: `Already ${existingDecision.decision} for ${scope}.`,
+    };
+  }
+
+  if (decision === "deny") {
+    saveReconcileDecision(db, {
+      stripeKey,
+      paymentIntentId,
+      sessionId,
+      actionType: scope,
+      decision: "denied",
+      amountCents: stripeAmountCents,
+      note: String(body.note || "").trim() || "Denied in Stripe reconcile",
+    });
+    return { ok: true, denied: true, scope };
+  }
+
+  // ACCEPT
+  if (scope === "chris") {
+    const existingChris = findChrisShareForStripe(db, { paymentIntentId, sessionId });
+    if (existingChris) {
+      saveReconcileDecision(db, {
+        stripeKey,
+        paymentIntentId,
+        sessionId,
+        actionType: "chris",
+        decision: "accepted",
+        amountCents: existingChris.amount,
+        note: "Chris share already present",
+      });
+      return { ok: true, already: true, scope: "chris", chrisCut: existingChris.amount };
+    }
+
+    // Prefer tuition base (amount/1.06) for tuition-like payments; donations/rsvp use full charged
+    const actionHint = String(body.action || body.suggested_action || "").trim();
+    let base = stripeAmountCents;
+    if (
+      actionHint === "tuition" ||
+      actionHint === "pay_behalf" ||
+      actionHint === "make_payment" ||
+      actionHint === "video_audition"
+    ) {
+      base = Math.round(stripeAmountCents / 1.06) || stripeAmountCents;
+    }
+    if (Number(body.chris_base_cents) > 0) {
+      base = Math.round(Number(body.chris_base_cents));
+    }
+
+    const note =
+      String(body.chris_note || "").trim() ||
+      `Stripe reconcile ${stripeKey}`;
+
+    let result;
+    if (typeof deps.addChrisShare === "function") {
+      deps.addChrisShare(base, note, paidAt, { paymentIntentId, sessionId });
+      result = { ok: true, chrisCut: Math.round(base * 0.03) };
+    } else {
+      result = recordChrisShareWithStripe(db, {
+        baseAmountCents: base,
+        source: note,
+        paidAt,
+        paymentIntentId,
+        sessionId,
+      });
+    }
+    if (!result.ok) return result;
+
+    saveReconcileDecision(db, {
+      stripeKey,
+      paymentIntentId,
+      sessionId,
+      actionType: "chris",
+      decision: "accepted",
+      amountCents: result.chrisCut || Math.round(base * 0.03),
+      note,
+    });
+    return { ok: true, scope: "chris", chrisCut: result.chrisCut, already: !!result.already };
+  }
+
+  // ACCOUNT ACCEPT
+  const action = String(body.action || "").trim();
+  const userId = Number(body.user_id) || 0;
+  const parentId = Number(body.parent_id) || 0;
+
+  if (
+    (action === "tuition" || action === "pay_behalf" || action === "video_audition" || action === "event_rsvp") &&
+    !userId
+  ) {
+    return { ok: false, error: "Pick the member/child account this payment belongs to." };
+  }
+
+  if (action === "pay_behalf") {
+    if (!parentId) return { ok: false, error: "Parent account is required for parent payments." };
+    if (typeof deps.isParentOf === "function") {
+      if (!deps.isParentOf(db, parentId, userId)) {
+        return {
+          ok: false,
+          error: "That child is not linked to the selected parent. Fix the parent/child link first.",
+        };
+      }
+    }
+  }
+
+  // If parent was selected as beneficiary by mistake, require child
+  if (userId && action !== "donation" && action !== "merch") {
+    const beneficiary = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    if (!beneficiary) return { ok: false, error: "Selected user was not found." };
+    const beneficiaryIsParent =
+      !!beneficiary.parent ||
+      (typeof deps.isParentAccount === "function" && deps.isParentAccount(beneficiary));
+    if (beneficiaryIsParent && action !== "donation") {
+      return {
+        ok: false,
+        error: "Cannot credit a parent account balance. Pick the linked child performer.",
+      };
+    }
+  }
+
+  const silentDeps = {
+    ...deps,
+    silent: true,
+    skipChrisShare: true, // Chris share is a separate accept/deny
+  };
+
+  const applyBody = {
+    ...body,
+    action,
+    payment_intent_id: paymentIntentId,
+    session_id: sessionId,
+    paid_at: paidAt,
+    stripe_amount_cents: stripeAmountCents,
+    user_id: userId || body.user_id,
+    parent_id: parentId || body.parent_id,
+  };
+
+  const result = applyReconcilePayment(db, applyBody, silentDeps);
+  if (!result || !result.ok) return result || { ok: false, error: "Account apply failed." };
+
+  saveReconcileDecision(db, {
+    stripeKey,
+    paymentIntentId,
+    sessionId,
+    actionType: "account",
+    decision: "accepted",
+    userId: result.userId || userId || null,
+    parentId: parentId || null,
+    amountCents: result.amountCents || stripeAmountCents,
+    note: `Account apply (${action})`,
+  });
+
+  return {
+    ok: true,
+    scope: "account",
+    ...result,
+    chrisPending: !findChrisShareForStripe(db, { paymentIntentId, sessionId }),
+  };
+}
+
+function attachReconcileDecisionState(db, row) {
+  const piId = row.id && String(row.id).startsWith("pi_") ? row.id : null;
+  const key = stripeReconcileKey({
+    paymentIntentId: piId,
+    sessionId: row.sessionId,
+    id: row.id,
+  });
+  const accountDecision = getReconcileDecision(db, key, "account");
+  const chrisDecision = getReconcileDecision(db, key, "chris");
+
+  const tuitionLike =
+    row.suggestedAction === "tuition" ||
+    row.suggestedAction === "pay_behalf" ||
+    row.suggestedAction === "video_audition" ||
+    row.suggestedAction === "contract";
+  const chrisBase = tuitionLike
+    ? Math.round((row.amount || 0) / 1.06) || row.amount || 0
+    : row.amount || 0;
+  const expectedChris = Math.round(chrisBase * 0.03);
+
+  const chrisShare = findChrisShareForStripe(db, {
+    paymentIntentId: piId,
+    sessionId: row.sessionId,
+    amountCents: expectedChris,
+    aroundMs: row.created,
+  });
+
+  const alreadyOnAccount = findPaymentByStripeIds(db, {
+    paymentIntentId: piId,
+    sessionId: row.sessionId,
+  });
+
+  row.reconcileKey = key;
+  row.accountDecision = accountDecision
+    ? accountDecision.decision
+    : alreadyOnAccount
+      ? "accepted"
+      : null;
+  row.chrisDecision = chrisDecision ? chrisDecision.decision : null;
+  row.chrisShareApplied = !!chrisShare || chrisDecision?.decision === "accepted";
+  row.chrisShareCents = chrisShare ? chrisShare.amount : expectedChris;
+  row.chrisBaseCents = chrisBase;
+  row.needsAccountAction = !accountDecision && !alreadyOnAccount;
+  row.needsChrisAction = !chrisDecision && !chrisShare;
+  row.needsAnyAction = row.needsAccountAction || row.needsChrisAction;
+  return row;
 }
 
 module.exports = {
@@ -1405,6 +1885,12 @@ module.exports = {
   classifyStripeCheckout,
   parseSuccessUrl,
   applyReconcilePayment,
+  applyReconcileDecision,
+  attachReconcileDecisionState,
+  stripeReconcileKey,
+  getReconcileDecision,
+  findChrisShareForStripe,
+  recordChrisShareWithStripe,
   pollAndRecoverPaidCheckouts,
   startStripeRecoveryPoller,
 };

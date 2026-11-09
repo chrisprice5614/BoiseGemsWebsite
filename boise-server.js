@@ -1980,7 +1980,7 @@ function deletePressKitImageRecord(row) {
   db.prepare("DELETE FROM press_kit_images WHERE id = ?").run(row.id);
 }
 
-function addChrisShare(baseAmountCents, source, paidAt = null) {
+function addChrisShare(baseAmountCents, source, paidAt = null, stripeMeta = null) {
   ////ADD THIS TO EVERY TRANSACTION!!!
   if (!baseAmountCents || baseAmountCents <= 0) return;
 
@@ -1989,6 +1989,23 @@ function addChrisShare(baseAmountCents, source, paidAt = null) {
   if (!chrisCut) return;
 
   const at = Number(paidAt) > 0 ? Number(paidAt) : Date.now();
+  const paymentIntentId = stripeMeta && stripeMeta.paymentIntentId
+    ? String(stripeMeta.paymentIntentId)
+    : null;
+  const sessionId = stripeMeta && stripeMeta.sessionId
+    ? String(stripeMeta.sessionId)
+    : null;
+
+  // Avoid double-crediting the same Stripe payment
+  if (paymentIntentId || sessionId) {
+    try {
+      const existing = stripePaymentFinalize.findChrisShareForStripe(db, {
+        paymentIntentId,
+        sessionId,
+      });
+      if (existing) return;
+    } catch (_) {}
+  }
 
   db.prepare(`
     UPDATE chrisPayment
@@ -1996,15 +2013,43 @@ function addChrisShare(baseAmountCents, source, paidAt = null) {
     WHERE id = 1
   `).run(chrisCut);
 
-  db.prepare(`
-    INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
-    VALUES (?, ?, 'credit', ?, ?)
-  `).run(
-    at,
-    chrisCut,
-    `3% share from ${source || "transaction"}`,
-    source || ""
-  );
+  try {
+    const chrisCols = db.prepare("PRAGMA table_info(chrisPaymentHistory)").all().map((c) => c.name);
+    if (chrisCols.includes("stripe_payment_intent_id")) {
+      db.prepare(`
+        INSERT INTO chrisPaymentHistory
+          (created_at, amount, type, note, source, stripe_payment_intent_id, stripe_session_id)
+        VALUES (?, ?, 'credit', ?, ?, ?, ?)
+      `).run(
+        at,
+        chrisCut,
+        `3% share from ${source || "transaction"}`,
+        source || "",
+        paymentIntentId,
+        sessionId
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
+        VALUES (?, ?, 'credit', ?, ?)
+      `).run(
+        at,
+        chrisCut,
+        `3% share from ${source || "transaction"}`,
+        source || ""
+      );
+    }
+  } catch (_) {
+    db.prepare(`
+      INSERT INTO chrisPaymentHistory (created_at, amount, type, note, source)
+      VALUES (?, ?, 'credit', ?, ?)
+    `).run(
+      at,
+      chrisCut,
+      `3% share from ${source || "transaction"}`,
+      source || ""
+    );
+  }
 
   // Also attempt to push this 3% share to Chris via Stripe Connect
   // from the Boise Gems Stripe platform, if configured.
@@ -2679,6 +2724,16 @@ function enrichStripeRowSuggestions(row) {
   row.matchedEvent = matchedEvent;
   row.leftoverEventRsvp = leftoverEventRsvp;
   row.suggestedAction = suggestedAction;
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+    stripePaymentFinalize.attachReconcileDecisionState(db, row);
+  } catch (_) {
+    row.needsAccountAction = true;
+    row.needsChrisAction = true;
+    row.needsAnyAction = true;
+    row.chrisShareApplied = false;
+    row.chrisShareCents = Math.round(((row.amount || 0) / 1.06) * 0.03) || Math.round((row.amount || 0) * 0.03);
+  }
   return row;
 }
 
@@ -2987,13 +3042,27 @@ async function buildStripeSiteReconcile(range) {
 
     if (best && bestScore >= 50) {
       usedLocal.add(localKey(best));
-      matched.push({ stripe: s, local: best, how: matchHow, score: bestScore });
+      const enrichedMatch = enrichStripeRowSuggestions({ ...s });
+      // Account already on site for matched rows
+      enrichedMatch.needsAccountAction = false;
+      enrichedMatch.accountDecision = "accepted";
+      matched.push({
+        stripe: enrichedMatch,
+        local: best,
+        how: matchHow,
+        score: bestScore,
+        needsChrisAction: !!enrichedMatch.needsChrisAction,
+      });
     } else {
       stripeOnly.push(enrichStripeRowSuggestions(s));
     }
   }
 
   const siteOnly = localRows.filter((r) => !usedLocal.has(localKey(r)));
+  const pendingStripe = stripeOnly.filter((s) => s.needsAnyAction);
+  const pendingChrisOnly = matched
+    .filter((m) => m.needsChrisAction)
+    .map((m) => m.stripe);
 
   const sum = (rows, pick) =>
     rows.reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
@@ -3003,14 +3072,18 @@ async function buildStripeSiteReconcile(range) {
     stripeCount: stripeRows.length,
     localCount: localRows.length,
     matched,
-    stripeOnly,
+    stripeOnly: pendingStripe,
+    stripeOnlyAll: stripeOnly,
+    pendingChrisOnly,
     siteOnly,
     totals: {
       stripeCents: sum(stripeRows, (r) => r.amount),
       localCents: sum(localRows, (r) => r.amount),
       matchedStripeCents: sum(matched, (r) => r.stripe.amount),
       matchedLocalCents: sum(matched, (r) => r.local.amount),
-      stripeOnlyCents: sum(stripeOnly, (r) => r.amount),
+      stripeOnlyCents:
+        sum(pendingStripe, (r) => r.amount) +
+        sum(pendingChrisOnly, (r) => r.amount),
       siteOnlyCents: sum(siteOnly, (r) => r.amount),
     },
     rawCounts: {
@@ -5084,6 +5157,7 @@ app.post("/support/issue", mustBeLoggedInAny, supportUpload.array("screenshots",
     const html = `
       <h1>Website Issue Submitted</h1>
       <p><strong>User:</strong> ${req.user.firstname} ${req.user.lastname} (ID: ${req.user.userid})</p>
+      <p><strong>Email:</strong> ${req.user.email || "(none)"}</p>
       <p><strong>Role:</strong> ${role}</p>
       ${page_url ? `<p><strong>Page URL:</strong> ${page_url}</p>` : ""}
       <p><strong>Subject:</strong> ${subject}</p>
@@ -8810,7 +8884,7 @@ app.get("/admin/stripe-reconcile", mustBeChrisOnly, async (req, res) => {
   });
 });
 
-// Chris-only: apply an unmatched Stripe payment onto the website (no audit log)
+// Chris-only: accept/deny account credit and/or Chris Payment share (no audit log)
 app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
   const start = String(req.body.start || "").trim();
   const end = String(req.body.end || "").trim();
@@ -8820,35 +8894,49 @@ app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
   try {
     stripePaymentFinalize.ensureStripePaymentColumns(db);
     const noopEmail = () => {};
-    const result = stripePaymentFinalize.applyReconcilePayment(db, req.body, {
+    const result = stripePaymentFinalize.applyReconcileDecision(db, req.body, {
       addChrisShare,
       sendEmail: noopEmail,
       MasterEmail: null,
       silent: true,
+      skipChrisShare: true,
       markUserContracted,
       finalizeMerchOrder: merchSystem.finalizeMerchOrder,
       getSiteSettings,
+      isParentOf: (database, parentId, childId) =>
+        parentLinks.isParentOf(database, parentId, childId),
+      isParentAccount: (userRow) => parentLinks.isParentAccount(userRow),
     });
 
     if (!result || !result.ok) {
       req.session.flashMessage =
-        result?.error || "Could not apply that Stripe payment.";
+        result?.error || "Could not apply that Stripe decision.";
       return res.redirect(baseRedirect + "#stripe-only");
     }
 
-    if (result.already) {
+    if (result.denied) {
       req.session.flashMessage =
-        "That Stripe payment was already recorded on the site.";
+        result.scope === "chris"
+          ? "Chris Payment share denied — removed from queue."
+          : "Account payment denied — removed from queue.";
+    } else if (result.scope === "chris") {
+      req.session.flashMessage = result.already
+        ? "Chris Payment share was already recorded."
+        : `Chris Payment share accepted (+$${((result.chrisCut || 0) / 100).toFixed(2)}).`;
+    } else if (result.already) {
+      req.session.flashMessage =
+        "That Stripe payment was already on a user account.";
     } else if (result.orderId) {
-      req.session.flashMessage = `Store order #${result.orderId} recorded from Stripe.`;
+      req.session.flashMessage = `Store order #${result.orderId} recorded on the website.`;
     } else if (result.donationId) {
       req.session.flashMessage =
-        "Donation recorded from Stripe (no member balance change). Chris share applied.";
+        "Donation recorded (no member balance change). Check Chris Payment share next if needed.";
     } else if (result.eventTitle) {
-      req.session.flashMessage = `RSVP recorded for “${result.eventTitle}”.`;
+      req.session.flashMessage = `RSVP recorded for “${result.eventTitle}” on the correct event/account.`;
     } else {
       req.session.flashMessage =
-        "Stripe payment recorded on the website. Balance/unlock updated and Chris share applied.";
+        "Payment history + account balance updated with the original Stripe time." +
+        (result.chrisPending ? " Chris Payment share still needs accept/deny." : "");
     }
   } catch (err) {
     console.error("Stripe reconcile apply failed:", err);
@@ -8857,7 +8945,7 @@ app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
     return res.redirect(baseRedirect + "#stripe-only");
   }
 
-  return res.redirect(baseRedirect + "#matched");
+  return res.redirect(baseRedirect + "#stripe-only");
 });
 
 app.post("/admin/chris-payment/pay", mustBeChrisPaymentViewer, (req, res) => {

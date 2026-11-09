@@ -2002,10 +2002,22 @@ function addChrisShare(baseAmountCents, source, paidAt = null, stripeMeta = null
       const existing = stripePaymentFinalize.findChrisShareForStripe(db, {
         paymentIntentId,
         sessionId,
+        aroundTimes: [at],
+        windowMs: 60 * 1000,
       });
       if (existing) return;
     } catch (_) {}
   }
+
+  // Same exact timestamp already has a credit → skip (prevents duplicate times)
+  try {
+    const sameTime = db
+      .prepare(
+        "SELECT id FROM chrisPaymentHistory WHERE type = 'credit' AND created_at = ? LIMIT 1"
+      )
+      .get(at);
+    if (sameTime) return;
+  } catch (_) {}
 
   db.prepare(`
     UPDATE chrisPayment
@@ -8954,12 +8966,42 @@ app.get("/admin/chris-payment", mustBeChrisPaymentViewer, (req, res) => {
 
   const email = (req.user.email || "").toLowerCase();
   const canRecordPayment = email === "chris@chrispricemusic.net";
+  const duplicateTimeCount = canRecordPayment
+    ? stripePaymentFinalize.countChrisDuplicateTimes(db)
+    : 0;
+  const flash = req.session.flashMessage || null;
+  delete req.session.flashMessage;
 
   res.render("admin-chris-payment", {
     totalOwedCents: summary.total_owed || 0,
     history,
     canRecordPayment,
+    duplicateTimeCount,
+    flashMessage: flash,
   });
+});
+
+// Chris-only: remove chrisPaymentHistory rows that share an identical created_at
+app.post("/admin/chris-payment/remove-duplicate-times", mustBeChrisOnly, (req, res) => {
+  try {
+    const result = stripePaymentFinalize.removeChrisDuplicateTimes(db);
+    const removed = Number(result?.removed) || 0;
+    if (!removed) {
+      req.session.flashMessage = "No duplicate timestamps found.";
+    } else {
+      const adjusted = Number(result.owedDelta) || 0;
+      req.session.flashMessage =
+        `Removed ${removed} duplicate-time row${removed === 1 ? "" : "s"}.` +
+        (adjusted
+          ? ` Adjusted total owed by $${(Math.abs(adjusted) / 100).toFixed(2)}.`
+          : "");
+    }
+  } catch (err) {
+    console.error("Remove Chris duplicate times failed:", err);
+    req.session.flashMessage =
+      "Could not remove duplicates: " + (err && err.message ? err.message : String(err));
+  }
+  return res.redirect("/admin/chris-payment");
 });
 
 // Chris-only: compare Stripe payments to site records (paymentHistory / donations / merch)

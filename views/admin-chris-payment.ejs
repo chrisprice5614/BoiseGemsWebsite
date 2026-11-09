@@ -73,6 +73,17 @@
     <section>
       <h2>History</h2>
 
+      <% if (canRecordPayment) { %>
+        <% const dupCount = typeof duplicateTimeCount !== "undefined" ? Number(duplicateTimeCount) || 0 : 0; %>
+        <form method="POST" action="/admin/chris-payment/remove-duplicate-times" style="margin:0 0 16px;"
+              onsubmit="return confirm('Remove all Chris Payment history rows that share the same timestamp? Keeps one per time and adjusts total owed.');">
+          <button type="submit" <%= dupCount ? "" : "disabled" %>
+            style="background:#fce8e6;border:1px solid #d93025;color:#a50e0e;padding:8px 14px;border-radius:6px;cursor:<%= dupCount ? 'pointer' : 'not-allowed' %>;font-weight:600;opacity:<%= dupCount ? '1' : '0.55' %>;">
+            Remove duplicate times (<%= dupCount %>)
+          </button>
+        </form>
+      <% } %>
+
       <% if (!history || !history.length) { %>
         <p>No Chris Payment history yet.</p>
       <% } else { %>

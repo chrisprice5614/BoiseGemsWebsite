@@ -88,12 +88,23 @@
     <section class="form-wizard__step" data-step="3">
       <p class="form-wizard__kicker">Step 4 of 5</p>
       <h2 class="form-wizard__title">Who needs to sign this?</h2>
-      <p class="form-wizard__help">Check every group that should see and sign this form. You can pick more than one.</p>
-      <div class="form-wizard__checks">
-        <label class="form-wizard__check"><input type="checkbox" name="audience_corps" value="1"> Corps</label>
-        <label class="form-wizard__check"><input type="checkbox" name="audience_independent" value="1"> Independent</label>
-        <label class="form-wizard__check"><input type="checkbox" name="audience_affiliate" value="1"> Affiliate</label>
-        <label class="form-wizard__check"><input type="checkbox" name="audience_staff" value="1"> Staff</label>
+      <p class="form-wizard__help">Use a preset, or check individual groups. Presets fill in the related boxes for you.</p>
+      <div class="form-wizard__checks" id="formAudienceChecks">
+        <label class="form-wizard__check" style="border:1px solid #c5b3d9;background:#f7f2fc;">
+          <input type="checkbox" name="audience_everyone" value="1" data-audience-preset="everyone">
+          <strong>All, including non-contracted</strong>
+          <span style="display:block;font-weight:400;color:#6b5585;font-size:0.9em;">Everyone — members (contracted or not), staff, and parents</span>
+        </label>
+        <label class="form-wizard__check" style="border:1px solid #c5b3d9;background:#f7f2fc;">
+          <input type="checkbox" name="audience_all_members" value="1" data-audience-preset="all_members">
+          <strong>All Members, including non-contracted</strong>
+          <span style="display:block;font-weight:400;color:#6b5585;font-size:0.9em;">Every member account (contracted or not). Does not include parents/staff-only.</span>
+        </label>
+        <hr style="width:100%;border:none;border-top:1px solid #e5dcee;margin:4px 0;">
+        <label class="form-wizard__check"><input type="checkbox" name="audience_corps" value="1" data-audience-group> Corps</label>
+        <label class="form-wizard__check"><input type="checkbox" name="audience_independent" value="1" data-audience-group> Independent</label>
+        <label class="form-wizard__check"><input type="checkbox" name="audience_affiliate" value="1" data-audience-group> Affiliate</label>
+        <label class="form-wizard__check"><input type="checkbox" name="audience_staff" value="1" data-audience-group> Staff</label>
       </div>
       <div class="form-wizard__actions">
         <button type="button" class="form-wizard__secondary" data-back>Back</button>

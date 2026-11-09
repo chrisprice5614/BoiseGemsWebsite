@@ -50,7 +50,19 @@
                         <!-- NEW badges row -->
                         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
                           <span class="pill">Upload Required: <b><%= form.upload ? "Yes" : "No" %></b></span>
-                          <span class="pill">Audience: <b><%= (form.ensemble_type||"all") %></b></span>
+                          <%
+                            var audBits = [];
+                            if (form.audience_everyone) audBits.push("Everyone (incl. non-contracted)");
+                            else if (form.audience_all_members) audBits.push("All members (incl. non-contracted)");
+                            else {
+                              if (form.audience_corps) audBits.push("Corps");
+                              if (form.audience_independent) audBits.push("Independent");
+                              if (form.audience_affiliate) audBits.push("Affiliate");
+                              if (form.audience_staff) audBits.push("Staff");
+                              if (!audBits.length) audBits.push(form.ensemble_type || "all");
+                            }
+                          %>
+                          <span class="pill">Audience: <b><%= audBits.join(", ") %></b></span>
                           <span class="pill">Contracted Only: <b><%= form.contracted ? "Yes" : "No" %></b></span>
                         </div>
 

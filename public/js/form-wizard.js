@@ -12,6 +12,48 @@
     });
   }
 
+  function wireAudiencePresets(root) {
+    var box = root || document.getElementById("formAudienceChecks");
+    if (!box || box.getAttribute("data-audience-wired") === "1") return;
+    box.setAttribute("data-audience-wired", "1");
+    var everyone = box.querySelector('[name="audience_everyone"]');
+    var allMembers = box.querySelector('[name="audience_all_members"]');
+
+    function checkNamed(names, on) {
+      names.forEach(function (name) {
+        var el = box.querySelector('[name="' + name + '"]');
+        if (el) el.checked = !!on;
+      });
+    }
+
+    if (everyone) {
+      everyone.addEventListener("change", function () {
+        if (!everyone.checked) return;
+        if (allMembers) allMembers.checked = true;
+        checkNamed(
+          [
+            "audience_corps",
+            "audience_independent",
+            "audience_affiliate",
+            "audience_staff",
+            "audience_all_members",
+          ],
+          true
+        );
+      });
+    }
+    if (allMembers) {
+      allMembers.addEventListener("change", function () {
+        if (!allMembers.checked) return;
+        if (everyone && everyone.checked) return;
+        checkNamed(
+          ["audience_corps", "audience_independent", "audience_affiliate"],
+          true
+        );
+      });
+    }
+  }
+
   function uid() {
     return "f" + Math.random().toString(36).slice(2, 9);
   }
@@ -524,10 +566,12 @@
       }
       if (n === 3) {
         var any =
-          form.audience_corps.checked ||
-          form.audience_independent.checked ||
-          form.audience_affiliate.checked ||
-          form.audience_staff.checked;
+          (form.audience_everyone && form.audience_everyone.checked) ||
+          (form.audience_all_members && form.audience_all_members.checked) ||
+          (form.audience_corps && form.audience_corps.checked) ||
+          (form.audience_independent && form.audience_independent.checked) ||
+          (form.audience_affiliate && form.audience_affiliate.checked) ||
+          (form.audience_staff && form.audience_staff.checked);
         if (!any) return fail("Check at least one group who needs this form.");
       }
       if (n === 4) {
@@ -536,6 +580,8 @@
       }
       return true;
     }
+
+    wireAudiencePresets(form);
 
     form.addEventListener("click", function (e) {
       var next = e.target.closest("[data-next]");
@@ -657,6 +703,15 @@
       console.error(err);
       if (pagesEl) pagesEl.innerHTML = "<p style='color:#c1272d;text-align:center;'>Could not load the PDF.</p>";
     });
+  }
+
+  // Edit-form page (and create wizard) share the same audience presets
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      wireAudiencePresets(document.getElementById("formAudienceChecks"));
+    });
+  } else {
+    wireAudiencePresets(document.getElementById("formAudienceChecks"));
   }
 
   window.FormWizardPlacer = { createPlacer: createPlacer, loadPdfJs: loadPdfJs };

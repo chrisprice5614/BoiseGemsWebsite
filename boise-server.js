@@ -2253,6 +2253,8 @@ function migrateFormsTable(db) {
     ["audience_independent", "INTEGER DEFAULT 0"],
     ["audience_affiliate", "INTEGER DEFAULT 0"],
     ["audience_staff", "INTEGER DEFAULT 0"],
+    ["audience_all_members", "INTEGER DEFAULT 0"],
+    ["audience_everyone", "INTEGER DEFAULT 0"],
     ["fields_json", "TEXT"],
   ];
   for (const [col, def] of formAudienceCols) {
@@ -3397,9 +3399,19 @@ function buildFormsQueryForUser(user) {
   const wantIndependent = !!user?.contractedIndependent;
   const wantAffiliate = !!user?.contractedAffiliate;
   const wantStaff = !!(user?.staff || user?.admin);
+  const isParent = !!user?.parent;
+  const isFan = !!user?.fan;
+  // Member accounts (contracted or not), excluding parents/fans
+  const isMember = !isParent && !isFan;
 
   const clauses = [];
   const params = [now];
+
+  // Broad presets
+  clauses.push("COALESCE(audience_everyone, 0) = 1");
+  if (isMember) {
+    clauses.push("COALESCE(audience_all_members, 0) = 1");
+  }
 
   if (wantCorps) {
     clauses.push("COALESCE(audience_corps, 0) = 1");
@@ -3414,27 +3426,28 @@ function buildFormsQueryForUser(user) {
     clauses.push("COALESCE(audience_staff, 0) = 1");
   }
 
-  // Legacy fallback for rows that never got audience flags backfilled
-  if (!wantStaff && !wantCorps && !wantIndependent && !wantAffiliate) {
+  // Parents only get "everyone" forms assigned to their own account
+  // (child forms are handled via parent portal separately)
+  if (isParent && !wantStaff && !isMember) {
     return {
       sql: `
         SELECT *
         FROM forms
         WHERE expire_date > ?
-          AND 1 = 0
+          AND COALESCE(audience_everyone, 0) = 1
         ORDER BY due_date IS NULL, due_date ASC, id DESC
       `,
       params: [now],
     };
   }
 
-  if (!clauses.length) {
+  if (!wantStaff && !wantCorps && !wantIndependent && !wantAffiliate && !isMember) {
     return {
       sql: `
         SELECT *
         FROM forms
         WHERE expire_date > ?
-          AND 1 = 0
+          AND COALESCE(audience_everyone, 0) = 1
         ORDER BY due_date IS NULL, due_date ASC, id DESC
       `,
       params: [now],
@@ -3466,19 +3479,78 @@ function parseFormFields(form) {
   }
 }
 
+function bodyFlagOn(body, key) {
+  const v = body && body[key];
+  return v === "1" || v === "on" || v === true || v === 1;
+}
+
 function normalizeAudienceFromBody(body) {
-  const audience_corps = body.audience_corps === "1" || body.audience_corps === "on" || body.audience_corps === true ? 1 : 0;
-  const audience_independent =
-    body.audience_independent === "1" || body.audience_independent === "on" || body.audience_independent === true ? 1 : 0;
-  const audience_affiliate =
-    body.audience_affiliate === "1" || body.audience_affiliate === "on" || body.audience_affiliate === true ? 1 : 0;
-  const audience_staff = body.audience_staff === "1" || body.audience_staff === "on" || body.audience_staff === true ? 1 : 0;
-  return { audience_corps, audience_independent, audience_affiliate, audience_staff };
+  let audience_corps = bodyFlagOn(body, "audience_corps") ? 1 : 0;
+  let audience_independent = bodyFlagOn(body, "audience_independent") ? 1 : 0;
+  let audience_affiliate = bodyFlagOn(body, "audience_affiliate") ? 1 : 0;
+  let audience_staff = bodyFlagOn(body, "audience_staff") ? 1 : 0;
+  let audience_all_members = bodyFlagOn(body, "audience_all_members") ? 1 : 0;
+  let audience_everyone = bodyFlagOn(body, "audience_everyone") ? 1 : 0;
+
+  // Presets fill in the individual groups
+  if (audience_everyone) {
+    audience_corps = 1;
+    audience_independent = 1;
+    audience_affiliate = 1;
+    audience_staff = 1;
+    audience_all_members = 1;
+  } else if (audience_all_members) {
+    audience_corps = 1;
+    audience_independent = 1;
+    audience_affiliate = 1;
+  }
+
+  return {
+    audience_corps,
+    audience_independent,
+    audience_affiliate,
+    audience_staff,
+    audience_all_members,
+    audience_everyone,
+  };
+}
+
+function hasAnyFormAudience(aud) {
+  return !!(
+    aud &&
+    (aud.audience_corps ||
+      aud.audience_independent ||
+      aud.audience_affiliate ||
+      aud.audience_staff ||
+      aud.audience_all_members ||
+      aud.audience_everyone)
+  );
 }
 
 function listUsersNeedingForm(form) {
   const clauses = [];
   const params = [];
+
+  if (form.audience_everyone) {
+    // Everyone with an email (members, parents, staff) — not empty accounts
+    return db
+      .prepare(
+        `
+        SELECT id, email, firstname, lastname, parent
+        FROM users
+        WHERE email IS NOT NULL AND TRIM(email) != ''
+          AND COALESCE(fan, 0) = 0
+      `
+      )
+      .all();
+  }
+
+  if (form.audience_all_members) {
+    // All member accounts including non-contracted (exclude parents/fans)
+    clauses.push(
+      `(COALESCE(parent, 0) = 0 AND COALESCE(fan, 0) = 0)`
+    );
+  }
   if (form.audience_corps) {
     clauses.push("COALESCE(contractedCorps, 0) = 1");
   }
@@ -3489,7 +3561,7 @@ function listUsersNeedingForm(form) {
     clauses.push("COALESCE(contractedAffiliate, 0) = 1");
   }
   if (form.audience_staff) {
-    clauses.push("COALESCE(staff, 0) = 1");
+    clauses.push("(COALESCE(staff, 0) = 1 OR COALESCE(admin, 0) = 1)");
   }
   if (!clauses.length) return [];
   return db.prepare(`
@@ -3538,21 +3610,26 @@ async function notifyFormAudience(form) {
       }
     }
     // Parents of member users (not staff-only accounts)
-    if (!form.audience_staff || form.audience_corps || form.audience_independent || form.audience_affiliate) {
-      if (!u.parent) {
-        const parents = parentLinks.getParentsForChild(db, u.id);
-        for (const p of parents) {
-          if (!p.email || emailed.has(String(p.email).toLowerCase())) continue;
-          emailed.add(String(p.email).toLowerCase());
-          try {
-            await sendEmail(
-              p.email,
-              subject,
-              parentBody(p.firstname, `${u.firstname || ""} ${u.lastname || ""}`.trim())
-            );
-          } catch (err) {
-            console.error("Form notify parent email failed:", err);
-          }
+    const notifyParentsOfMembers =
+      form.audience_everyone ||
+      form.audience_all_members ||
+      form.audience_corps ||
+      form.audience_independent ||
+      form.audience_affiliate ||
+      !form.audience_staff;
+    if (notifyParentsOfMembers && !u.parent) {
+      const parents = parentLinks.getParentsForChild(db, u.id);
+      for (const p of parents) {
+        if (!p.email || emailed.has(String(p.email).toLowerCase())) continue;
+        emailed.add(String(p.email).toLowerCase());
+        try {
+          await sendEmail(
+            p.email,
+            subject,
+            parentBody(p.firstname, `${u.firstname || ""} ${u.lastname || ""}`.trim())
+          );
+        } catch (err) {
+          console.error("Form notify parent email failed:", err);
         }
       }
     }
@@ -7580,7 +7657,7 @@ app.post(
       : null;
     const aud = normalizeAudienceFromBody(req.body);
 
-    if (!aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate && !aud.audience_staff) {
+    if (!hasAnyFormAudience(aud)) {
       req.session.flashMessage = "Please choose who needs to sign this form.";
       return res.redirect(`/edit-form/${formId}`);
     }
@@ -7596,7 +7673,11 @@ app.post(
     let ensemble_type = "all";
     let contracted = 0;
     let role_scope = "member";
-    if (aud.audience_staff && !aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
+    if (aud.audience_everyone || aud.audience_all_members) {
+      ensemble_type = "all";
+      contracted = aud.audience_all_members && !aud.audience_everyone ? 0 : contracted;
+      role_scope = aud.audience_everyone ? "all" : "member";
+    } else if (aud.audience_staff && !aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
       role_scope = "staff";
     } else if (aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
       ensemble_type = "corps";
@@ -7650,6 +7731,8 @@ app.post(
              audience_independent = ?,
              audience_affiliate = ?,
              audience_staff = ?,
+             audience_all_members = ?,
+             audience_everyone = ?,
              fields_json = ?
        WHERE id = ?
     `).run(
@@ -7665,6 +7748,8 @@ app.post(
       aud.audience_independent,
       aud.audience_affiliate,
       aud.audience_staff,
+      aud.audience_all_members,
+      aud.audience_everyone,
       fieldsJson,
       formId
     );
@@ -7685,7 +7770,7 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single("document_path"), async (req
     req.session.flashMessage = "Please enter a name and description.";
     return res.redirect("/add-form");
   }
-  if (!aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate && !aud.audience_staff) {
+  if (!hasAnyFormAudience(aud)) {
     req.session.flashMessage = "Please choose who needs to sign this form.";
     return res.redirect("/add-form");
   }
@@ -7707,7 +7792,15 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single("document_path"), async (req
   let ensemble_type = "all";
   let contracted = 0;
   let role_scope = "member";
-  if (aud.audience_staff && !aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
+  if (aud.audience_everyone) {
+    ensemble_type = "all";
+    role_scope = "all";
+    contracted = 0;
+  } else if (aud.audience_all_members) {
+    ensemble_type = "all";
+    role_scope = "member";
+    contracted = 0;
+  } else if (aud.audience_staff && !aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
     role_scope = "staff";
   } else if (aud.audience_corps && !aud.audience_independent && !aud.audience_affiliate) {
     ensemble_type = "corps";
@@ -7726,8 +7819,9 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single("document_path"), async (req
     INSERT INTO forms (
       title, description, document_path, upload, content,
       expire_date, season, due_date, ensemble_type, contracted, role_scope,
-      audience_corps, audience_independent, audience_affiliate, audience_staff, fields_json
-    ) VALUES (?, ?, ?, 0, '', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      audience_corps, audience_independent, audience_affiliate, audience_staff,
+      audience_all_members, audience_everyone, fields_json
+    ) VALUES (?, ?, ?, 0, '', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title,
     description,
@@ -7741,6 +7835,8 @@ app.post("/add-form", mustBeAdmin, pdfUpload.single("document_path"), async (req
     aud.audience_independent,
     aud.audience_affiliate,
     aud.audience_staff,
+    aud.audience_all_members,
+    aud.audience_everyone,
     fieldsJson
   );
 

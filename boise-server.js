@@ -2572,7 +2572,7 @@ function summarizeLineItems(session) {
   }));
 }
 
-function enrichStripeRowSuggestions(row) {
+function enrichStripeRowSuggestions(row, opts = {}) {
   const email = String(row.email || "").toLowerCase();
   let matchedUser = null;
   let children = [];
@@ -2726,7 +2726,11 @@ function enrichStripeRowSuggestions(row) {
   row.suggestedAction = suggestedAction;
   try {
     stripePaymentFinalize.ensureStripePaymentColumns(db);
-    stripePaymentFinalize.attachReconcileDecisionState(db, row);
+    stripePaymentFinalize.attachReconcileDecisionState(db, row, {
+      localCreated: opts.localCreated || null,
+      usedChrisIds: opts.usedChrisIds || null,
+      windowMs: opts.windowMs || 60 * 1000,
+    });
   } catch (_) {
     row.needsAccountAction = true;
     row.needsChrisAction = true;
@@ -2994,6 +2998,7 @@ async function buildStripeSiteReconcile(range) {
   );
 
   const usedLocal = new Set();
+  const usedChrisIds = new Set();
   const matched = [];
   const stripeOnly = [];
 
@@ -3057,7 +3062,14 @@ async function buildStripeSiteReconcile(range) {
 
     if (best && bestScore >= 50) {
       usedLocal.add(localKey(best));
-      const enrichedMatch = enrichStripeRowSuggestions({ ...s });
+      const enrichedMatch = enrichStripeRowSuggestions(
+        { ...s },
+        {
+          localCreated: best.created,
+          usedChrisIds,
+          windowMs: 60 * 1000,
+        }
+      );
       // Account already on site for matched rows
       enrichedMatch.needsAccountAction = false;
       enrichedMatch.accountDecision = "accepted";
@@ -3069,7 +3081,9 @@ async function buildStripeSiteReconcile(range) {
         needsChrisAction: !!enrichedMatch.needsChrisAction,
       });
     } else {
-      stripeOnly.push(enrichStripeRowSuggestions(s));
+      stripeOnly.push(
+        enrichStripeRowSuggestions(s, { usedChrisIds, windowMs: 60 * 1000 })
+      );
     }
   }
 

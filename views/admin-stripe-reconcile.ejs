@@ -209,11 +209,11 @@
                 &nbsp;·&nbsp;
                 <strong>Chris Payment 3%:</strong>
                 <% if (s.chrisShareApplied) { %>
-                  <span style="color:#1e6e2e;">already added (<%= money(s.chrisShareCents) %>)</span>
+                  <span style="color:#1e6e2e;">already on Chris Payment (<%= money(s.chrisShareCents) %><% if (s.chrisShareMatchedAt) { %>, matched by id/amount+time<% } %>)</span>
                 <% } else if (!needsChris) { %>
                   <span style="color:#1e6e2e;">resolved</span>
                 <% } else { %>
-                  <span style="color:#a50e0e;">NOT added yet (would be <%= money(s.chrisShareCents) %>)</span>
+                  <span style="color:#a50e0e;">no matching Chris credit within 1 min at <%= money(s.chrisShareCents) %></span>
                 <% } %>
               </p>
 
@@ -452,9 +452,9 @@
               <p style="margin:4px 0;">
                 <strong>Chris Payment 3%:</strong>
                 <% if (m.stripe.chrisShareApplied) { %>
-                  <span style="color:#1e6e2e;">added (<%= money(m.stripe.chrisShareCents) %>)</span>
+                  <span style="color:#1e6e2e;">found (<%= money(m.stripe.chrisShareCents) %><% if (m.stripe.chrisShareMatchedAt) { %> · <%= when(m.stripe.chrisShareMatchedAt) %><% } %>)</span>
                 <% } else if (m.needsChrisAction) { %>
-                  <span style="color:#a50e0e;">missing — see Needs your decision above</span>
+                  <span style="color:#a50e0e;">no amount+time match within 1 min — see Needs your decision</span>
                 <% } else { %>
                   <span style="color:#1e6e2e;">resolved</span>
                 <% } %>

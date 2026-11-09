@@ -143,10 +143,54 @@ function saveReconcileDecision(db, {
   );
 }
 
+/**
+ * Possible Chris 3% amounts for a Stripe charge.
+ * Historical code sometimes used tuition base (÷1.06) and sometimes the full charged total.
+ * Include ±1¢ for rounding differences.
+ */
+function expectedChrisShareAmounts(stripeAmountCents) {
+  const total = Math.round(Number(stripeAmountCents) || 0);
+  if (total <= 0) return [];
+  const base = Math.round(total / 1.06) || total;
+  const out = new Set();
+  const add = (n) => {
+    const v = Math.round(Number(n) || 0);
+    if (v > 0) {
+      out.add(v);
+      out.add(v - 1);
+      out.add(v + 1);
+    }
+  };
+  add(base * 0.03);
+  add(total * 0.03);
+  return [...out].filter((n) => n > 0);
+}
+
+/**
+ * Find an existing Chris Payment credit for this Stripe payment.
+ * Prefer Stripe ids; otherwise require matching amount AND created_at within ~1 minute
+ * of the Stripe charge and/or the site paymentHistory timestamp.
+ */
 function findChrisShareForStripe(
   db,
-  { paymentIntentId, sessionId, amountCents, aroundMs, windowMs } = {}
+  {
+    paymentIntentId,
+    sessionId,
+    amountCents,
+    amountCandidates,
+    aroundMs,
+    aroundTimes,
+    windowMs,
+    usedIds,
+  } = {}
 ) {
+  const markUsed = (row) => {
+    if (row && usedIds && typeof usedIds.add === "function") usedIds.add(row.id);
+    return row;
+  };
+  const isUsed = (row) =>
+    !!(row && usedIds && typeof usedIds.has === "function" && usedIds.has(row.id));
+
   if (paymentIntentId) {
     try {
       const row = db
@@ -154,7 +198,7 @@ function findChrisShareForStripe(
           "SELECT * FROM chrisPaymentHistory WHERE stripe_payment_intent_id = ? AND type = 'credit' LIMIT 1"
         )
         .get(String(paymentIntentId));
-      if (row) return row;
+      if (row && !isUsed(row)) return markUsed(row);
     } catch (_) {}
   }
   if (sessionId) {
@@ -164,49 +208,89 @@ function findChrisShareForStripe(
           "SELECT * FROM chrisPaymentHistory WHERE stripe_session_id = ? AND type = 'credit' LIMIT 1"
         )
         .get(String(sessionId));
-      if (row) return row;
+      if (row && !isUsed(row)) return markUsed(row);
     } catch (_) {}
   }
 
-  // Legacy rows (before Stripe ids were stored): match expected 3% cut near the paid time
-  const expected = Math.round(Number(amountCents) || 0);
-  const at = Number(aroundMs) || 0;
-  if (expected > 0 && at > 0) {
-    const window = Number(windowMs) > 0 ? Number(windowMs) : 3 * 24 * 60 * 60 * 1000;
+  const amounts = [
+    ...new Set(
+      [
+        ...(Array.isArray(amountCandidates) ? amountCandidates : []),
+        ...expectedChrisShareAmounts(amountCents),
+        Math.round(Number(amountCents) || 0),
+      ].filter((n) => n > 0)
+    ),
+  ];
+  const times = [
+    ...new Set(
+      [...(Array.isArray(aroundTimes) ? aroundTimes : []), aroundMs]
+        .map((t) => Number(t) || 0)
+        .filter((t) => t > 0)
+    ),
+  ];
+  // Tight window: Chris share should land with the payment finalize (~1 minute).
+  const window = Number(windowMs) > 0 ? Number(windowMs) : 60 * 1000;
+
+  if (!amounts.length || !times.length) return null;
+
+  const placeholders = amounts.map(() => "?").join(",");
+  let best = null;
+  let bestDelta = Infinity;
+
+  for (const at of times) {
     try {
-      const row = db
+      const rows = db
         .prepare(
           `
           SELECT * FROM chrisPaymentHistory
           WHERE type = 'credit'
-            AND amount = ?
+            AND amount IN (${placeholders})
             AND created_at BETWEEN ? AND ?
-            AND (stripe_payment_intent_id IS NULL OR stripe_payment_intent_id = '')
-            AND (stripe_session_id IS NULL OR stripe_session_id = '')
           ORDER BY ABS(created_at - ?) ASC
-          LIMIT 1
+          LIMIT 20
         `
         )
-        .get(expected, at - window, at + window, at);
-      if (row) {
-        // Backfill Stripe ids so future reconciles don't re-prompt
-        try {
-          if (paymentIntentId || sessionId) {
-            db.prepare(
-              `
-              UPDATE chrisPaymentHistory
-              SET stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, ?),
-                  stripe_session_id = COALESCE(stripe_session_id, ?)
-              WHERE id = ?
-            `
-            ).run(paymentIntentId || null, sessionId || null, row.id);
-          }
-        } catch (_) {}
-        return row;
+        .all(...amounts, at - window, at + window, at);
+
+      for (const row of rows) {
+        if (isUsed(row)) continue;
+        const rowPi = row.stripe_payment_intent_id
+          ? String(row.stripe_payment_intent_id)
+          : "";
+        const rowSid = row.stripe_session_id ? String(row.stripe_session_id) : "";
+        // Never reuse a credit already linked to a different Stripe payment
+        if (rowPi && (!paymentIntentId || rowPi !== String(paymentIntentId))) continue;
+        if (rowSid && sessionId && rowSid !== String(sessionId)) continue;
+        if (rowSid && !sessionId && !(paymentIntentId && rowPi === String(paymentIntentId))) {
+          continue;
+        }
+
+        const delta = Math.abs((Number(row.created_at) || 0) - at);
+        if (delta < bestDelta) {
+          best = row;
+          bestDelta = delta;
+        }
       }
     } catch (_) {}
   }
-  return null;
+
+  if (!best) return null;
+
+  // Backfill Stripe ids onto legacy credits so future runs are exact
+  try {
+    if (paymentIntentId || sessionId) {
+      db.prepare(
+        `
+        UPDATE chrisPaymentHistory
+        SET stripe_payment_intent_id = COALESCE(NULLIF(stripe_payment_intent_id, ''), ?),
+            stripe_session_id = COALESCE(NULLIF(stripe_session_id, ''), ?)
+        WHERE id = ?
+      `
+      ).run(paymentIntentId || null, sessionId || null, best.id);
+    }
+  } catch (_) {}
+
+  return markUsed(best);
 }
 
 function recordChrisShareWithStripe(db, {
@@ -1913,11 +1997,17 @@ function applyReconcileDecision(db, body, deps = {}) {
     ok: true,
     scope: "account",
     ...result,
-    chrisPending: !findChrisShareForStripe(db, { paymentIntentId, sessionId }),
+    chrisPending: !findChrisShareForStripe(db, {
+      paymentIntentId,
+      sessionId,
+      amountCents: stripeAmountCents,
+      aroundTimes: [paidAt],
+      windowMs: 60 * 1000,
+    }),
   };
 }
 
-function attachReconcileDecisionState(db, row) {
+function attachReconcileDecisionState(db, row, opts = {}) {
   const piId = row.id && String(row.id).startsWith("pi_") ? row.id : null;
   const key = stripeReconcileKey({
     paymentIntentId: piId,
@@ -1935,13 +2025,24 @@ function attachReconcileDecisionState(db, row) {
   const chrisBase = tuitionLike
     ? Math.round((row.amount || 0) / 1.06) || row.amount || 0
     : row.amount || 0;
+  const amountCandidates = expectedChrisShareAmounts(row.amount);
   const expectedChris = Math.round(chrisBase * 0.03);
+
+  // Match Chris credits by Stripe id, else by amount + time (~1 min) around
+  // Stripe charge time AND/OR the site paymentHistory timestamp (success_url
+  // often wrote Chris share with Date.now(), not Stripe created).
+  const aroundTimes = [row.created, opts.localCreated, row.localCreated]
+    .map((t) => Number(t) || 0)
+    .filter((t) => t > 0);
 
   const chrisShare = findChrisShareForStripe(db, {
     paymentIntentId: piId,
     sessionId: row.sessionId,
-    amountCents: expectedChris,
-    aroundMs: row.created,
+    amountCents: row.amount,
+    amountCandidates,
+    aroundTimes,
+    windowMs: opts.windowMs || 60 * 1000,
+    usedIds: opts.usedChrisIds || null,
   });
 
   const alreadyOnAccount = findPaymentByStripeIds(db, {
@@ -1959,7 +2060,9 @@ function attachReconcileDecisionState(db, row) {
   row.chrisShareApplied = !!chrisShare || chrisDecision?.decision === "accepted";
   row.chrisShareCents = chrisShare ? chrisShare.amount : expectedChris;
   row.chrisBaseCents = chrisBase;
+  row.chrisShareMatchedAt = chrisShare ? chrisShare.created_at : null;
   row.needsAccountAction = !accountDecision && !alreadyOnAccount;
+  // Only ask about Chris share when we cannot find a matching credit by id OR amount+time
   row.needsChrisAction = !chrisDecision && !chrisShare;
   row.needsAnyAction = row.needsAccountAction || row.needsChrisAction;
   return row;
@@ -1992,6 +2095,7 @@ module.exports = {
   stripeReconcileKey,
   getReconcileDecision,
   findChrisShareForStripe,
+  expectedChrisShareAmounts,
   recordChrisShareWithStripe,
   pollAndRecoverPaidCheckouts,
   startStripeRecoveryPoller,

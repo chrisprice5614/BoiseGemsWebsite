@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Users with Balance Due - Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<body>
+<header>
+  <%- include("includes/header") %>
+</header>
+<main>
+  <div style="max-width: 1100px; margin: 16px auto; padding: 16px;">
+    <p style="margin:0 0 8px;"><a href="/admin-portal#pd-sec-members">&larr; Admin Portal</a></p>
+    <h1>Users with Balance Due</h1>
+    <p style="margin:8px 0 16px; color:#555;">
+      <%= count %> user<%= count === 1 ? "" : "s" %> ·
+      Total outstanding:
+      <strong><%= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((totalOwedCents || 0) / 100) %></strong>
+    </p>
+
+    <form method="GET" action="/admin/balance-due" style="display:flex; gap:8px; flex-wrap:wrap; margin:0 0 20px;">
+      <input
+        type="search"
+        name="search"
+        value="<%= typeof search === 'string' ? search : '' %>"
+        placeholder="Search name, email, phone"
+        style="flex:1; min-width:200px; padding:8px; border-radius:6px; border:1px solid #ccc;"
+      />
+      <button type="submit">Search</button>
+      <% if (search) { %>
+        <a href="/admin/balance-due" style="align-self:center;">Clear</a>
+      <% } %>
+    </form>
+
+    <% if (!users || !users.length) { %>
+      <p><em>No users with a balance due<%= search ? " matching that search" : "" %>.</em></p>
+    <% } else { %>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="border-bottom:1px solid #ccc; padding:8px 6px; text-align:left;">Name</th>
+              <th style="border-bottom:1px solid #ccc; padding:8px 6px; text-align:left;">Email</th>
+              <th style="border-bottom:1px solid #ccc; padding:8px 6px; text-align:left;">Type</th>
+              <th style="border-bottom:1px solid #ccc; padding:8px 6px; text-align:right;">Balance left</th>
+              <th style="border-bottom:1px solid #ccc; padding:8px 6px; text-align:left;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% users.forEach(function(u) {
+              var tags = [];
+              if (u.parent) tags.push("Parent");
+              if (u.contractedCorps) tags.push("Corps");
+              if (u.contractedIndependent) tags.push("Independent");
+              if (u.contractedAffiliate) tags.push("Affiliate");
+              if (!tags.length && u.section) tags.push(u.section);
+              if (!tags.length) tags.push("Member");
+            %>
+              <tr>
+                <td style="border-bottom:1px solid #eee; padding:10px 6px;">
+                  <strong><%= u.firstname %> <%= u.lastname %></strong>
+                  <% if (u.phone) { %><div style="color:#666; font-size:0.9em;"><%= u.phone %></div><% } %>
+                </td>
+                <td style="border-bottom:1px solid #eee; padding:10px 6px;"><%= u.email || "—" %></td>
+                <td style="border-bottom:1px solid #eee; padding:10px 6px; font-size:0.9em;"><%= tags.join(", ") %></td>
+                <td style="border-bottom:1px solid #eee; padding:10px 6px; text-align:right; font-weight:600; color:#a50e0e;">
+                  <%= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((u.owed || 0) / 100) %>
+                </td>
+                <td style="border-bottom:1px solid #eee; padding:10px 6px;">
+                  <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    <a href="/transaction-edit/<%= u.id %>"
+                       style="display:inline-block; padding:6px 10px; border-radius:6px; background:#e8f0fe; border:1px solid #4285f4; color:#174ea6; text-decoration:none; font-size:0.9em; font-weight:600;">
+                      Transaction history
+                    </a>
+                    <a href="/add-transaction/<%= u.id %>"
+                       style="display:inline-block; padding:6px 10px; border-radius:6px; background:#e6f4ea; border:1px solid #34a853; color:#1e6e2e; text-decoration:none; font-size:0.9em; font-weight:600;">
+                      Add payment / charge
+                    </a>
+                    <a href="/edit-users?search=<%= encodeURIComponent(u.email || (u.firstname + ' ' + u.lastname)) %>"
+                       style="display:inline-block; padding:6px 10px; border-radius:6px; background:#f8f9fa; border:1px solid #dadce0; color:#3c4043; text-decoration:none; font-size:0.9em;">
+                      User account
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</main>
+<footer>
+  <%- include("includes/footer") %>
+</footer>
+</body>
+</html>

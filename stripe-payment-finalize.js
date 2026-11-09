@@ -987,6 +987,49 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
     return { ok: true, skipped: true, reason: kind };
   }
 
+  if (kind === "video_audition") {
+    let pot = null;
+    const potId = Number(
+      session.metadata?.potential_id || classified.potentialId || 0
+    );
+    if (potId) {
+      try {
+        pot = db.prepare("SELECT * FROM potential_video_audition WHERE id = ?").get(potId);
+      } catch (_) {}
+    }
+    if (!pot && session.id) {
+      try {
+        pot = db
+          .prepare("SELECT * FROM potential_video_audition WHERE stripe_session_id = ?")
+          .get(session.id);
+      } catch (_) {}
+    }
+    const userId =
+      Number(pot?.user_id || session.metadata?.user_id || 0) || 0;
+    if (!userId) {
+      return {
+        ok: false,
+        error: "Paid video audition with no user; needs manual reconcile.",
+        stripeMeta,
+      };
+    }
+    return backfillVideoAuditionFromStripe(
+      db,
+      {
+        userId,
+        program: pot?.program || session.metadata?.program || "corps",
+        seasonYear: pot?.season_year || session.metadata?.season_year,
+        stripeAmountCents: pot?.amount
+          ? Math.round(Number(pot.amount) * 1.06) || session.amount_total || 0
+          : session.amount_total || 0,
+        paymentIntentId: stripeMeta.paymentIntentId,
+        sessionId: stripeMeta.sessionId,
+        paidAt: stripeMeta.paidAt,
+      },
+      deps
+    );
+  }
+
   if (kind === "donation") {
     const pot = findDonationPotentialForSession(db, session);
     if (pot) {
@@ -1147,6 +1190,16 @@ async function pollAndRecoverPaidCheckouts(db, stripe, deps, options = {}) {
       ...db
         .prepare(
           "SELECT stripe_session_id AS sid FROM potential_donation WHERE stripe_session_id IS NOT NULL AND TRIM(stripe_session_id) <> ''"
+        )
+        .all()
+        .map((r) => r.sid)
+    );
+  } catch (_) {}
+  try {
+    openSessions.push(
+      ...db
+        .prepare(
+          "SELECT stripe_session_id AS sid FROM potential_video_audition WHERE stripe_session_id IS NOT NULL AND TRIM(stripe_session_id) <> ''"
         )
         .all()
         .map((r) => r.sid)

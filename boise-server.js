@@ -6558,6 +6558,49 @@ app.post("/change-email/:id", mustBeAdmin, (req,res) => {
   return res.redirect("/edit-users")
 })
 
+app.get("/admin/balance-due", mustBeStaffOrAdmin, requirePermission("view_financial"), (req, res) => {
+  const search = String(req.query.search || "").trim();
+  let users;
+  if (search) {
+    const like = `%${search}%`;
+    users = db
+      .prepare(
+        `
+        SELECT id, firstname, lastname, email, phone, section, instrument,
+               owed, paid, parent, contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users
+        WHERE COALESCE(owed, 0) > 0
+          AND (
+            firstname LIKE ? OR lastname LIKE ? OR email LIKE ? OR phone LIKE ?
+            OR (firstname || ' ' || lastname) LIKE ?
+          )
+        ORDER BY owed DESC, lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
+      `
+      )
+      .all(like, like, like, like, like);
+  } else {
+    users = db
+      .prepare(
+        `
+        SELECT id, firstname, lastname, email, phone, section, instrument,
+               owed, paid, parent, contractedCorps, contractedIndependent, contractedAffiliate
+        FROM users
+        WHERE COALESCE(owed, 0) > 0
+        ORDER BY owed DESC, lastname COLLATE NOCASE ASC, firstname COLLATE NOCASE ASC
+      `
+      )
+      .all();
+  }
+
+  const totalOwedCents = users.reduce((sum, u) => sum + (Number(u.owed) || 0), 0);
+  return res.render("admin-balance-due", {
+    users,
+    search,
+    totalOwedCents,
+    count: users.length,
+  });
+});
+
 app.get("/pay-history", mustBeStaffOrAdmin, requirePermission("view_financial"), (req, res) => {
   const search = String(req.query.search || "").trim();
   let payments;

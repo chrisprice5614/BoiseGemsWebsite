@@ -89,7 +89,7 @@
 
       <div class="sr-summary">
         <div class="sr-card">
-          Stripe payments
+          From boisegems.org
           <strong><%= report.stripeCount %></strong>
           <span class="sr-muted"><%= money(t.stripeCents) %></span>
         </div>
@@ -113,7 +113,17 @@
           <strong><%= report.siteOnly.length %></strong>
           <span class="sr-muted"><%= money(t.siteOnlyCents) %></span>
         </div>
+        <div class="sr-card sr-info">
+          Ignored (not this site)
+          <strong><%= (report.excludedOffsiteStripe && report.excludedOffsiteStripe.length) || 0 %></strong>
+          <span class="sr-muted"><%= money(t.excludedOffsiteCents) %></span>
+        </div>
       </div>
+
+      <p class="sr-muted" style="margin:0 0 16px;">
+        Only Stripe checkouts with success/cancel URLs on <code>boisegems.org</code> (or store PaymentIntents with site <code>potential_order_id</code>) are reconciled.
+        Jackets / Payment Links / Dashboard charges are listed under “Ignored” and never auto-applied to balances.
+      </p>
 
       <% const eventOptions = typeof eventsForSelect !== 'undefined' && eventsForSelect ? eventsForSelect : []; %>
       <% const pendingChrisOnly = report.pendingChrisOnly || []; %>
@@ -396,6 +406,25 @@
               </tbody>
             </table>
           </div>
+        <% } %>
+      </div>
+
+      <div class="sr-section" id="ignored-offsite">
+        <h2>Ignored — not from boisegems.org (<%= (report.excludedOffsiteStripe && report.excludedOffsiteStripe.length) || 0 %>)</h2>
+        <% if (!report.excludedOffsiteStripe || !report.excludedOffsiteStripe.length) { %>
+          <p>None in this range.</p>
+        <% } else { %>
+          <p class="sr-muted">These Stripe charges have no boisegems.org success/cancel URL (jackets, Payment Links, Dashboard, etc.) and are never applied to member balances.</p>
+          <% report.excludedOffsiteStripe.forEach(function(s) { %>
+            <div class="sr-pay" style="border-color:#9aa0a6;background:#f8f9fa;">
+              <h3><%= money(s.amount) %> · <%= when(s.created) %></h3>
+              <p style="margin:4px 0;"><%= s.email || '(no email)' %> · <code><%= s.id %></code></p>
+              <% if (s.description) { %><p style="margin:4px 0;"><%= s.description %></p><% } %>
+              <p class="sr-muted" style="margin:4px 0;">
+                success_url: <code style="word-break:break-all;"><%= s.successUrl || '(none)' %></code>
+              </p>
+            </div>
+          <% }) %>
         <% } %>
       </div>
 

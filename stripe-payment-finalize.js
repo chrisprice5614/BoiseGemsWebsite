@@ -16,6 +16,29 @@ function ensureStripePaymentColumns(db) {
   if (!phCols.includes("stripe_session_id")) {
     db.prepare("ALTER TABLE paymentHistory ADD COLUMN stripe_session_id TEXT").run();
   }
+  if (!phCols.includes("towards_balance")) {
+    db.prepare(
+      "ALTER TABLE paymentHistory ADD COLUMN towards_balance INTEGER NOT NULL DEFAULT 0"
+    ).run();
+    // Backfill known tuition / parent-pay rows that already reduced owed/paid
+    try {
+      db.prepare(
+        `
+        UPDATE paymentHistory
+        SET towards_balance = 1
+        WHERE COALESCE(towards_balance, 0) = 0
+          AND lower(COALESCE(method, '')) != 'charge'
+          AND (
+            description LIKE '%towards their tuition%'
+            OR description LIKE '%paid for their child%'
+            OR title LIKE 'Payment by %'
+            OR title LIKE 'Payment for % by parent%'
+            OR title LIKE 'Contract down payment%'
+          )
+      `
+      ).run();
+    } catch (_) {}
+  }
 
   const ppCols = db.prepare("PRAGMA table_info(potential_payment)").all().map((c) => c.name);
   if (!ppCols.includes("stripe_session_id")) {
@@ -270,13 +293,15 @@ function insertStripePaymentHistory(db, {
   paymentIntentId,
   sessionId,
   paidAt,
+  towardsBalance = false,
 }) {
+  ensureStripePaymentColumns(db);
   return db
     .prepare(
       `
       INSERT INTO paymentHistory
-        (title, description, amount, method, date, user_id, stripe_payment_intent_id, stripe_session_id)
-      VALUES (?, ?, ?, 'Stripe', ?, ?, ?, ?)
+        (title, description, amount, method, date, user_id, stripe_payment_intent_id, stripe_session_id, towards_balance)
+      VALUES (?, ?, ?, 'Stripe', ?, ?, ?, ?, ?)
     `
     )
     .run(
@@ -286,7 +311,8 @@ function insertStripePaymentHistory(db, {
       paidAt || Date.now(),
       userId || null,
       paymentIntentId || null,
-      sessionId || null
+      sessionId || null,
+      towardsBalance ? 1 : 0
     );
 }
 
@@ -366,6 +392,7 @@ function finalizeTuitionPotential(db, potential, deps, stripeMeta = {}) {
       paymentIntentId: stripeMeta.paymentIntentId,
       sessionId: stripeMeta.sessionId,
       paidAt: stripeMeta.paidAt,
+      towardsBalance: true,
     }).lastInsertRowid;
   } catch (err) {
     // Unique index race: another request already recorded this Stripe id
@@ -498,6 +525,7 @@ function finalizeContractPotential(db, potential, deps, stripeMeta = {}) {
       paymentIntentId: stripeMeta.paymentIntentId,
       sessionId: stripeMeta.sessionId,
       paidAt: stripeMeta.paidAt,
+      towardsBalance: true,
     }).lastInsertRowid;
   } catch (err) {
     const again = findPaymentByStripeIds(db, stripeMeta);
@@ -781,6 +809,20 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
     return { ok: false, error: "Session not paid." };
   }
 
+  if (
+    !isFromBoiseGemsWebsite({
+      successUrl: session.success_url,
+      cancelUrl: session.cancel_url,
+      metadata: session.metadata,
+    })
+  ) {
+    return {
+      ok: true,
+      skipped: true,
+      error: "Not a boisegems.org checkout — ignored.",
+    };
+  }
+
   const stripeMeta = stripeIdsFromSession(session);
   const already = findPaymentByStripeIds(db, stripeMeta);
   if (already) return { ok: true, already: true, paymentId: already.id };
@@ -927,6 +969,16 @@ async function pollAndRecoverPaidCheckouts(db, stripe, deps, options = {}) {
   async function trySession(session, source) {
     if (!session) return;
     if (session.payment_status !== "paid" && session.status !== "complete") return;
+    if (
+      !isFromBoiseGemsWebsite({
+        successUrl: session.success_url,
+        cancelUrl: session.cancel_url,
+        metadata: session.metadata,
+      })
+    ) {
+      summary.skipped += 1;
+      return;
+    }
     try {
       const result = await handleCheckoutSessionCompleted(db, session, deps);
       if (result?.already) summary.already += 1;
@@ -1080,6 +1132,54 @@ function parseSuccessUrl(url) {
     if (m) return { kind: p.kind, potentialId: Number(m[1]) || null };
   }
   return { kind: null, potentialId: null };
+}
+
+/** Hosts that count as THIS Boise Gems website (not jackets / Payment Links / other apps). */
+function getBoiseGemsWebsiteHosts() {
+  const hosts = new Set(["boisegems.org", "www.boisegems.org"]);
+  try {
+    const base = String(process.env.BASEURL || "").trim();
+    if (base) {
+      const u = new URL(base.includes("://") ? base : `https://${base}`);
+      if (u.hostname) hosts.add(String(u.hostname).toLowerCase());
+    }
+  } catch (_) {}
+  return hosts;
+}
+
+function urlIsBoiseGemsWebsite(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    const host = String(u.hostname || "").toLowerCase();
+    if (!host) return false;
+    const allowed = getBoiseGemsWebsiteHosts();
+    if (allowed.has(host)) return true;
+    // Treat apex / www as the same site
+    const bare = host.replace(/^www\./, "");
+    for (const h of allowed) {
+      if (h.replace(/^www\./, "") === bare) return true;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * True only when the Stripe checkout/payment was created by this website.
+ * Primary signal: success_url / cancel_url on boisegems.org (or BASEURL host).
+ * Merch uses PaymentIntents with potential_order_id and may have no Checkout URL.
+ */
+function isFromBoiseGemsWebsite({ successUrl, cancelUrl, metadata } = {}) {
+  if (urlIsBoiseGemsWebsite(successUrl) || urlIsBoiseGemsWebsite(cancelUrl)) {
+    return true;
+  }
+  const meta = metadata || {};
+  // Store checkout PaymentIntents created by merch-system.js on this site
+  if (meta.potential_order_id) return true;
+  return false;
 }
 
 function classifyStripeCheckout(session, lineItemNames = []) {
@@ -1884,6 +1984,8 @@ module.exports = {
   inferPotentialKind,
   classifyStripeCheckout,
   parseSuccessUrl,
+  isFromBoiseGemsWebsite,
+  urlIsBoiseGemsWebsite,
   applyReconcilePayment,
   applyReconcileDecision,
   attachReconcileDecisionState,

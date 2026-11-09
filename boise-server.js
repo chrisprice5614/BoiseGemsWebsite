@@ -2781,10 +2781,12 @@ async function buildStripeSiteReconcile(range) {
       sessionId: null,
       chargeId: null,
       successUrl: null,
+      cancelUrl: null,
       lineItems: [],
       metadata: pi.metadata || {},
       guessedKind: "unknown",
       guessedPotentialId: null,
+      fromBoiseGemsWebsite: false,
       status: pi.status,
     });
   }
@@ -2813,10 +2815,12 @@ async function buildStripeSiteReconcile(range) {
       sessionId: null,
       chargeId: ch.id,
       successUrl: null,
+      cancelUrl: null,
       lineItems: [],
       metadata: ch.metadata || {},
       guessedKind: "unknown",
       guessedPotentialId: null,
+      fromBoiseGemsWebsite: false,
       status: ch.status,
     });
   }
@@ -2839,6 +2843,7 @@ async function buildStripeSiteReconcile(range) {
     if (existing) {
       existing.sessionId = sess.id;
       existing.successUrl = sess.success_url || null;
+      existing.cancelUrl = sess.cancel_url || null;
       existing.lineItems = lineItems;
       existing.metadata = { ...(existing.metadata || {}), ...(sess.metadata || {}) };
       existing.guessedKind = classified.kind || existing.guessedKind;
@@ -2864,10 +2869,12 @@ async function buildStripeSiteReconcile(range) {
       sessionId: sess.id,
       chargeId: null,
       successUrl: sess.success_url || null,
+      cancelUrl: sess.cancel_url || null,
       lineItems,
       metadata: sess.metadata || {},
       guessedKind: classified.kind || "unknown",
       guessedPotentialId: classified.potentialId || null,
+      fromBoiseGemsWebsite: false,
       status: sess.payment_status || sess.status,
     });
   }
@@ -2878,11 +2885,19 @@ async function buildStripeSiteReconcile(range) {
       row.guessedKind = "merch";
       row.guessedPotentialId = Number(row.metadata.potential_order_id) || null;
     }
+    row.fromBoiseGemsWebsite = stripePaymentFinalize.isFromBoiseGemsWebsite({
+      successUrl: row.successUrl,
+      cancelUrl: row.cancelUrl,
+      metadata: row.metadata,
+    });
   }
 
-  const stripeRows = Array.from(stripeByKey.values()).sort(
+  const allStripeRows = Array.from(stripeByKey.values()).sort(
     (a, b) => b.created - a.created
   );
+  // Only reconcile checkouts that originated on boisegems.org (skip jackets / Payment Links / etc.)
+  const excludedOffsiteStripe = allStripeRows.filter((r) => !r.fromBoiseGemsWebsite);
+  const stripeRows = allStripeRows.filter((r) => r.fromBoiseGemsWebsite);
 
   let localPayments = [];
   try {
@@ -3070,14 +3085,18 @@ async function buildStripeSiteReconcile(range) {
   return {
     range,
     stripeCount: stripeRows.length,
+    stripeAllCount: allStripeRows.length,
     localCount: localRows.length,
     matched,
     stripeOnly: pendingStripe,
     stripeOnlyAll: stripeOnly,
     pendingChrisOnly,
+    excludedOffsiteStripe,
     siteOnly,
     totals: {
       stripeCents: sum(stripeRows, (r) => r.amount),
+      stripeAllCents: sum(allStripeRows, (r) => r.amount),
+      excludedOffsiteCents: sum(excludedOffsiteStripe, (r) => r.amount),
       localCents: sum(localRows, (r) => r.amount),
       matchedStripeCents: sum(matched, (r) => r.stripe.amount),
       matchedLocalCents: sum(matched, (r) => r.local.amount),
@@ -3093,6 +3112,7 @@ async function buildStripeSiteReconcile(range) {
       paymentHistory: localPayments.length,
       donations: localDonations.length,
       merchOrders: localMerch.length,
+      excludedOffsite: excludedOffsiteStripe.length,
     },
   };
 }
@@ -5729,8 +5749,11 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   );
 
   // Insert into paymentHistory
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
   const addPayment = db.prepare(
-    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
   );
 
   const downLabel = (downPayment / 100).toFixed(2);
@@ -5746,7 +5769,8 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     potential.amount,
     "Stripe",
     Date.now(),
-    user.id
+    user.id,
+    1
   );
 
   // Insert contractedMembers row (with stored contract file path)
@@ -6543,11 +6567,71 @@ app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
     return res.redirect("/")
   }
 
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
+
   const getPayments = db.prepare("SELECT * FROM paymentHistory WHERE user_id = ? ORDER BY date DESC")
   const payments = getPayments.all(userId)
+  const isChrisViewer =
+    (req.user.email || "").toLowerCase() === "chris@chrispricemusic.net";
+  const flash = req.session.flashMessage || null;
+  delete req.session.flashMessage;
 
-  return res.render("transaction-history",{payments, thisUser})
+  return res.render("transaction-history", {
+    payments,
+    thisUser,
+    isChrisViewer,
+    flashMessage: flash,
+  });
 })
+
+// Chris-only: apply an existing paymentHistory row towards the member's balance
+app.post("/transaction-edit/:userId/towards-balance/:paymentId", mustBeChrisOnly, (req, res) => {
+  const userId = Number(req.params.userId);
+  const paymentId = Number(req.params.paymentId);
+  const redirectTo = `/transaction-edit/${userId}`;
+
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
+
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+  const payment = db
+    .prepare("SELECT * FROM paymentHistory WHERE id = ? AND user_id = ?")
+    .get(paymentId, userId);
+
+  if (!user || !payment) {
+    req.session.flashMessage = "Payment or user not found.";
+    return res.redirect(redirectTo);
+  }
+
+  if (String(payment.method || "").toLowerCase() === "charge") {
+    req.session.flashMessage = "Charges cannot be applied towards balance.";
+    return res.redirect(redirectTo);
+  }
+
+  if (Number(payment.towards_balance) === 1) {
+    req.session.flashMessage = "That payment is already marked towards balance.";
+    return res.redirect(redirectTo);
+  }
+
+  const amount = Math.round(Number(payment.amount) || 0);
+  if (amount <= 0) {
+    req.session.flashMessage = "Invalid payment amount.";
+    return res.redirect(redirectTo);
+  }
+
+  // Reduce balance due. Do not bump `paid` again — most recorded payments
+  // already increased paid when they were entered; this only applies them to owed.
+  const newOwed = Number(user.owed || 0) - amount;
+  db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(newOwed, userId);
+  db.prepare("UPDATE paymentHistory SET towards_balance = 1 WHERE id = ?").run(paymentId);
+
+  req.session.flashMessage =
+    `Applied ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount / 100)} towards balance.`;
+  return res.redirect(redirectTo);
+});
 
 app.post("/admin/delete-user/:id", mustBeAdmin, (req, res) => {
   const result = deleteUserAccount(req.params.id, req.user.userid);
@@ -7291,9 +7375,10 @@ app.post("/add-transaction/:id", mustBeStaffOrAdmin, requirePermission("edit_fin
   // Always add the payment to the paid amount
   const alreadyPaid = Number(child.paid) + paid;
   
+  const towardsBalance = !!req.body.tuition;
+
   // If "Pay Towards Balance" is checked, also reduce what they owe
-  if(req.body.tuition)
-  {
+  if (towardsBalance) {
     const left = Number(child.owed) - paid;
     const updateStatement = db.prepare("UPDATE users SET paid = ?, owed = ? WHERE id = ?")
     updateStatement.run(alreadyPaid, left, req.params.id)
@@ -7305,8 +7390,21 @@ app.post("/add-transaction/:id", mustBeStaffOrAdmin, requirePermission("edit_fin
 
   const paidString = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(paid / 100);
 
-  const addPaymentStatement = db.prepare("INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)")
-  addPaymentStatement.run(req.body.title,req.body.description, paid,req.body.method, Date.now(), child.id)
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
+  const addPaymentStatement = db.prepare(
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  )
+  addPaymentStatement.run(
+    req.body.title,
+    req.body.description,
+    paid,
+    req.body.method,
+    Date.now(),
+    child.id,
+    towardsBalance ? 1 : 0
+  )
 
 
   return res.redirect(`/transaction-edit/${child.id}`)
@@ -8107,8 +8205,11 @@ app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
 
   addChrisShare(paid, `Parent ${req.user.firstname} ${req.user.lastname} paid for their child, ${child.firstname} ${child.lastname} with an amount of ${paidString}.`);
 
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
   const addPaymentStatement = db.prepare(
-    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
   );
   addPaymentStatement.run(
     `Payment for ${child.firstname} ${child.lastname} by parent, ${req.user.firstname} ${req.user.lastname}`,
@@ -8116,7 +8217,8 @@ app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
     paid,
     "Stripe",
     Date.now(),
-    child.id
+    child.id,
+    1
   );
 
   // Delete potential payment entry (to prevent reuse)
@@ -8272,8 +8374,11 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
     addChrisShare(paid, `${user.firstname} ${user.lastname} made a payment of ${paidString} towards their tuition/fees.`);
 
 
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
   const addPaymentStatement = db.prepare(
-    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (? , ? , ? , ? , ? , ?)"
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
   );
   addPaymentStatement.run(
     `Payment by ${user.firstname} ${user.lastname}`,
@@ -8281,7 +8386,8 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
     paid,
     "Stripe",
     Date.now(),
-    user.id
+    user.id,
+    1
   );
 
   // Delete potential payment entry (to prevent reuse)

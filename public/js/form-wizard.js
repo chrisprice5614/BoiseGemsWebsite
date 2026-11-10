@@ -679,15 +679,15 @@
       signForm.addEventListener("submit", function () {
         var map = {};
         fillRoot.querySelectorAll("[data-field-id]").forEach(function (input) {
+          // Skip locked prior signatures (readOnly) so we don't rewrite them;
+          // blanks from unlocked empty boxes stay blank for the next signer.
+          if (input.readOnly) return;
           map[input.dataset.fieldId] = input.value;
         });
-        // Push bottom signature into empty signature/initial boxes only (do not overwrite locked priors).
-        var mainSig = signForm.signature && signForm.signature.value;
-        fields.forEach(function (f) {
-          if ((f.type === "signature" || f.type === "initials") && !String(map[f.id] || "").trim() && mainSig) {
-            map[f.id] = mainSig;
-          }
-        });
+        // Do NOT copy the bottom "Type your signature" into every empty
+        // signature/initials box — that filled parent/guardian boxes with the
+        // member's name and then locked them. Only boxes the user typed on
+        // the PDF are saved; the bottom signature is for the submission log.
         // Preserve prior non-empty values client-side as well
         Object.keys(prefill).forEach(function (key) {
           if (!String(map[key] || "").trim() && String(prefill[key] || "").trim()) {

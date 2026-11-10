@@ -4860,6 +4860,84 @@ app.post("/upload-form/:id", mustBeMember, pdfUploadSecure.single("document_path
   return res.redirect("/member-forms");
 });
 
+/** Clear a member's saved form progress so they can start over (does not affect other users). */
+function clearFormUploadForMember(documentId, memberUserId) {
+  const existing = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(documentId, memberUserId);
+  if (!existing) return { ok: false, missing: true };
+  deleteSecurePdfIfExists(existing.upload_path);
+  db.prepare("DELETE FROM formUploads WHERE id = ?").run(existing.id);
+  return { ok: true, id: existing.id };
+}
+
+app.post("/upload-form/:id/clear", mustBeMember, (req, res) => {
+  const documentId = parseInt(req.params.id, 10);
+  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(documentId);
+  if (!thisForm) {
+    req.session.flashMessage = "Form not found.";
+    return res.redirect("/member-forms");
+  }
+  const result = clearFormUploadForMember(documentId, req.user.userid);
+  req.session.flashMessage = result.missing
+    ? "Nothing to clear — that form was not saved yet."
+    : "Saved form cleared. You can fill it out again from scratch.";
+  return res.redirect(`/upload-form/${documentId}`);
+});
+
+app.post("/upload-form-parent/:id/:child/clear", mustBeParent, (req, res) => {
+  const documentId = parseInt(req.params.id, 10);
+  const childId = Number(req.params.child);
+  if (!parentIsOf(req.user.userid, childId)) return res.redirect("/");
+  const thisForm = db.prepare("SELECT * FROM forms WHERE id = ?").get(documentId);
+  if (!thisForm) {
+    req.session.flashMessage = "Form not found.";
+    return res.redirect(`/member-forms-parent/${childId}`);
+  }
+  const result = clearFormUploadForMember(documentId, childId);
+  req.session.flashMessage = result.missing
+    ? "Nothing to clear — that form was not saved yet."
+    : "Saved form cleared. You or your child can fill it out again from scratch.";
+  return res.redirect(`/upload-form-parent/${documentId}/${childId}`);
+});
+
+/** Member/parent download of their own saved stamped form PDF. */
+app.get("/upload-form/:id/download", mustBeMember, (req, res) => {
+  const documentId = parseInt(req.params.id, 10);
+  const existing = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(documentId, req.user.userid);
+  if (!existing || !existing.upload_path || !String(existing.upload_path).startsWith("/secure-pdf/")) {
+    req.session.flashMessage = "No saved PDF to download yet.";
+    return res.redirect(`/upload-form/${documentId}`);
+  }
+  const filePath = path.join(__dirname, "private/pdf", path.basename(existing.upload_path));
+  if (!fs.existsSync(filePath)) {
+    req.session.flashMessage = "Saved PDF file is missing.";
+    return res.redirect(`/upload-form/${documentId}`);
+  }
+  return res.download(filePath, `form-${documentId}.pdf`);
+});
+
+app.get("/upload-form-parent/:id/:child/download", mustBeParent, (req, res) => {
+  const documentId = parseInt(req.params.id, 10);
+  const childId = Number(req.params.child);
+  if (!parentIsOf(req.user.userid, childId)) return res.redirect("/");
+  const existing = db
+    .prepare("SELECT * FROM formUploads WHERE document_id = ? AND user_id = ?")
+    .get(documentId, childId);
+  if (!existing || !existing.upload_path || !String(existing.upload_path).startsWith("/secure-pdf/")) {
+    req.session.flashMessage = "No saved PDF to download yet.";
+    return res.redirect(`/upload-form-parent/${documentId}/${childId}`);
+  }
+  const filePath = path.join(__dirname, "private/pdf", path.basename(existing.upload_path));
+  if (!fs.existsSync(filePath)) {
+    req.session.flashMessage = "Saved PDF file is missing.";
+    return res.redirect(`/upload-form-parent/${documentId}/${childId}`);
+  }
+  return res.download(filePath, `form-${documentId}-child-${childId}.pdf`);
+});
+
 
 
 app.post("/forgot-password", (req,res) => {

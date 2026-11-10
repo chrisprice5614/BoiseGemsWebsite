@@ -20,11 +20,30 @@
     <p style="margin:0;font-size:1.05rem;line-height:1.45;"><%= thisForm.description %></p>
     <p style="margin:14px 0 0;color:#6b5585;">
       You can submit with some boxes blank and come back later.
+      Only boxes you type on the PDF are saved — your name at the bottom does <strong>not</strong> fill parent/guardian signature boxes.
       Prior signatures stay locked so parent and child can both sign the same form legally.
       <% if (typeof existingUpload !== "undefined" && existingUpload) { %>
-        <br><strong>This form already has saved fields</strong> - blank boxes are waiting for another signer.
+        <br><strong>This form already has saved fields</strong> — blank boxes are waiting for another signer.
+        If the wrong name got locked into a box, use <strong>Clear &amp; restart</strong> below and fill it again.
       <% } %>
     </p>
+    <% if (typeof existingUpload !== "undefined" && existingUpload) { %>
+      <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">
+        <% if (typeof parent !== "undefined" && parent) { %>
+          <a href="/upload-form-parent/<%= thisForm.id %>/<%= parent %>/download" class="button" style="text-decoration:none;">Download current PDF</a>
+          <form method="POST" action="/upload-form-parent/<%= thisForm.id %>/<%= parent %>/clear" style="margin:0;"
+                onsubmit="return confirm('Clear this saved form and start over? Parent and child signatures already saved on it will be removed.');">
+            <button type="submit" style="background:#fce8e6;border:1px solid #d93025;color:#a50e0e;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600;">Clear &amp; restart</button>
+          </form>
+        <% } else { %>
+          <a href="/upload-form/<%= thisForm.id %>/download" class="button" style="text-decoration:none;">Download current PDF</a>
+          <form method="POST" action="/upload-form/<%= thisForm.id %>/clear" style="margin:0;"
+                onsubmit="return confirm('Clear this saved form and start over? All saved fields and signatures on it will be removed.');">
+            <button type="submit" style="background:#fce8e6;border:1px solid #d93025;color:#a50e0e;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600;">Clear &amp; restart</button>
+          </form>
+        <% } %>
+      </div>
+    <% } %>
   </div>
 
   <% if (thisForm.document_path) { %>

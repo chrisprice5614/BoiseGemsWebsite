@@ -170,7 +170,7 @@
         <div class="pd-sub-heading">Quick Actions</div>
         <div class="pd-quick-actions">
           <a href="/view-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Audition Materials</a>
-          <% if (isContracted || member.staff) { %>
+          <% if (isContracted || member.staff || (typeof filesOpenToAllMembers !== 'undefined' && filesOpenToAllMembers)) { %>
           <a href="/files" class="pd-action-btn"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
           <% } %>
           <a href="/allergy-info" class="pd-action-btn"><ion-icon name="medkit"></ion-icon> Allergy Info</a>
@@ -354,7 +354,7 @@
 
         <div class="pd-quick-actions">
           <a href="/view-materials" class="pd-action-btn pd-action-btn--primary"><ion-icon name="musical-notes"></ion-icon> Audition Materials</a>
-          <% if (isContracted || member.staff) { %>
+          <% if (isContracted || member.staff || (typeof filesOpenToAllMembers !== 'undefined' && filesOpenToAllMembers)) { %>
           <a href="/files" class="pd-action-btn pd-action-btn--primary"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
           <% } %>
           <% if (!member.staff && leftoverForms > -5) { %>

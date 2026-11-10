@@ -256,6 +256,18 @@ div.files-drive-item.is-selected,
   color: var(--secondary-color);
 }
 
+.files-drive-card--all-members .files-drive-card__icon {
+  color: #1f8a4c;
+}
+
+.files-drive-card--all-members .files-drive-card__name {
+  color: #146c38;
+}
+
+.files-drive-card--all-members .files-drive-card__meta {
+  color: #2f9e5f;
+}
+
 .files-drive-card__icon--lg {
   width: 72px;
   height: 72px;

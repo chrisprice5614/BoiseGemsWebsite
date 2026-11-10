@@ -122,18 +122,21 @@
   function makeSearchFolderCard(folder) {
     var a = document.createElement("a");
     a.href = "/files/folder/" + folder.id;
-    a.className = "files-drive-item files-drive-card";
+    var openToAll = Number(folder.allow_all_members) === 1;
+    a.className = "files-drive-item files-drive-card" + (openToAll ? " files-drive-card--all-members" : "");
     a.dataset.kind = "folder";
     a.dataset.id = String(folder.id);
     a.dataset.name = folder.name;
     a.dataset.created = String(folder.created_at || folder.updated_at || 0);
     a.dataset.type = "folder";
+    a.dataset.allowAllMembers = openToAll ? "1" : "0";
     a.dataset.searchResult = "1";
     a.innerHTML =
       '<div class="files-drive-card__icon"><ion-icon name="folder"></ion-icon></div>' +
       '<p class="files-drive-card__name"></p>' +
-      '<p class="files-drive-card__meta">In subfolder</p>';
+      '<p class="files-drive-card__meta"></p>';
     a.querySelector(".files-drive-card__name").textContent = folder.name;
+    a.querySelector(".files-drive-card__meta").textContent = openToAll ? "Open to all members" : "In subfolder";
     return a;
   }
 
@@ -247,9 +250,14 @@
     var downloadBtn = ctx.querySelector('[data-action="download"]');
     var renameBtn = ctx.querySelector('[data-action="rename"]');
     var permsBtn = ctx.querySelector('[data-action="permissions"]');
+    var letAllBtn = ctx.querySelector('[data-action="let-all-see"]');
+    var revokeAllBtn = ctx.querySelector('[data-action="revoke-all-see"]');
     var deleteBtn = ctx.querySelector('[data-action="delete"]');
     var uploadBtn = ctx.querySelector('[data-action="upload"]');
     var createBtn = ctx.querySelector('[data-action="create-folder"]');
+
+    if (letAllBtn) letAllBtn.hidden = true;
+    if (revokeAllBtn) revokeAllBtn.hidden = true;
 
     if (mode === "empty") {
       downloadBtn.hidden = true;
@@ -266,6 +274,11 @@
       uploadBtn.hidden = true;
       createBtn.hidden = true;
       deleteBtn.hidden = !canManage;
+      if (canManage && target) {
+        var alreadyOpen = target.dataset.allowAllMembers === "1";
+        if (letAllBtn) letAllBtn.hidden = alreadyOpen;
+        if (revokeAllBtn) revokeAllBtn.hidden = !alreadyOpen;
+      }
       if (!canManage) return;
     } else if (mode === "multi") {
       downloadBtn.hidden = true;
@@ -290,6 +303,45 @@
     var top = Math.min(y, window.innerHeight - rect.height - 8);
     ctx.style.left = Math.max(8, left) + "px";
     ctx.style.top = Math.max(8, top) + "px";
+  }
+
+  function applyFolderAllMembersUi(el, allow) {
+    if (!el) return;
+    el.dataset.allowAllMembers = allow ? "1" : "0";
+    if (allow) el.classList.add("files-drive-card--all-members");
+    else el.classList.remove("files-drive-card--all-members");
+    var meta = el.querySelector(".files-drive-card__meta");
+    if (meta) meta.textContent = allow ? "Open to all members" : "Folder";
+  }
+
+  function setFolderAllMembers(item, allow) {
+    if (!item || !canManage) return;
+    var id = item.dataset.id;
+    if (!id) return;
+    var body = new URLSearchParams();
+    body.set("allow", allow ? "1" : "0");
+    fetch("/files/folder/" + id + "/allow-all-members", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      },
+      body: body.toString(),
+      credentials: "same-origin",
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.ok) {
+          if (window.bgAlert) bgAlert((data && data.message) || "Could not update folder visibility.");
+          return;
+        }
+        applyFolderAllMembersUi(item, !!data.allow_all_members);
+        // Inherit/revoke affects the whole subtree visually — reload for accurate greens
+        window.location.reload();
+      })
+      .catch(function () {
+        if (window.bgAlert) bgAlert("Could not update folder visibility.");
+      });
   }
 
   function getSelectedFiles() {
@@ -1034,6 +1086,8 @@
       if (action === "download") return downloadUrl(target.dataset.url, target.dataset.name);
       if (action === "rename") return renameFile(target);
       if (action === "permissions") return openPerms(target);
+      if (action === "let-all-see") return setFolderAllMembers(target, true);
+      if (action === "revoke-all-see") return setFolderAllMembers(target, false);
       if (action === "delete") {
         if (mode === "folder") return deleteFolder(target);
         return deleteFile(target);

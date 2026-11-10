@@ -7,7 +7,7 @@
   <%- include("includes/head") %>
   <link rel="stylesheet" href="/css/files-drive.css">
 </head>
-<body class="files-drive-page" data-can-manage="0">
+<body class="files-drive-page" data-can-manage="<%= canManage ? '1' : '0' %>">
 <header><%- include("includes/header") %></header>
 
 <main class="files-drive">
@@ -48,17 +48,21 @@
   </div>
   <% } else { %>
   <div class="files-drive__items files-drive__grid" id="filesDriveItems">
-    <% sections.forEach(function(sec) { %>
+    <% sections.forEach(function(sec) {
+      var ownOpen = Number(sec.allow_all_members) === 1;
+      var openToAll = (typeof yearOpenToAll !== 'undefined' && yearOpenToAll) || ownOpen;
+    %>
     <a href="/files/folder/<%= sec.id %>"
-       class="files-drive-item files-drive-card"
+       class="files-drive-item files-drive-card<%= openToAll ? ' files-drive-card--all-members' : '' %>"
        data-kind="folder"
        data-id="<%= sec.id %>"
        data-name="<%= sec.name %>"
        data-created="<%= sec.created_at || 0 %>"
-       data-type="folder">
+       data-type="folder"
+       data-allow-all-members="<%= ownOpen ? '1' : '0' %>">
       <div class="files-drive-card__icon"><ion-icon name="folder"></ion-icon></div>
       <p class="files-drive-card__name"><%= sec.name %></p>
-      <p class="files-drive-card__meta">Folder</p>
+      <p class="files-drive-card__meta"><%= openToAll ? 'Open to all members' : 'Folder' %></p>
     </a>
     <% }) %>
   </div>
@@ -68,6 +72,18 @@
   </div>
   <% } %>
 </main>
+
+<!-- Context menu -->
+<div class="fd-ctx" id="filesCtx" hidden>
+  <button type="button" class="fd-ctx__item" data-action="download" hidden>Download</button>
+  <button type="button" class="fd-ctx__item" data-action="rename" hidden>Rename</button>
+  <button type="button" class="fd-ctx__item" data-action="permissions" hidden>Permissions</button>
+  <button type="button" class="fd-ctx__item" data-action="let-all-see" hidden>Let all members see</button>
+  <button type="button" class="fd-ctx__item" data-action="revoke-all-see" hidden>Remove all-members viewing</button>
+  <button type="button" class="fd-ctx__item fd-ctx__item--danger" data-action="delete" hidden>Delete</button>
+  <button type="button" class="fd-ctx__item" data-action="upload" hidden>Upload</button>
+  <button type="button" class="fd-ctx__item" data-action="create-folder" hidden>Create Folder</button>
+</div>
 
 <footer><%- include("includes/footer") %></footer>
 <script src="/js/files-drive.js"></script>

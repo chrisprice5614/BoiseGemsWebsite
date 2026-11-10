@@ -1169,6 +1169,7 @@ const createTables = db.transaction(() => {
         year INTEGER NOT NULL,
         section TEXT,                       -- e.g., 'Brass', 'Drumline', 'Front Ensemble', 'Guard'
         name TEXT NOT NULL,                 -- '2026', 'Brass', 'Part 1', etc.
+        allow_all_members INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
@@ -1195,6 +1196,11 @@ const createTables = db.transaction(() => {
     const fileItemCols = db.prepare("PRAGMA table_info(file_items)").all().map(c => c.name);
     if (!fileItemCols.includes("allow_affiliate")) {
       db.prepare("ALTER TABLE file_items ADD COLUMN allow_affiliate INTEGER NOT NULL DEFAULT 0").run();
+    }
+
+    const fileFolderCols = db.prepare("PRAGMA table_info(file_folders)").all().map(c => c.name);
+    if (!fileFolderCols.includes("allow_all_members")) {
+      db.prepare("ALTER TABLE file_folders ADD COLUMN allow_all_members INTEGER NOT NULL DEFAULT 0").run();
     }
 
     db.prepare(`
@@ -3279,6 +3285,12 @@ function mustBeStaffOrAdmin(req, res, next) {
 
 const requirePermission = rolesSystem.requirePermissionFactory(db);
 
+function anyFolderOpenToAllMembers() {
+  return !!db.prepare(`
+    SELECT 1 AS ok FROM file_folders WHERE COALESCE(allow_all_members, 0) = 1 LIMIT 1
+  `).get();
+}
+
 function mustBeContractedForFiles(req, res, next) {
   if (!req.user) return res.redirect("/");
   if (req.admin || req.staff) return next();
@@ -3287,6 +3299,8 @@ function mustBeContractedForFiles(req, res, next) {
     FROM users WHERE id = ?
   `).get(req.user.userid);
   if (u && (u.contractedCorps || u.contractedIndependent || u.contractedAffiliate)) return next();
+  // Non-contracted users may enter when at least one folder is open to all members
+  if (anyFolderOpenToAllMembers()) return next();
   return res.status(403).render("message", { message: "Music and Files is available to contracted members only." });
 }
 
@@ -3297,6 +3311,40 @@ function userCanAccessFilesScope(userRow, scope) {
   if (s === "corps") return !!(userRow.contractedCorps || userRow.contractedAffiliate);
   if (s === "indoor") return !!userRow.contractedIndependent;
   return false;
+}
+
+function folderChainAllowsAllMembers(chain) {
+  return !!(chain && chain.some((f) => Number(f.allow_all_members) === 1));
+}
+
+/** True if this folder or any descendant is marked allow_all_members (for navigation paths). */
+function folderTreeAllowsAllMembers(folderId) {
+  const row = db.prepare(`
+    WITH RECURSIVE tree AS (
+      SELECT id, allow_all_members FROM file_folders WHERE id = ?
+      UNION ALL
+      SELECT f.id, f.allow_all_members
+      FROM file_folders f
+      INNER JOIN tree t ON f.parent_id = t.id
+    )
+    SELECT 1 AS ok FROM tree WHERE COALESCE(allow_all_members, 0) = 1 LIMIT 1
+  `).get(folderId);
+  return !!row;
+}
+
+function folderIsOpenToAllMembers(folderId) {
+  const chain = getFolderWithAncestors(folderId);
+  return folderChainAllowsAllMembers(chain);
+}
+
+function userCanBrowseFolder(userRow, chain) {
+  if (!userRow || !chain || !chain.length) return false;
+  if (userRow.admin || userRow.staff) return true;
+  const ctx = deriveFolderContext(chain);
+  if (userCanAccessFilesScope(userRow, ctx.scope)) return true;
+  if (folderChainAllowsAllMembers(chain)) return true;
+  const folder = chain[chain.length - 1];
+  return folderTreeAllowsAllMembers(folder.id);
 }
 
 function fileIconKind(mime, name) {
@@ -4505,6 +4553,7 @@ app.get("/member-portal", mustBeMember, (req,res) => {
     linkedParents,
     digitalGrants,
     videoAuditionActions,
+    filesOpenToAllMembers: anyFolderOpenToAllMembers(),
   });
 });
 
@@ -12078,6 +12127,7 @@ function canUserSeeFileItem(userRow, fileRow) {
   }
   if (userRow.admin || userRow.staff) return true;
   if (fileRow.allow_noncontracted) return true;
+  if (fileRow.folder_id && folderIsOpenToAllMembers(fileRow.folder_id)) return true;
   if (fileRow.allow_corps && userRow.contractedCorps) return true;
   if (fileRow.allow_independent && userRow.contractedIndependent) return true;
   if (fileRow.allow_affiliate && userRow.contractedAffiliate) return true;
@@ -12095,9 +12145,19 @@ app.get("/files", mustBeContractedForFiles, (req, res) => {
     FROM users WHERE id = ?
   `).get(req.user.userid);
   const isStaff = !!(req.admin || req.staff);
+  const openCorps = !!db.prepare(`
+    SELECT 1 AS ok FROM file_folders
+    WHERE COALESCE(allow_all_members, 0) = 1 AND LOWER(scope) = 'corps'
+    LIMIT 1
+  `).get();
+  const openIndependent = !!db.prepare(`
+    SELECT 1 AS ok FROM file_folders
+    WHERE COALESCE(allow_all_members, 0) = 1 AND LOWER(scope) = 'indoor'
+    LIMIT 1
+  `).get();
   res.render("files-root", {
-    showCorps: isStaff || !!(u && (u.contractedCorps || u.contractedAffiliate)),
-    showIndependent: isStaff || !!(u && u.contractedIndependent),
+    showCorps: isStaff || !!(u && (u.contractedCorps || u.contractedAffiliate)) || openCorps,
+    showIndependent: isStaff || !!(u && u.contractedIndependent) || openIndependent,
     filesYear: getCurrentSeasonYear(),
   });
 });
@@ -12115,15 +12175,27 @@ app.get("/files/folder/:id", mustBeContractedForFiles, (req, res) => {
   const ctx = deriveFolderContext(chain);
   const folder = ctx.folder;
   const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  if (!userCanAccessFilesScope(userRow, ctx.scope)) {
+  if (!userCanBrowseFolder(userRow, chain)) {
     return res.status(403).render("message", { message: "You do not have access to this file library." });
   }
 
-  const subfolders = db.prepare(`
+  const hasScope = userCanAccessFilesScope(userRow, ctx.scope);
+  const folderOpenToAll = folderChainAllowsAllMembers(chain);
+  const canManage = !!(req.admin || req.staff);
+
+  let subfolders = db.prepare(`
     SELECT * FROM file_folders
     WHERE parent_id = ?
     ORDER BY name COLLATE NOCASE
   `).all(folder.id);
+
+  if (!canManage && !hasScope) {
+    subfolders = subfolders.filter((f) =>
+      folderOpenToAll ||
+      Number(f.allow_all_members) === 1 ||
+      folderTreeAllowsAllMembers(f.id)
+    );
+  }
 
   const rawFiles = db.prepare(`
     SELECT * FROM file_items
@@ -12131,12 +12203,11 @@ app.get("/files/folder/:id", mustBeContractedForFiles, (req, res) => {
     ORDER BY created_at DESC
   `).all(folder.id);
 
-  const canManage = !!(req.admin || req.staff);
-
   const files = rawFiles
     .filter((f) => {
       if (f.sensitive) return canUserSeeFileItem(userRow, f);
-      return canManage || canUserSeeFileItem(userRow, f);
+      if (canManage || folderOpenToAll) return true;
+      return canUserSeeFileItem(userRow, f);
     })
     .map((f) => ({
       ...f,
@@ -12169,6 +12240,7 @@ app.get("/files/folder/:id", mustBeContractedForFiles, (req, res) => {
     canManage,
     breadcrumbs,
     folder,
+    folderOpenToAll,
     subfolders,
     files,
     roster,
@@ -12189,20 +12261,28 @@ app.get("/files/folder/:id/search", mustBeContractedForFiles, (req, res) => {
   if (!chain) return res.status(404).json({ ok: false, message: "Folder not found." });
   const ctx = deriveFolderContext(chain);
   const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  if (!userCanAccessFilesScope(userRow, ctx.scope)) {
+  if (!userCanBrowseFolder(userRow, chain)) {
     return res.status(403).json({ ok: false, message: "Forbidden." });
   }
   const canManage = !!(req.admin || req.staff);
+  const hasScope = userCanAccessFilesScope(userRow, ctx.scope);
+  const folderOpenToAll = folderChainAllowsAllMembers(chain);
   if (!q) return res.json({ ok: true, folders: [], files: [] });
 
   const ids = collectDescendantFolderIds(folderId);
   const placeholders = ids.map(() => "?").join(",");
-  const folders = db.prepare(`
-    SELECT id, name, parent_id, created_at, updated_at
+  let folders = db.prepare(`
+    SELECT id, name, parent_id, created_at, updated_at, allow_all_members
     FROM file_folders
     WHERE id IN (${placeholders}) AND id != ? AND LOWER(name) LIKE ?
     ORDER BY name COLLATE NOCASE
   `).all(...ids, folderId, `%${q}%`);
+
+  if (!canManage && !hasScope && !folderOpenToAll) {
+    folders = folders.filter((f) =>
+      Number(f.allow_all_members) === 1 || folderTreeAllowsAllMembers(f.id) || folderIsOpenToAllMembers(f.id)
+    );
+  }
 
   const rawFiles = db.prepare(`
     SELECT * FROM file_items
@@ -12453,6 +12533,20 @@ function deleteFolderRecursive(folderId) {
   db.prepare("DELETE FROM file_folders WHERE id = ?").run(folderId);
 }
 
+app.post("/files/folder/:id/allow-all-members", mustBeStaffOrAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = db.prepare("SELECT * FROM file_folders WHERE id = ?").get(id);
+  if (!row) return res.status(404).json({ ok: false, message: "Folder not found." });
+  const raw = req.body && req.body.allow;
+  const allow = raw === true || raw === 1 || raw === "1" || String(raw).toLowerCase() === "true";
+  db.prepare(`
+    UPDATE file_folders
+    SET allow_all_members = ?, updated_at = ?
+    WHERE id = ?
+  `).run(allow ? 1 : 0, Date.now(), id);
+  return res.json({ ok: true, id, allow_all_members: allow ? 1 : 0 });
+});
+
 app.post("/files/folder/:id/delete", mustBeStaffOrAdmin, (req, res) => {
   const id = parseInt(req.params.id, 10);
   const row = db.prepare("SELECT * FROM file_folders WHERE id = ?").get(id);
@@ -12583,10 +12677,8 @@ app.get("/files/:scope/:year", mustBeContractedForFiles, (req, res) => {
   }
 
   const userRow = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
-  if (!userCanAccessFilesScope(userRow, scope)) {
-    return res.status(403).render("message", { message: "You do not have access to this file library." });
-  }
-
+  const canManage = !!(req.admin || req.staff);
+  const hasScope = userCanAccessFilesScope(userRow, scope);
   const yearFolder = db.prepare(`
     SELECT * FROM file_folders
     WHERE parent_id IS NULL
@@ -12600,18 +12692,34 @@ app.get("/files/:scope/:year", mustBeContractedForFiles, (req, res) => {
     return res.status(404).render("message", { message: "No folders for that season yet." });
   }
 
-  const sections = db.prepare(`
+  const yearChain = getFolderWithAncestors(yearFolder.id);
+  if (!userCanBrowseFolder(userRow, yearChain)) {
+    return res.status(403).render("message", { message: "You do not have access to this file library." });
+  }
+
+  const yearOpenToAll = folderChainAllowsAllMembers(yearChain);
+  let sections = db.prepare(`
     SELECT * FROM file_folders
     WHERE parent_id = ?
     ORDER BY section COLLATE NOCASE
   `).all(yearFolder.id);
+
+  if (!canManage && !hasScope) {
+    sections = sections.filter((sec) =>
+      yearOpenToAll ||
+      Number(sec.allow_all_members) === 1 ||
+      folderTreeAllowsAllMembers(sec.id)
+    );
+  }
 
   res.render("files-year", {
     scope,
     scopeLabel: scope === "corps" ? "Corps" : "Independent",
     year,
     yearFolder,
+    yearOpenToAll,
     sections,
+    canManage,
   });
 });
 

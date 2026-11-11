@@ -60,6 +60,52 @@
                             </button>
                           </form>
                         <% } %>
+                        <% if (chrisView) {
+                          const fmt = (c) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((Number(c) || 0) / 100);
+                          const defs = payment.deleteDefaults || { owedRestoreCents: 0, paidReduceCents: 0 };
+                          const chrisMatch = payment.chrisMatch;
+                          const dupIds = payment.duplicateIds || [];
+                        %>
+                          <p style="font-size:0.8rem;color:#666;margin:6px 0;word-break:break-all;">
+                            #<%= payment.id %>
+                            <% if (payment.stripe_payment_intent_id) { %> &middot; <%= payment.stripe_payment_intent_id %><% } %>
+                            <% if (payment.stripe_session_id) { %> &middot; <%= payment.stripe_session_id %><% } %>
+                            <% if (!payment.stripe_payment_intent_id && !payment.stripe_session_id && String(payment.method || '').toLowerCase() === 'stripe') { %> &middot; no Stripe id<% } %>
+                          </p>
+                          <% if (dupIds.length) { %>
+                            <p style="color:#b3261e;font-weight:700;margin:6px 0;">
+                              Possible duplicate of <%= dupIds.map(function (id) { return '#' + id; }).join(', ') %>
+                            </p>
+                          <% } %>
+                          <details style="margin-top:8px;">
+                            <summary style="cursor:pointer;color:#b3261e;font-weight:600;">Delete payment</summary>
+                            <form method="POST" action="/transaction-edit/<%= thisUser.id %>/delete/<%= payment.id %>"
+                                  style="margin-top:8px;padding:10px;border:1px solid #f1b8b4;border-radius:8px;background:#fdf1f0;"
+                                  onsubmit="return confirm('Delete payment #<%= payment.id %> (<%= fmt(payment.amount) %>)? This cannot be undone and Stripe reconcile will not re-add it.');">
+                              <label style="display:block;margin-bottom:6px;">
+                                Add back to amount owed ($)
+                                <input type="number" step="0.01" name="owed_restore" value="<%= (defs.owedRestoreCents / 100).toFixed(2) %>" style="width:120px;margin-left:6px;">
+                              </label>
+                              <label style="display:block;margin-bottom:6px;">
+                                Subtract from total paid ($)
+                                <input type="number" step="0.01" name="paid_reduce" value="<%= (defs.paidReduceCents / 100).toFixed(2) %>" style="width:120px;margin-left:6px;">
+                              </label>
+                              <% if (chrisMatch) { %>
+                                <input type="hidden" name="chris_row_id" value="<%= chrisMatch.id %>">
+                                <label style="display:block;margin-bottom:6px;">
+                                  <input type="checkbox" name="delete_chris" value="1" checked>
+                                  Also delete Chris share <%= fmt(chrisMatch.amount) %>
+                                  (<%= new Date(chrisMatch.created_at).toLocaleString('en-US') %>)
+                                </label>
+                              <% } else { %>
+                                <p style="margin:6px 0;color:#666;">No matching Chris share found for this payment.</p>
+                              <% } %>
+                              <button type="submit" style="background:#b3261e;border:1px solid #8c1d18;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;">
+                                Delete payment #<%= payment.id %>
+                              </button>
+                            </form>
+                          </details>
+                        <% } %>
                     </div>
                 <% }) %>
             <% } %>

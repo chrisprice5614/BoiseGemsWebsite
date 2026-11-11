@@ -2074,6 +2074,66 @@ function addChrisShare(baseAmountCents, source, paidAt = null, stripeMeta = null
   sendChrisStripeTransfer(chrisCut, source);
 }
 
+/**
+ * Success pages must tag what they record with the Stripe session, otherwise the
+ * recovery poller can't see it and records the same payment a second time.
+ */
+function maxChrisHistoryId() {
+  try {
+    return Number(db.prepare("SELECT MAX(id) AS m FROM chrisPaymentHistory").get().m) || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function tagChrisCreditsSince(beforeMaxId, sessionId) {
+  if (!sessionId) return;
+  try {
+    db.prepare(`
+      UPDATE chrisPaymentHistory
+      SET stripe_session_id = ?
+      WHERE id > ? AND type = 'credit' AND COALESCE(stripe_session_id, '') = ''
+    `).run(sessionId, beforeMaxId);
+  } catch (_) {}
+}
+
+/** Fill in the payment intent id for rows tagged with this session (best effort, async). */
+function fillPaymentIntentForSession(sessionId) {
+  if (!sessionId) return;
+  stripe.checkout.sessions
+    .retrieve(sessionId)
+    .then((session) => {
+      const { paymentIntentId } = stripePaymentFinalize.stripeIdsFromSession(session);
+      if (!paymentIntentId) return;
+      try {
+        db.prepare(`
+          UPDATE paymentHistory SET stripe_payment_intent_id = ?
+          WHERE stripe_session_id = ? AND COALESCE(stripe_payment_intent_id, '') = ''
+        `).run(paymentIntentId, sessionId);
+      } catch (_) {}
+      try {
+        db.prepare(`
+          UPDATE chrisPaymentHistory SET stripe_payment_intent_id = ?
+          WHERE stripe_session_id = ? AND COALESCE(stripe_payment_intent_id, '') = ''
+        `).run(paymentIntentId, sessionId);
+      } catch (_) {}
+    })
+    .catch((err) => {
+      console.error("[stripe] could not fetch payment intent for", sessionId, err.message || err);
+    });
+}
+
+/** True when this checkout is already recorded (e.g. by the recovery poller). */
+function stripeSessionAlreadyRecorded(sessionId) {
+  if (!sessionId) return false;
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+    return !!stripePaymentFinalize.findPaymentByStripeIds(db, { sessionId });
+  } catch (_) {
+    return false;
+  }
+}
+
 
 function ensureDefaultFolders() {
   const FILE_YEARS = [2026, 2027];
@@ -5944,6 +6004,14 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   const memberId = contractExtension.child_id || contractExtension.user_id;
   const isMinorContract = !!contractExtension.child_id;
 
+  const stripeSessionId = potential.stripe_session_id ? String(potential.stripe_session_id) : null;
+  if (stripeSessionAlreadyRecorded(stripeSessionId)) {
+    db.prepare("DELETE FROM potential_payment WHERE id = ?").run(potential.id);
+    req.session.flashMessage =
+      "Contract signed successfully and payment received. Welcome to Boise Gems!";
+    return res.redirect(isMinorContract ? "/parent-portal" : "/member-portal");
+  }
+
   // Fetch tuition fees AND deposit for the ensemble
   const getTuition = db.prepare(
     "SELECT amount, deposit_amount FROM tuitionFees WHERE ensemble = ?"
@@ -5972,10 +6040,12 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
   const remainingOwed = newOwed - downPayment;
 
   // 3% Chris share, still based on downPayment
+  const chrisBeforeId = maxChrisHistoryId();
   addChrisShare(
     downPayment,
     `Contract down payment for ${ensemble} (user ${user.id})`
   );
+  tagChrisCreditsSince(chrisBeforeId, stripeSessionId);
 
   db.prepare("UPDATE users SET owed = ? WHERE id = ?").run(
     remainingOwed,
@@ -5987,7 +6057,7 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     stripePaymentFinalize.ensureStripePaymentColumns(db);
   } catch (_) {}
   const addPayment = db.prepare(
-    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance, stripe_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
   const downLabel = (downPayment / 100).toFixed(2);
@@ -6004,8 +6074,10 @@ app.get("/sign-contract/success/:potentialId", mustBeLoggedIn, (req, res) => {
     "Stripe",
     Date.now(),
     user.id,
-    1
+    1,
+    stripeSessionId
   );
+  fillPaymentIntentForSession(stripeSessionId);
 
   // Insert contractedMembers row (with stored contract file path)
   db.prepare(
@@ -6852,6 +6924,13 @@ app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
   const payments = getPayments.all(userId)
   const isChrisViewer =
     (req.user.email || "").toLowerCase() === "chris@chrispricemusic.net";
+  if (isChrisViewer) {
+    for (const p of payments) {
+      p.deleteDefaults = stripePaymentFinalize.defaultDeleteAdjustments(p);
+      p.chrisMatch = stripePaymentFinalize.findChrisShareForPayment(db, p);
+      p.duplicateIds = stripePaymentFinalize.findLikelyDuplicates(db, p).map((d) => d.id);
+    }
+  }
   const flash = req.session.flashMessage || null;
   delete req.session.flashMessage;
 
@@ -6862,6 +6941,76 @@ app.get("/transaction-edit/:id", mustBeAdmin, (req,res) => {
     flashMessage: flash,
   });
 })
+
+// Chris-only: delete a payment (e.g. a duplicate), reverse its balance effect, and delete
+// its Chris share. Stripe reconcile and the recovery poller will not re-add it.
+app.post("/transaction-edit/:userId/delete/:paymentId", mustBeChrisOnly, async (req, res) => {
+  const userId = Number(req.params.userId);
+  const paymentId = Number(req.params.paymentId);
+  const redirectTo = `/transaction-edit/${userId}`;
+  const fmt = (c) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((Number(c) || 0) / 100);
+
+  try {
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+  } catch (_) {}
+
+  const payment = db
+    .prepare("SELECT * FROM paymentHistory WHERE id = ? AND user_id = ?")
+    .get(paymentId, userId);
+  if (!payment) {
+    req.session.flashMessage = "Payment not found.";
+    return res.redirect(redirectTo);
+  }
+
+  const toCents = (v) => {
+    const n = Number(String(v ?? "").replace(/[$,\s]/g, ""));
+    return Number.isFinite(n) ? Math.round(n * 100) : 0;
+  };
+
+  // Tombstone under the payment intent too, so reconcile rows keyed by pi_ stay resolved
+  let extraPaymentIntentId = null;
+  if (payment.stripe_session_id && !payment.stripe_payment_intent_id) {
+    try {
+      const session = await stripe.checkout.sessions.retrieve(payment.stripe_session_id);
+      extraPaymentIntentId = stripePaymentFinalize.stripeIdsFromSession(session).paymentIntentId;
+    } catch (_) {}
+  }
+
+  let result;
+  try {
+    result = stripePaymentFinalize.deletePaymentRecord(db, {
+      paymentId,
+      owedRestoreCents: toCents(req.body.owed_restore),
+      paidReduceCents: toCents(req.body.paid_reduce),
+      deleteChris: req.body.delete_chris === "1",
+      chrisRowId: Number(req.body.chris_row_id) || null,
+      extraPaymentIntentId,
+      deletedBy: req.user.email || "chris",
+    });
+  } catch (err) {
+    console.error("Delete payment failed:", err);
+    req.session.flashMessage = `Delete failed: ${err.message || err}`;
+    return res.redirect(redirectTo);
+  }
+
+  if (!result.ok) {
+    req.session.flashMessage = result.error || "Delete failed.";
+    return res.redirect(redirectTo);
+  }
+
+  const parts = [`Deleted payment #${payment.id} (${fmt(payment.amount)}).`];
+  parts.push(
+    result.chrisDeleted
+      ? `Deleted Chris share ${fmt(result.chrisDeleted.amount)}.`
+      : "No Chris share deleted."
+  );
+  if (result.linkedSurvivorId) {
+    parts.push(`Stripe ids moved to remaining payment #${result.linkedSurvivorId}.`);
+  }
+  req.session.flashMessage = parts.join(" ");
+  return res.redirect(redirectTo);
+});
 
 // Chris-only: apply an existing paymentHistory row towards the member's balance
 app.post("/transaction-edit/:userId/towards-balance/:paymentId", mustBeChrisOnly, (req, res) => {
@@ -8485,6 +8634,12 @@ app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
     return res.redirect("/parent-portal");
   }
 
+  const stripeSessionId = potential.stripe_session_id ? String(potential.stripe_session_id) : null;
+  if (stripeSessionAlreadyRecorded(stripeSessionId)) {
+    db.prepare("DELETE FROM potential_payment WHERE id = ?").run(potential.id);
+    return res.redirect("/payment-received");
+  }
+
   const paid = potential.amount; // pennies
   const alreadyPaid = Number(child.paid) + paid;
   const left = Number(child.owed) - paid;
@@ -8499,13 +8654,15 @@ app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
     currency: "USD",
   }).format(paid / 100);
 
+  const chrisBeforeId = maxChrisHistoryId();
   addChrisShare(paid, `Parent ${req.user.firstname} ${req.user.lastname} paid for their child, ${child.firstname} ${child.lastname} with an amount of ${paidString}.`);
+  tagChrisCreditsSince(chrisBeforeId, stripeSessionId);
 
   try {
     stripePaymentFinalize.ensureStripePaymentColumns(db);
   } catch (_) {}
   const addPaymentStatement = db.prepare(
-    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance, stripe_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   );
   addPaymentStatement.run(
     `Payment for ${child.firstname} ${child.lastname} by parent, ${req.user.firstname} ${req.user.lastname}`,
@@ -8514,8 +8671,10 @@ app.get("/pay-behalf/success/:potentialId", mustBeParent, (req, res) => {
     "Stripe",
     Date.now(),
     child.id,
-    1
+    1,
+    stripeSessionId
   );
+  fillPaymentIntentForSession(stripeSessionId);
 
   // Delete potential payment entry (to prevent reuse)
   const deletePotential = db.prepare("DELETE FROM potential_payment WHERE id = ?");
@@ -8653,6 +8812,12 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
     return res.redirect("/dashboard");
   }
 
+  const stripeSessionId = potential.stripe_session_id ? String(potential.stripe_session_id) : null;
+  if (stripeSessionAlreadyRecorded(stripeSessionId)) {
+    db.prepare("DELETE FROM potential_payment WHERE id = ?").run(potential.id);
+    return res.redirect("/payment-received");
+  }
+
   const paid = potential.amount; // pennies
   const alreadyPaid = Number(user.paid) + paid;
   const left = Number(user.owed) - paid;
@@ -8667,14 +8832,15 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
     currency: "USD",
   }).format(paid / 100);
 
-    addChrisShare(paid, `${user.firstname} ${user.lastname} made a payment of ${paidString} towards their tuition/fees.`);
-
+  const chrisBeforeId = maxChrisHistoryId();
+  addChrisShare(paid, `${user.firstname} ${user.lastname} made a payment of ${paidString} towards their tuition/fees.`);
+  tagChrisCreditsSince(chrisBeforeId, stripeSessionId);
 
   try {
     stripePaymentFinalize.ensureStripePaymentColumns(db);
   } catch (_) {}
   const addPaymentStatement = db.prepare(
-    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, towards_balance, stripe_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   );
   addPaymentStatement.run(
     `Payment by ${user.firstname} ${user.lastname}`,
@@ -8683,8 +8849,10 @@ app.get("/make-payment/success/:potentialId", mustBeLoggedIn, (req, res) => {
     "Stripe",
     Date.now(),
     user.id,
-    1
+    1,
+    stripeSessionId
   );
+  fillPaymentIntentForSession(stripeSessionId);
 
   // Delete potential payment entry (to prevent reuse)
   const deletePotential = db.prepare("DELETE FROM potential_payment WHERE id = ?");
@@ -9471,13 +9639,19 @@ app.get("/donate/success/:potentialId", async (req, res) => {
     const title = `Donation by ${potential.name}`;
     const description = `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "-"}`;
 
-    const insertHistory = db.prepare(
-      "INSERT INTO paymentHistory (title, description, amount, method, date, user_id) VALUES (?, ?, ?, ?, ?, ?)"
-    );
-    // user_id NULL because donor may not be a member
-    insertHistory.run(title, description, potential.total_charge, "Stripe", Date.now(), null);
+    const donationSessionId = potential.stripe_session_id ? String(potential.stripe_session_id) : null;
+    if (!stripeSessionAlreadyRecorded(donationSessionId)) {
+      const insertHistory = db.prepare(
+        "INSERT INTO paymentHistory (title, description, amount, method, date, user_id, stripe_session_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      );
+      // user_id NULL because donor may not be a member
+      insertHistory.run(title, description, potential.total_charge, "Stripe", Date.now(), null, donationSessionId);
+      fillPaymentIntentForSession(donationSessionId);
+    }
 
+    const chrisBeforeId = maxChrisHistoryId();
     addChrisShare(potential.total_charge, `Donation of ${paidString} (processing fee ${processingString}, total charged ${totalString}). Message: ${potential.message || "-"}`);
+    tagChrisCreditsSince(chrisBeforeId, donationSessionId);
 
     // delete potential_donation row (prevent reuse)
     const deletePotential = db.prepare("DELETE FROM potential_donation WHERE id = ?");
@@ -14101,7 +14275,19 @@ app.post("/api/mobile/payments/checkout", mobileAuth, async (req, res) => {
       mode: "payment",
       success_url: `${process.env.BASEURL}/make-payment/success/${potentialPaymentId}`,
       cancel_url: `${process.env.BASEURL}/make-payment`,
+      metadata: {
+        kind: "make_payment",
+        potential_id: String(potentialPaymentId),
+        user_id: String(user.id),
+      },
     });
+    try {
+      db.prepare("UPDATE potential_payment SET stripe_session_id = ?, kind = ? WHERE id = ?").run(
+        session.id,
+        "make_payment",
+        potentialPaymentId
+      );
+    } catch (_) {}
     return res.json({ ok: true, url: session.url, potentialPaymentId });
   } catch (e) {
     console.error("[Mobile API] payment checkout error:", e);
@@ -14202,7 +14388,20 @@ app.post("/api/mobile/parent/child/:id/checkout", mobileAuth, async (req, res) =
       mode: "payment",
       success_url: `${process.env.BASEURL}/pay-behalf/success/${potentialPaymentId}`,
       cancel_url: `${process.env.BASEURL}/pay-behalf/${child.id}`,
+      metadata: {
+        kind: "pay_behalf",
+        potential_id: String(potentialPaymentId),
+        child_id: String(child.id),
+        parent_id: String(req.user.userid),
+      },
     });
+    try {
+      db.prepare("UPDATE potential_payment SET stripe_session_id = ?, kind = ? WHERE id = ?").run(
+        session.id,
+        "pay_behalf",
+        potentialPaymentId
+      );
+    } catch (_) {}
     return res.json({ ok: true, url: session.url, potentialPaymentId });
   } catch (e) {
     console.error("[Mobile API] parent checkout error:", e);

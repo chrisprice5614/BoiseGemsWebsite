@@ -710,6 +710,276 @@ function finalizePotentialPayment(db, potential, deps, stripeMeta = {}) {
   return finalizeTuitionPotential(db, potential, deps, stripeMeta);
 }
 
+/** Success pages can load long after checkout started, so match generously. */
+const UNLINKED_MATCH_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/** Stored paymentHistory amount is either the tuition base or the full Stripe total. */
+function storedAmountMatchesStripeTotal(storedCents, stripeTotalCents) {
+  const stored = Math.round(Number(storedCents) || 0);
+  const total = Math.round(Number(stripeTotalCents) || 0);
+  if (stored <= 0 || total <= 0) return false;
+  if (stored === total) return true;
+  if (Math.abs(stored + Math.round(stored * 0.06) - total) <= 1) return true;
+  if (Math.abs(stored + Math.ceil(stored * 0.06) - total) <= 1) return true;
+  return Math.abs(stored - Math.round(total / 1.06)) <= 2;
+}
+
+/**
+ * A Stripe-method paymentHistory row for this user with no Stripe ids that
+ * matches the charged amount near the checkout time. Success routes used to
+ * insert rows like this, which the poller then failed to see.
+ */
+function findUnlinkedMatchingPayment(db, {
+  userId,
+  stripeAmountCents,
+  paidAt,
+  windowMs = UNLINKED_MATCH_WINDOW_MS,
+  excludeId = null,
+} = {}) {
+  if (!userId) return null;
+  const at = Number(paidAt) || Date.now();
+  const rows = db
+    .prepare(
+      `
+      SELECT * FROM paymentHistory
+      WHERE user_id = ?
+        AND lower(COALESCE(method, '')) = 'stripe'
+        AND COALESCE(stripe_payment_intent_id, '') = ''
+        AND COALESCE(stripe_session_id, '') = ''
+        AND date BETWEEN ? AND ?
+      ORDER BY ABS(date - ?) ASC
+    `
+    )
+    .all(userId, at - windowMs, at + windowMs, at);
+  return (
+    rows.find(
+      (r) => r.id !== excludeId && storedAmountMatchesStripeTotal(r.amount, stripeAmountCents)
+    ) || null
+  );
+}
+
+/** Attach Stripe ids to an existing paymentHistory row and its Chris credit. */
+function linkPaymentToStripe(db, paymentRow, { paymentIntentId, sessionId } = {}) {
+  if (!paymentRow || (!paymentIntentId && !sessionId)) return false;
+  db.prepare(
+    `
+    UPDATE paymentHistory
+    SET stripe_payment_intent_id = COALESCE(NULLIF(stripe_payment_intent_id, ''), ?),
+        stripe_session_id = COALESCE(NULLIF(stripe_session_id, ''), ?)
+    WHERE id = ?
+  `
+  ).run(paymentIntentId || null, sessionId || null, paymentRow.id);
+
+  const chris = findChrisShareForPayment(db, paymentRow, { unlinkedOnly: true });
+  if (chris) {
+    try {
+      db.prepare(
+        `
+        UPDATE chrisPaymentHistory
+        SET stripe_payment_intent_id = COALESCE(NULLIF(stripe_payment_intent_id, ''), ?),
+            stripe_session_id = COALESCE(NULLIF(stripe_session_id, ''), ?)
+        WHERE id = ?
+      `
+      ).run(paymentIntentId || null, sessionId || null, chris.id);
+    } catch (_) {}
+  }
+  return true;
+}
+
+/** Every reconcile key a Stripe payment may be stored under (pi_ and session:). */
+function stripeReconcileKeys({ paymentIntentId, sessionId } = {}) {
+  const keys = [];
+  if (paymentIntentId) keys.push(stripeReconcileKey({ paymentIntentId }));
+  if (sessionId) keys.push(stripeReconcileKey({ sessionId }));
+  return [...new Set(keys.filter(Boolean))];
+}
+
+/** Any saved account decision (accepted, denied, deleted) means automation must not act. */
+function findAccountDecisionForStripe(db, stripeMeta = {}) {
+  for (const key of stripeReconcileKeys(stripeMeta)) {
+    const row = getReconcileDecision(db, key, "account");
+    if (row) return row;
+  }
+  return null;
+}
+
+/**
+ * Chris credit that belongs to a paymentHistory row: Stripe ids first, then
+ * closest credit within ±2 minutes of the payment time with a matching 3% amount.
+ */
+function findChrisShareForPayment(db, payment, { unlinkedOnly = false } = {}) {
+  if (!payment) return null;
+  try {
+    if (!unlinkedOnly) {
+      if (payment.stripe_payment_intent_id) {
+        const row = db
+          .prepare(
+            "SELECT * FROM chrisPaymentHistory WHERE stripe_payment_intent_id = ? AND type = 'credit' LIMIT 1"
+          )
+          .get(String(payment.stripe_payment_intent_id));
+        if (row) return row;
+      }
+      if (payment.stripe_session_id) {
+        const row = db
+          .prepare(
+            "SELECT * FROM chrisPaymentHistory WHERE stripe_session_id = ? AND type = 'credit' LIMIT 1"
+          )
+          .get(String(payment.stripe_session_id));
+        if (row) return row;
+      }
+    }
+
+    const at = Number(payment.date) || 0;
+    if (!at) return null;
+    const window = 2 * 60 * 1000;
+    const rows = db
+      .prepare(
+        `
+        SELECT * FROM chrisPaymentHistory
+        WHERE type = 'credit'
+          AND created_at BETWEEN ? AND ?
+          AND COALESCE(stripe_payment_intent_id, '') = ''
+          AND COALESCE(stripe_session_id, '') = ''
+        ORDER BY ABS(created_at - ?) ASC
+      `
+      )
+      .all(at - window, at + window, at);
+    const amount = Math.round(Number(payment.amount) || 0);
+    const expected = [
+      Math.round(amount * 0.03),
+      Math.round(Math.round(amount / 1.06) * 0.03),
+    ];
+    return (
+      rows.find((r) => expected.some((e) => Math.abs((Number(r.amount) || 0) - e) <= 2)) ||
+      null
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Default owed/paid reversal for deleting a paymentHistory row. */
+function defaultDeleteAdjustments(payment) {
+  const amount = Math.round(Number(payment?.amount) || 0);
+  const method = String(payment?.method || "").toLowerCase();
+  const title = String(payment?.title || "");
+  if (method === "charge") return { owedRestoreCents: -amount, paidReduceCents: 0 };
+  if (/^Contract down payment/i.test(title)) {
+    return { owedRestoreCents: Math.round(amount / 1.06), paidReduceCents: 0 };
+  }
+  if (Number(payment?.towards_balance) === 1) {
+    return { owedRestoreCents: amount, paidReduceCents: amount };
+  }
+  if (method !== "stripe") return { owedRestoreCents: 0, paidReduceCents: amount };
+  return { owedRestoreCents: 0, paidReduceCents: 0 };
+}
+
+/** Other rows for the same user that look like the same payment (likely duplicates). */
+function findLikelyDuplicates(db, payment) {
+  if (!payment?.user_id) return [];
+  const amount = Math.round(Number(payment.amount) || 0);
+  const at = Number(payment.date) || 0;
+  return db
+    .prepare(
+      `
+      SELECT * FROM paymentHistory
+      WHERE user_id = ? AND id != ?
+        AND lower(COALESCE(method, '')) = lower(?)
+        AND ABS(amount - ?) <= 2
+        AND ABS(date - ?) <= ?
+    `
+    )
+    .all(payment.user_id, payment.id, payment.method || "", amount, at, UNLINKED_MATCH_WINDOW_MS);
+}
+
+/**
+ * Chris-only: delete a paymentHistory row, reverse its balance effect, delete its
+ * Chris credit, and stop the poller / reconcile from ever re-adding it.
+ */
+function deletePaymentRecord(db, {
+  paymentId,
+  owedRestoreCents = 0,
+  paidReduceCents = 0,
+  deleteChris = true,
+  chrisRowId = null,
+  extraPaymentIntentId = null,
+  deletedBy = "chris",
+} = {}) {
+  ensureStripePaymentColumns(db);
+  const payment = db.prepare("SELECT * FROM paymentHistory WHERE id = ?").get(paymentId);
+  if (!payment) return { ok: false, error: "Payment not found." };
+
+  const paymentIntentId = payment.stripe_payment_intent_id || extraPaymentIntentId || null;
+  const sessionId = payment.stripe_session_id || null;
+
+  let chrisRow = null;
+  if (deleteChris) {
+    chrisRow = chrisRowId
+      ? db.prepare("SELECT * FROM chrisPaymentHistory WHERE id = ?").get(chrisRowId)
+      : findChrisShareForPayment(db, payment);
+  }
+
+  const result = { ok: true, paymentId: payment.id, chrisDeleted: null, linkedSurvivorId: null };
+
+  const tx = db.transaction(() => {
+    if (chrisRow) {
+      const amt = Number(chrisRow.amount) || 0;
+      if (String(chrisRow.type) === "credit") {
+        db.prepare("UPDATE chrisPayment SET total_owed = total_owed - ? WHERE id = 1").run(amt);
+      } else if (String(chrisRow.type) === "payment") {
+        db.prepare("UPDATE chrisPayment SET total_owed = total_owed + ? WHERE id = 1").run(amt);
+      }
+      db.prepare("DELETE FROM chrisPaymentHistory WHERE id = ?").run(chrisRow.id);
+      result.chrisDeleted = { id: chrisRow.id, amount: amt, created_at: chrisRow.created_at };
+    }
+
+    db.prepare("DELETE FROM paymentHistory WHERE id = ?").run(payment.id);
+
+    if (payment.user_id) {
+      const owedDelta = Math.round(Number(owedRestoreCents) || 0);
+      const paidDelta = Math.round(Number(paidReduceCents) || 0);
+      if (owedDelta || paidDelta) {
+        db.prepare(
+          "UPDATE users SET owed = COALESCE(owed, 0) + ?, paid = COALESCE(paid, 0) - ? WHERE id = ?"
+        ).run(owedDelta, paidDelta, payment.user_id);
+      }
+    }
+
+    if (paymentIntentId || sessionId) {
+      // Hand the Stripe ids to the surviving copy so it reads as recorded everywhere
+      const survivor = findUnlinkedMatchingPayment(db, {
+        userId: payment.user_id,
+        stripeAmountCents: payment.amount,
+        paidAt: payment.date,
+      });
+      if (survivor) {
+        linkPaymentToStripe(db, survivor, { paymentIntentId, sessionId });
+        result.linkedSurvivorId = survivor.id;
+      }
+
+      const note = `Payment #${payment.id} deleted by ${deletedBy}` +
+        (survivor ? ` (duplicate of #${survivor.id})` : "");
+      for (const key of stripeReconcileKeys({ paymentIntentId, sessionId })) {
+        for (const actionType of ["account", "chris"]) {
+          saveReconcileDecision(db, {
+            stripeKey: key,
+            paymentIntentId,
+            sessionId,
+            actionType,
+            decision: "deleted",
+            userId: payment.user_id || null,
+            amountCents: payment.amount,
+            note,
+          });
+        }
+      }
+    }
+  });
+  tx();
+
+  return result;
+}
+
 /**
  * Record a succeeded Stripe payment that has no leftover potential_payment row
  * (the common failure mode when success_url never loaded).
@@ -726,6 +996,17 @@ function backfillTuitionFromStripe(db, {
 }, deps) {
   const existing = findPaymentByStripeIds(db, { paymentIntentId, sessionId });
   if (existing) return { ok: true, already: true, paymentId: existing.id };
+
+  // Already recorded by a success page that didn't store Stripe ids — link, never duplicate
+  const unlinked = findUnlinkedMatchingPayment(db, {
+    userId,
+    stripeAmountCents,
+    paidAt,
+  });
+  if (unlinked) {
+    linkPaymentToStripe(db, unlinked, { paymentIntentId, sessionId });
+    return { ok: true, already: true, linked: true, paymentId: unlinked.id };
+  }
 
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
   if (!user) return { ok: false, error: "User not found." };
@@ -946,6 +1227,15 @@ async function handleCheckoutSessionCompleted(db, session, deps) {
   const stripeMeta = stripeIdsFromSession(session);
   const already = findPaymentByStripeIds(db, stripeMeta);
   if (already) return { ok: true, already: true, paymentId: already.id };
+
+  const decided = findAccountDecisionForStripe(db, stripeMeta);
+  if (decided) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: `Reconcile decision "${decided.decision}" — not auto-recording.`,
+    };
+  }
 
   const classified = classifyStripeCheckout(session, []);
   const kind = String(session.metadata?.kind || classified.kind || "");
@@ -2188,4 +2478,11 @@ module.exports = {
   recordChrisShareWithStripe,
   pollAndRecoverPaidCheckouts,
   startStripeRecoveryPoller,
+  findUnlinkedMatchingPayment,
+  linkPaymentToStripe,
+  findChrisShareForPayment,
+  findAccountDecisionForStripe,
+  defaultDeleteAdjustments,
+  findLikelyDuplicates,
+  deletePaymentRecord,
 };

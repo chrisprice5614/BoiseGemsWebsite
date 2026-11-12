@@ -3343,6 +3343,42 @@ function mustBeStaffOrAdmin(req, res, next) {
   return res.redirect("/");
 }
 
+/** Where this account should land after login / "portal" links. */
+function portalHomeForUser(user) {
+  if (!user) return "/";
+  if (user.admin) return "/admin-portal";
+  if (user.parent) return "/parent-portal";
+  if (user.fan) return "/fan-portal";
+  if (user.staff) return "/staff-portal";
+  const uid = user.id || user.userid;
+  if (uid) {
+    try {
+      if (rolesSystem.hasPermission(db, uid, "staff_portal")) return "/staff-portal";
+    } catch (_) {}
+  }
+  return "/member-portal";
+}
+
+function staffPermissionMap(userId) {
+  const keys = [
+    "staff_portal",
+    "manage_schedule",
+    "extend_contracts",
+    "manage_rosters",
+    "manage_files",
+    "manage_forms",
+    "view_financial",
+    "edit_financial",
+    "view_medical",
+    "manage_users",
+  ];
+  const perms = {};
+  for (const key of keys) {
+    perms[key] = !!rolesSystem.hasPermission(db, userId, key);
+  }
+  return perms;
+}
+
 const requirePermission = rolesSystem.requirePermissionFactory(db);
 
 function anyFolderOpenToAllMembers() {
@@ -4160,6 +4196,29 @@ app.get("/admin-portal", mustBeAdmin, (req,res) => {
   });
 })
 
+app.get("/staff-portal", mustBeStaffOrAdmin, (req, res) => {
+  // Admins already have their own portal
+  if (req.admin && !req.staff) return res.redirect("/admin-portal");
+
+  const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+  if (!member) return res.redirect("/");
+
+  const perms = staffPermissionMap(req.user.userid);
+  // Require either the staff flag or an explicit staff_portal permission
+  if (!req.staff && !req.admin && !perms.staff_portal) {
+    return res.redirect("/member-portal");
+  }
+
+  const flash = req.session.flashMessage || null;
+  delete req.session.flashMessage;
+
+  return res.render("staff-portal", {
+    member,
+    perms,
+    flashMessage: flash,
+  });
+});
+
 const coordinates = {
   'Boise, ID': [43.615, -116.202],
   'Salt Lake City, UT': [40.7608, -111.891],
@@ -4477,7 +4536,8 @@ app.get("/login", (req, res) => {
         return issueLoginToken(req, res, user);
       }
     }
-    return res.redirect("/");
+    const live = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
+    return res.redirect(portalHomeForUser(live || req.user));
   }
 
   return res.render("login", neopplyPartner.partnerParamsForView(req));
@@ -4614,6 +4674,7 @@ app.get("/member-portal", mustBeMember, (req,res) => {
     digitalGrants,
     videoAuditionActions,
     filesOpenToAllMembers: anyFolderOpenToAllMembers(),
+    staffPerms: member.staff || member.admin ? staffPermissionMap(req.user.userid) : null,
   });
 });
 
@@ -5144,7 +5205,7 @@ app.post("/reset-password/:id", (req,res) => {
   return res.redirect("/")
 })
 
-function issueLoginToken(req, res, userInQuestion, { redirectTo = "/" } = {}) {
+function issueLoginToken(req, res, userInQuestion, { redirectTo } = {}) {
   const sid = rolesSystem.createAuthSession(db, userInQuestion.id, req);
   const ourTokenValue = jwt.sign(
     {
@@ -5171,7 +5232,7 @@ function issueLoginToken(req, res, userInQuestion, { redirectTo = "/" } = {}) {
   if (partnerAuth.sendBackToPartner(req, res, { user: userInQuestion, accessToken: ourTokenValue })) {
     return;
   }
-  return res.redirect(redirectTo);
+  return res.redirect(redirectTo || portalHomeForUser(userInQuestion));
 }
 
 app.post("/login", async (req, res) => {
@@ -8885,7 +8946,10 @@ app.get("/update-profile-photo", mustBeLoggedIn, (req, res) => {
   const member = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.userid);
   if (!member) return res.redirect("/");
 
-  return res.render("update-pfp", { member, returnPortal: req.user.admin ? "/admin-portal" : (req.user.parent ? "/parent-portal" : "/member-portal") });
+  return res.render("update-pfp", {
+    member,
+    returnPortal: portalHomeForUser(req.user),
+  });
 })
 
 app.post(
@@ -10095,8 +10159,8 @@ app.post("/change-address", mustBeLoggedInAny, (req, res) => {
   req.session.flashMessage = "Contact information updated.";
   // Redirect based on role
   if (req.parent) return res.redirect('/parent-portal');
-  if (req.staff) return res.redirect('/staff/members');
   if (req.admin) return res.redirect('/admin-portal');
+  if (req.staff) return res.redirect('/staff-portal');
   return res.redirect('/member-portal');
 });
 
@@ -14567,8 +14631,18 @@ app.get("/api/mobile/parent-link/linked", mobileAuth, (req, res) => {
 function canEditSchedules(req) {
   if (!req.user || !req.user.userid) return false;
   if (req.admin) return true;
+  try {
+    if (rolesSystem.hasPermission(db, req.user.userid, "manage_schedule")) return true;
+  } catch (_) {}
   const row = db.prepare("SELECT director FROM users WHERE id = ?").get(req.user.userid);
   return !!(row && row.director);
+}
+
+function mustCanManageSchedule(req, res, next) {
+  if (!req.user) return res.redirect("/");
+  if (canEditSchedules(req)) return next();
+  req.session.flashMessage = "You do not have permission to manage schedules.";
+  return res.redirect(portalHomeForUser(req.user));
 }
 
 function webScheduleAuth(req, res, next) {
@@ -14582,7 +14656,7 @@ scheduleSystem.registerScheduleSystem(app, db, {
   webScheduleAuth,
   canEditSchedules,
   mobileAuth,
-  mustBeAdmin,
+  mustBeAdmin: mustCanManageSchedule,
 });
 
 parentLinks.registerParentLinkRoutes(app, db, { mustBeLoggedIn });

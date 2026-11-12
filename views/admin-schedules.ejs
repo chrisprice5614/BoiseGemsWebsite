@@ -15,7 +15,7 @@
       <p style="margin:6px 0 0;color:#666;">One schedule per day. Design times, sections, and locations for each rehearsal day.</p>
     </div>
     <div class="sch-page-head__actions">
-      <a href="/admin-portal"><button type="button">← Admin Portal</button></a>
+      <a href="<%= typeof portalHome !== 'undefined' && portalHome ? portalHome : '/admin-portal' %>"><button type="button">← Back to Portal</button></a>
       <a href="/admin/schedules/designer/today"><button type="button">Design Today</button></a>
       <a href="/admin/schedules/designer"><button type="button">+ New Schedule</button></a>
     </div>

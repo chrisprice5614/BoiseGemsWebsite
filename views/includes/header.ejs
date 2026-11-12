@@ -45,7 +45,7 @@
     <% } else if(user && user.parent) { %>
       <a href="/parent-portal"><button>Parent Portal</button></a>
     <% } else if(user && user.staff) { %>
-      <a href="/member-portal"><button>Staff Portal</button></a>
+      <a href="/staff-portal"><button>Staff Portal</button></a>
     <% } else if(user && user.fan) { %>
       <a href="/fan-portal"><button>Fan Portal</button></a>
     <% } else if(user) { %>
@@ -96,7 +96,7 @@
       <% } else if(user && user.parent) { %>
         <a href="/parent-portal" class="mobile-nav-link">Parent Portal</a>
       <% } else if(user && user.staff) { %>
-        <a href="/member-portal" class="mobile-nav-link">Staff Portal</a>
+        <a href="/staff-portal" class="mobile-nav-link">Staff Portal</a>
       <% } else if(user && user.fan) { %>
         <a href="/fan-portal" class="mobile-nav-link">Fan Portal</a>
       <% } else if(user) { %>

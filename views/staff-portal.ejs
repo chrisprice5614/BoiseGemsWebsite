@@ -1,0 +1,173 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Portal - Boise Gems</title>
+  <%- include("includes/head") %>
+</head>
+<%
+  const srcImage = member.img ? member.img : "/img/ui/gem.png";
+  const p = typeof perms !== "undefined" && perms ? perms : {};
+%>
+<body class="pd-body">
+<header><%- include("includes/header") %></header>
+
+<div class="pd-layout">
+
+  <aside class="pd-sidebar" id="pdSidebar">
+    <div class="pd-sidebar-profile">
+      <a href="/update-profile-photo" style="border:none;background:none;padding:0;display:block;">
+        <div class="pd-sidebar-avatar">
+          <img src="<%= srcImage %>" alt="Profile photo">
+        </div>
+      </a>
+      <div class="pd-sidebar-name"><%= member.firstname %> <%= member.lastname %></div>
+      <div class="pd-sidebar-role">Staff</div>
+    </div>
+    <nav class="pd-nav">
+      <button class="pd-nav-item pd-active" data-label="Overview" onclick="pdShow(this,'overview')">
+        <ion-icon name="home"></ion-icon> Overview
+      </button>
+      <% if (p.manage_schedule) { %>
+      <button class="pd-nav-item" data-label="Schedule" onclick="pdShow(this,'schedule')">
+        <ion-icon name="calendar"></ion-icon> Schedule
+      </button>
+      <% } %>
+      <% if (p.extend_contracts || p.manage_rosters) { %>
+      <button class="pd-nav-item" data-label="Members" onclick="pdShow(this,'members')">
+        <ion-icon name="people"></ion-icon> Members
+      </button>
+      <% } %>
+      <% if (p.manage_files || p.manage_forms) { %>
+      <button class="pd-nav-item" data-label="Files & Forms" onclick="pdShow(this,'files')">
+        <ion-icon name="folder-open"></ion-icon> Files &amp; Forms
+      </button>
+      <% } %>
+      <hr class="pd-nav-divider">
+      <button class="pd-nav-item" data-label="My Info" onclick="pdShow(this,'myinfo')">
+        <ion-icon name="person"></ion-icon> My Info
+      </button>
+      <button type="button" class="pd-nav-item" style="color:rgba(255,255,255,0.72);font-style:italic;" onclick="window.location.href='/member-portal'">
+        <ion-icon name="eye"></ion-icon> Member View
+      </button>
+    </nav>
+  </aside>
+  <div class="pd-sidebar-overlay" id="pdOverlay" onclick="pdCloseSidebar()"></div>
+
+  <main class="pd-main">
+    <div class="pd-mobile-bar" id="pdMobileBar">
+      <button class="pd-mobile-bar-btn" id="pdMobileNavBtn" onclick="pdMobileBarAction()">
+        <ion-icon name="chevron-forward-circle"></ion-icon> Navigation
+      </button>
+      <span class="pd-mobile-bar-title" id="pdMobileTitle">Overview</span>
+    </div>
+
+    <% if (typeof flashMessage !== "undefined" && flashMessage) { %>
+      <div class="pd-flash-msg"><%= flashMessage %></div>
+    <% } %>
+
+    <!-- ══ OVERVIEW ═══════════════════════════════════════ -->
+    <div class="pd-section pd-active" id="pd-sec-overview">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Staff Portal</div>
+        <div class="pd-section-sub">Tools available for your assigned role. Only actions you have permission for are shown.</div>
+
+        <div class="pd-sub-heading">Quick Actions</div>
+        <div class="pd-quick-actions">
+          <% if (p.manage_schedule) { %>
+          <a href="/admin/schedules" class="pd-action-btn pd-action-btn--primary"><ion-icon name="calendar"></ion-icon> Schedules</a>
+          <% } %>
+          <% if (p.extend_contracts) { %>
+          <a href="/staff/members" class="pd-action-btn"><ion-icon name="document-text"></ion-icon> Extend Contract</a>
+          <% } %>
+          <% if (p.manage_rosters) { %>
+          <a href="/admin/season-roster" class="pd-action-btn"><ion-icon name="people-circle"></ion-icon> Season Roster</a>
+          <% } %>
+          <% if (p.manage_files) { %>
+          <a href="/files" class="pd-action-btn"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
+          <% } %>
+          <a href="/set-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Set Audition Material</a>
+          <a href="/admin/callbacks" class="pd-action-btn"><ion-icon name="call"></ion-icon> Extend Callback</a>
+        </div>
+
+        <%- include("includes/schedule-today-overview") %>
+      </div>
+    </div>
+
+    <!-- ══ SCHEDULE ═══════════════════════════════════════ -->
+    <% if (p.manage_schedule) { %>
+    <div class="pd-section" id="pd-sec-schedule">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Schedule</div>
+        <div class="pd-section-sub">Design daily rehearsal schedules and set who can view them.</div>
+        <div class="pd-quick-actions">
+          <a href="/admin/schedules" class="pd-action-btn pd-action-btn--primary"><ion-icon name="calendar"></ion-icon> Manage Schedules</a>
+          <a href="/admin/schedules/designer" class="pd-action-btn"><ion-icon name="add-circle"></ion-icon> New Schedule</a>
+          <a href="/admin/schedules/designer/today" class="pd-action-btn"><ion-icon name="today"></ion-icon> Design Today</a>
+        </div>
+        <p style="margin-top:16px;font-size:0.9rem;color:#6b5585;line-height:1.5;">
+          Members and parents see schedules in their portal when they match the visibility you set
+          (Anyone, Contracted Corps, or Contracted Independent). Staff and admins always see all schedules.
+        </p>
+      </div>
+    </div>
+    <% } %>
+
+    <!-- ══ MEMBERS ════════════════════════════════════════ -->
+    <% if (p.extend_contracts || p.manage_rosters) { %>
+    <div class="pd-section" id="pd-sec-members">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Members</div>
+        <div class="pd-section-sub">Roster and contract tools for your role.</div>
+        <div class="pd-quick-actions">
+          <% if (p.extend_contracts) { %>
+          <a href="/staff/members" class="pd-action-btn pd-action-btn--primary"><ion-icon name="document-text"></ion-icon> Extend Contract</a>
+          <% } %>
+          <% if (p.manage_rosters) { %>
+          <a href="/admin/season-roster" class="pd-action-btn"><ion-icon name="people-circle"></ion-icon> Season Roster</a>
+          <% } %>
+          <a href="/admin/callbacks" class="pd-action-btn"><ion-icon name="call"></ion-icon> Extend Callback</a>
+        </div>
+      </div>
+    </div>
+    <% } %>
+
+    <!-- ══ FILES & FORMS ══════════════════════════════════ -->
+    <% if (p.manage_files || p.manage_forms) { %>
+    <div class="pd-section" id="pd-sec-files">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">Files &amp; Forms</div>
+        <div class="pd-section-sub">Music library and form tools available to your role.</div>
+        <div class="pd-quick-actions">
+          <% if (p.manage_files) { %>
+          <a href="/files" class="pd-action-btn pd-action-btn--primary"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
+          <% } %>
+          <% if (p.manage_forms) { %>
+          <a href="/edit-forms" class="pd-action-btn"><ion-icon name="create"></ion-icon> Edit Forms</a>
+          <% } %>
+          <a href="/set-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Set Audition Material</a>
+        </div>
+      </div>
+    </div>
+    <% } %>
+
+    <!-- ══ MY INFO ════════════════════════════════════════ -->
+    <div class="pd-section" id="pd-sec-myinfo">
+      <div class="pd-section-inner">
+        <div class="pd-section-heading">My Info</div>
+        <div class="pd-section-sub">Update your own account details.</div>
+        <div class="pd-quick-actions">
+          <a href="/update-contact" class="pd-action-btn"><ion-icon name="mail"></ion-icon> Contact Info</a>
+          <a href="/update-profile-photo" class="pd-action-btn"><ion-icon name="camera"></ion-icon> Profile Photo</a>
+          <a href="/member-portal" class="pd-action-btn"><ion-icon name="person"></ion-icon> Open Member Portal</a>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<footer><%- include("includes/footer") %></footer>
+<script src="/js/portal-nav.js"></script>
+</body>
+</html>

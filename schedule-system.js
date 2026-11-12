@@ -307,7 +307,7 @@ function registerScheduleSystem(app, db, deps) {
 
   function handleSave(req, res, existingId) {
     if (!canEditSchedules(req)) {
-      return res.status(403).json({ ok: false, message: "Admin or director only" });
+      return res.status(403).json({ ok: false, message: "You do not have permission to manage schedules." });
     }
     const { date, times } = req.body;
     if (!date) return res.status(400).json({ ok: false, message: "date is required" });
@@ -441,7 +441,9 @@ function registerScheduleSystem(app, db, deps) {
   app.put("/api/mobile/schedules/:id", mobileAuth, (req, res) => handleSave(req, res, Number(req.params.id)));
 
   function deleteSchedule(req, res) {
-    if (!canEditSchedules(req)) return res.status(403).json({ ok: false, message: "Admin or director only" });
+    if (!canEditSchedules(req)) {
+      return res.status(403).json({ ok: false, message: "You do not have permission to manage schedules." });
+    }
     try {
       const id = Number(req.params.id);
       const ex = db.prepare("SELECT id FROM schedules WHERE id = ?").get(id);
@@ -465,7 +467,8 @@ function registerScheduleSystem(app, db, deps) {
       ) latest ON s.id = latest.id
       ORDER BY s.date DESC LIMIT 200
     `).all();
-    return res.render("admin-schedules", { schedules });
+    const portalHome = req.admin ? "/admin-portal" : "/staff-portal";
+    return res.render("admin-schedules", { schedules, portalHome });
   });
 
   app.get("/admin/schedules/designer/today", mustBeAdmin, (req, res) => {

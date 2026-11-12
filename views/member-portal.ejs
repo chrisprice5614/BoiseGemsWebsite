@@ -438,16 +438,27 @@
     </div>
 
     <!-- ══ STAFF TOOLS ════════════════════════════════════ -->
-    <% if (member.staff) { %>
+    <% if (member.staff) {
+      const sp = (typeof staffPerms !== 'undefined' && staffPerms) ? staffPerms : {};
+    %>
     <div class="pd-section" id="pd-sec-staff">
       <div class="pd-section-inner">
         <div class="pd-section-heading">Staff Tools</div>
-        <div class="pd-section-sub">Administrative tools for staff members.</div>
+        <div class="pd-section-sub">Only tools your role allows. Prefer the Staff Portal for day-to-day staff work.</div>
         <div class="pd-quick-actions">
-          <a href="/audition-member" class="pd-action-btn"><ion-icon name="person-add"></ion-icon> Audition Member</a>
+          <a href="/staff-portal" class="pd-action-btn pd-action-btn--primary"><ion-icon name="construct"></ion-icon> Open Staff Portal</a>
+          <% if (sp.manage_schedule) { %>
+          <a href="/admin/schedules" class="pd-action-btn"><ion-icon name="calendar"></ion-icon> Schedules</a>
+          <% } %>
+          <% if (sp.extend_contracts) { %>
           <a href="/staff/members" class="pd-action-btn"><ion-icon name="people"></ion-icon> Extend Contract</a>
+          <% } %>
+          <% if (sp.manage_rosters) { %>
           <a href="/admin/season-roster" class="pd-action-btn"><ion-icon name="people-circle"></ion-icon> Season Roster</a>
+          <% } %>
+          <% if (sp.manage_files) { %>
           <a href="/files" class="pd-action-btn"><ion-icon name="folder-open"></ion-icon> Music &amp; Files</a>
+          <% } %>
           <a href="/set-materials" class="pd-action-btn"><ion-icon name="musical-notes"></ion-icon> Set Audition Material</a>
           <a href="/admin/callbacks" class="pd-action-btn"><ion-icon name="call"></ion-icon> Extend Callback</a>
         </div>

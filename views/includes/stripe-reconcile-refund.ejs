@@ -1,0 +1,50 @@
+<%#
+  Refund form for a Stripe reconcile payment row.
+  Locals: s (stripe row), start, end, money (fn)
+%>
+<%
+  const piId = (String(s.id || "").indexOf("pi_") === 0) ? s.id : "";
+  const canRefund = !!(piId || s.chargeId || s.sessionId);
+  const alreadyRefunded = !!s.refunded || (Number(s.amountRefunded) > 0 && Number(s.amountRefunded) >= Number(s.amount || 0));
+  const partialRefund = !alreadyRefunded && Number(s.amountRefunded) > 0;
+  const decisionRefunded = s.accountDecision === "refunded" || s.chrisDecision === "refunded";
+%>
+<% if (alreadyRefunded || decisionRefunded) { %>
+  <p style="margin:10px 0 0;color:#1e6e2e;font-weight:600;">
+    Refunded in Stripe<%= Number(s.amountRefunded) ? " (" + money(s.amountRefunded) + ")" : "" %><%= decisionRefunded ? " · marked on reconcile" : "" %>
+  </p>
+<% } else if (canRefund) { %>
+  <form method="POST" action="/admin/stripe-reconcile/refund" class="sr-refund"
+        style="border-top:1px dashed #d93025; padding-top:10px; margin-top:12px;"
+        onsubmit="return srConfirmRefund(this);">
+    <input type="hidden" name="start" value="<%= start %>" />
+    <input type="hidden" name="end" value="<%= end %>" />
+    <input type="hidden" name="payment_intent_id" value="<%= piId %>" />
+    <input type="hidden" name="charge_id" value="<%= s.chargeId || '' %>" />
+    <input type="hidden" name="session_id" value="<%= s.sessionId || '' %>" />
+    <input type="hidden" name="stripe_amount_cents" value="<%= s.amount || 0 %>" />
+    <input type="hidden" name="confirm_refund" value="0" />
+
+    <p style="margin:0 0 6px;"><strong>Refund this Stripe payment</strong>
+      <% if (partialRefund) { %>
+        <span class="sr-muted">(<%= money(s.amountRefunded) %> already refunded)</span>
+      <% } %>
+    </p>
+    <label style="display:block;margin:6px 0;">
+      Reason
+      <select name="reason">
+        <option value="requested_by_customer">Requested by customer</option>
+        <option value="duplicate">Duplicate</option>
+        <option value="fraudulent">Fraudulent</option>
+      </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;margin:8px 0;">
+      <input type="checkbox" name="reverse_website" value="1" checked />
+      Also reverse website payment / Chris share if recorded
+    </label>
+    <button type="submit"
+      style="background:#fce8e6;border:1px solid #d93025;color:#a50e0e;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;">
+      Refund <%= money(s.amount) %>
+    </button>
+  </form>
+<% } %>

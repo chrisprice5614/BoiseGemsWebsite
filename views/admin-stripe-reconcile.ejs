@@ -371,6 +371,8 @@
                   </div>
                 </form>
               <% } %>
+
+              <%- include("includes/stripe-reconcile-refund", { s: s, start: start, end: end, money: money }) %>
             </div>
           <% }) %>
         <% } %>
@@ -468,6 +470,7 @@
                 <% } %>
               </p>
               <p class="sr-muted" style="margin:4px 0;">Match: <%= m.how %></p>
+              <%- include("includes/stripe-reconcile-refund", { s: m.stripe, start: start, end: end, money: money }) %>
             </div>
           <% }) %>
         <% } %>
@@ -497,6 +500,25 @@
       var eventSelect = el.querySelector('select[name="event_id"]');
       if (eventSelect) eventSelect.required = action === 'event_rsvp';
     });
+  }
+
+  function srConfirmRefund(form) {
+    var amountInput = form.querySelector('input[name="stripe_amount_cents"]');
+    var cents = Number(amountInput && amountInput.value) || 0;
+    var dollars = (cents / 100).toFixed(2);
+    var reverse = form.querySelector('input[name="reverse_website"]');
+    var reverseOn = reverse && reverse.checked;
+    var msg =
+      "Issue a Stripe refund of $" + dollars + "?\n\n" +
+      "This sends money back to the cardholder through Stripe.\n" +
+      (reverseOn
+        ? "Website payment / Chris share will also be reversed if recorded."
+        : "Website records will NOT be changed.") +
+      "\n\nOnly continue if you are sure.";
+    if (!window.confirm(msg)) return false;
+    var confirmField = form.querySelector('input[name="confirm_refund"]');
+    if (confirmField) confirmField.value = "1";
+    return true;
   }
 </script>
 </body>

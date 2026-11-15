@@ -2446,6 +2446,90 @@ function attachReconcileDecisionState(db, row, opts = {}) {
   return row;
 }
 
+/**
+ * After a successful Stripe refund: optionally reverse the website payment + Chris
+ * share, and always record a "refunded" reconcile decision so poller/reconcile
+ * do not try to re-apply the payment.
+ */
+function markStripeRefundedLocally(db, {
+  paymentIntentId = null,
+  sessionId = null,
+  amountCents = null,
+  reverseWebsite = true,
+  refundedBy = "chris",
+  stripeRefundId = null,
+} = {}) {
+  ensureStripePaymentColumns(db);
+  const result = {
+    ok: true,
+    reversedPaymentId: null,
+    chrisDeleted: null,
+    alreadyDecision: false,
+  };
+
+  const existing = findAccountDecisionForStripe(db, { paymentIntentId, sessionId });
+  if (existing && String(existing.decision) === "refunded") {
+    result.alreadyDecision = true;
+  }
+
+  if (reverseWebsite) {
+    const payment = findPaymentByStripeIds(db, { paymentIntentId, sessionId });
+    if (payment) {
+      const defs = defaultDeleteAdjustments(payment);
+      const chris = findChrisShareForPayment(db, payment);
+      const del = deletePaymentRecord(db, {
+        paymentId: payment.id,
+        owedRestoreCents: defs.owedRestoreCents,
+        paidReduceCents: defs.paidReduceCents,
+        deleteChris: true,
+        chrisRowId: chris ? chris.id : null,
+        extraPaymentIntentId: paymentIntentId,
+        deletedBy: `${refundedBy} (stripe refund${stripeRefundId ? " " + stripeRefundId : ""})`,
+      });
+      if (del.ok) {
+        result.reversedPaymentId = payment.id;
+        result.chrisDeleted = del.chrisDeleted;
+      }
+    } else {
+      // No paymentHistory row — still remove a linked Chris credit if present
+      const chris = findChrisShareForStripe(db, { paymentIntentId, sessionId });
+      if (chris) {
+        const amt = Number(chris.amount) || 0;
+        if (String(chris.type) === "credit") {
+          db.prepare("UPDATE chrisPayment SET total_owed = total_owed - ? WHERE id = 1").run(amt);
+        }
+        db.prepare("DELETE FROM chrisPaymentHistory WHERE id = ?").run(chris.id);
+        result.chrisDeleted = { id: chris.id, amount: amt, created_at: chris.created_at };
+      }
+    }
+  }
+
+  const note =
+    `Refunded by ${refundedBy}` +
+    (stripeRefundId ? ` (${stripeRefundId})` : "") +
+    (reverseWebsite
+      ? result.reversedPaymentId
+        ? ` · reversed paymentHistory #${result.reversedPaymentId}`
+        : " · no website paymentHistory to reverse"
+      : " · website records left unchanged");
+
+  for (const key of stripeReconcileKeys({ paymentIntentId, sessionId })) {
+    for (const actionType of ["account", "chris"]) {
+      saveReconcileDecision(db, {
+        stripeKey: key,
+        paymentIntentId,
+        sessionId,
+        actionType,
+        decision: "refunded",
+        amountCents: amountCents != null ? amountCents : null,
+        note,
+      });
+    }
+  }
+
+  return result;
+}
+
 module.exports = {
   ensureStripePaymentColumns,
   findPaymentByStripeIds,
@@ -2485,4 +2569,5 @@ module.exports = {
   defaultDeleteAdjustments,
   findLikelyDuplicates,
   deletePaymentRecord,
+  markStripeRefundedLocally,
 };

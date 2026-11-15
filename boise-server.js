@@ -2864,6 +2864,8 @@ async function buildStripeSiteReconcile(range) {
       description: pi.description || "",
       sessionId: null,
       chargeId: null,
+      amountRefunded: 0,
+      refunded: false,
       successUrl: null,
       cancelUrl: null,
       lineItems: [],
@@ -2880,11 +2882,16 @@ async function buildStripeSiteReconcile(range) {
     const email = String(
       ch.billing_details?.email || ch.receipt_email || ""
     ).toLowerCase();
+    const amountRefunded = Math.round(Number(ch.amount_refunded) || 0);
+    const fullyRefunded =
+      !!ch.refunded || (amountRefunded > 0 && amountRefunded >= Math.round(Number(ch.amount) || 0));
     const existing = stripeByKey.get(key);
     if (existing) {
       if (!existing.email && email) existing.email = email;
       if (!existing.description && ch.description) existing.description = ch.description;
       existing.chargeId = ch.id;
+      existing.amountRefunded = Math.max(Number(existing.amountRefunded) || 0, amountRefunded);
+      existing.refunded = existing.refunded || fullyRefunded;
       continue;
     }
     stripeByKey.set(key, {
@@ -2898,6 +2905,8 @@ async function buildStripeSiteReconcile(range) {
       description: ch.description || "",
       sessionId: null,
       chargeId: ch.id,
+      amountRefunded,
+      refunded: fullyRefunded,
       successUrl: null,
       cancelUrl: null,
       lineItems: [],
@@ -2952,6 +2961,8 @@ async function buildStripeSiteReconcile(range) {
         : ""),
       sessionId: sess.id,
       chargeId: null,
+      amountRefunded: 0,
+      refunded: false,
       successUrl: sess.success_url || null,
       cancelUrl: sess.cancel_url || null,
       lineItems,
@@ -9606,6 +9617,128 @@ app.post("/admin/stripe-reconcile/apply", mustBeChrisOnly, (req, res) => {
     console.error("Stripe reconcile apply failed:", err);
     req.session.flashMessage =
       "Apply failed: " + (err && err.message ? err.message : String(err));
+    return res.redirect(baseRedirect + "#stripe-only");
+  }
+
+  return res.redirect(baseRedirect + "#stripe-only");
+});
+
+// Chris-only: issue a Stripe refund from reconcile (confirm required)
+app.post("/admin/stripe-reconcile/refund", mustBeChrisOnly, async (req, res) => {
+  const start = String(req.body.start || "").trim();
+  const end = String(req.body.end || "").trim();
+  const baseRedirect =
+    `/admin/stripe-reconcile?start=${encodeURIComponent(start || "")}&end=${encodeURIComponent(end || "")}`;
+  const money = (c) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+      (Number(c) || 0) / 100
+    );
+
+  // Hard gate: the confirm checkbox / hidden field must be present
+  const confirmed =
+    req.body.confirm_refund === "1" ||
+    req.body.confirm_refund === "on" ||
+    req.body.confirm_refund === "true";
+  if (!confirmed) {
+    req.session.flashMessage =
+      "Refund cancelled — you must confirm before a refund is issued.";
+    return res.redirect(baseRedirect + "#stripe-only");
+  }
+
+  let paymentIntentId = String(req.body.payment_intent_id || "").trim() || null;
+  let chargeId = String(req.body.charge_id || "").trim() || null;
+  let sessionId = String(req.body.session_id || "").trim() || null;
+  const stripeAmountCents = Math.round(Number(req.body.stripe_amount_cents) || 0);
+  const reverseWebsite =
+    req.body.reverse_website === "1" ||
+    req.body.reverse_website === "on" ||
+    req.body.reverse_website === "true";
+  const reasonRaw = String(req.body.reason || "requested_by_customer").trim();
+  const reason = ["requested_by_customer", "duplicate", "fraudulent"].includes(reasonRaw)
+    ? reasonRaw
+    : "requested_by_customer";
+
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error("STRIPE_SECRET_KEY is not configured.");
+    }
+    stripePaymentFinalize.ensureStripePaymentColumns(db);
+
+    // Resolve payment_intent from checkout session when needed
+    if (!paymentIntentId && sessionId) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const ids = stripePaymentFinalize.stripeIdsFromSession(session);
+      paymentIntentId = ids.paymentIntentId || null;
+      if (!sessionId) sessionId = ids.sessionId || sessionId;
+    }
+    if (!paymentIntentId && !chargeId) {
+      req.session.flashMessage =
+        "Cannot refund — missing Stripe payment intent / charge id.";
+      return res.redirect(baseRedirect + "#stripe-only");
+    }
+
+    // Already fully refunded?
+    if (paymentIntentId) {
+      const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+        expand: ["latest_charge"],
+      });
+      const latest =
+        typeof pi.latest_charge === "object" && pi.latest_charge
+          ? pi.latest_charge
+          : null;
+      const refundedAmt = Math.round(Number(latest?.amount_refunded) || 0);
+      const totalAmt = Math.round(Number(pi.amount_received || pi.amount) || 0);
+      if (latest?.refunded || (totalAmt > 0 && refundedAmt >= totalAmt)) {
+        stripePaymentFinalize.markStripeRefundedLocally(db, {
+          paymentIntentId,
+          sessionId,
+          amountCents: totalAmt,
+          reverseWebsite,
+          refundedBy: req.user.email || "chris",
+        });
+        req.session.flashMessage =
+          `That payment is already fully refunded in Stripe (${money(totalAmt)}).` +
+          (reverseWebsite ? " Website records were checked/reversed." : "");
+        return res.redirect(baseRedirect + "#stripe-only");
+      }
+      if (!chargeId && latest?.id) chargeId = latest.id;
+    }
+
+    const refundParams = { reason };
+    if (paymentIntentId) refundParams.payment_intent = paymentIntentId;
+    else refundParams.charge = chargeId;
+
+    const refund = await stripe.refunds.create(refundParams);
+
+    const local = stripePaymentFinalize.markStripeRefundedLocally(db, {
+      paymentIntentId,
+      sessionId,
+      amountCents: stripeAmountCents || refund.amount || null,
+      reverseWebsite,
+      refundedBy: req.user.email || "chris",
+      stripeRefundId: refund.id,
+    });
+
+    const parts = [
+      `Refund issued: ${money(refund.amount)} (${refund.id}).`,
+    ];
+    if (reverseWebsite) {
+      if (local.reversedPaymentId) {
+        parts.push(`Reversed website payment #${local.reversedPaymentId}.`);
+      } else {
+        parts.push("No website paymentHistory row to reverse.");
+      }
+      if (local.chrisDeleted) {
+        parts.push(`Removed Chris share ${money(local.chrisDeleted.amount)}.`);
+      }
+    } else {
+      parts.push("Website records left unchanged.");
+    }
+    req.session.flashMessage = parts.join(" ");
+  } catch (err) {
+    console.error("Stripe reconcile refund failed:", err);
+    req.session.flashMessage =
+      "Refund failed: " + (err && err.message ? err.message : String(err));
     return res.redirect(baseRedirect + "#stripe-only");
   }
 
